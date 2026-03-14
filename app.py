@@ -10,7 +10,6 @@ st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 st.markdown("""
     <style>
     .block-container { max-width: 98%; padding-top: 2rem; }
-    /* Headers styling to match your original clean look */
     h3 { margin-bottom: 0.5rem !important; font-size: 1.2rem !important; color: #1E3A8A; }
     </style>
     """, unsafe_allow_html=True)
@@ -77,7 +76,7 @@ try:
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
     master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
 
-    # 2. MASTER SYNC SORTING
+    # 2. MASTER SYNC SORTING (Applied to advisors ONLY)
     sort_options = {
         "Total Apps (High to Low)": "Total Apps",
         "Quality: Approved": "Qual_Approved",
@@ -95,11 +94,13 @@ try:
     else:
         master = master.sort_values(sort_col, ascending=False)
 
-    # 3. Final Prepare with Totals Row (Excluded from Sort)
-    totals = master.sum().to_frame().T
-    totals.index = ["GRAND TOTAL"]
-    final_df = pd.concat([master, totals])
-    rows_to_style = final_df.index[:-1]
+    # 3. Calculate Totals AND THEN Append (Ensures bottom placement)
+    totals_row = master.sum().to_frame().T
+    totals_row.index = ["GRAND TOTAL"]
+    final_df = pd.concat([master, totals_row])
+    
+    # Identify indices for styling (excluding the fixed total row)
+    advisor_indices = master.index
 
     st.divider()
 
@@ -111,7 +112,7 @@ try:
         st.subheader("📊 Apps")
         st.dataframe(
             final_df[['Total Apps']].style.format("{:,.0f}")
-            .background_gradient(cmap='Greens', subset=(rows_to_style, 'Total Apps')),
+            .background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Apps')),
             use_container_width=True, height=650
         )
 
@@ -124,7 +125,7 @@ try:
         styler_q = disp_qual.style.format("{:,.0f}")
         for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
             if col in disp_qual.columns:
-                styler_q = styler_q.background_gradient(subset=(rows_to_style, col), cmap=cmap)
+                styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap)
         st.dataframe(styler_q, use_container_width=True, height=650)
 
     # Table 3: Portal Status
@@ -136,7 +137,7 @@ try:
         styler_p = disp_port.style.format("{:,.0f}")
         for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
             if col in disp_port.columns:
-                styler_p = styler_p.background_gradient(subset=(rows_to_style, col), cmap=cmap)
+                styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap)
         st.dataframe(styler_p, use_container_width=True, height=650)
 
 except Exception as e:
