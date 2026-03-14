@@ -10,6 +10,8 @@ st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 st.markdown("""
     <style>
     .block-container { max-width: 98%; padding-top: 2rem; }
+    /* Style for the multi-index headers */
+    .dataframe thead tr:nth-child(1) th { background-color: #1E3A8A !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -64,48 +66,45 @@ try:
     f2['P_Status'] = f2['Status'].apply(map_portal)
 
     # 1. Grouping
-    app_counts = f1.groupby('Advisor').size().to_frame('Total Apps')
+    app_counts = f1.groupby('Advisor').size().to_frame('Total')
     qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0)
     port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0)
+
+    # 2. Add Top-Level Headers to prevent "Cancelled" overlap
+    app_counts.columns = pd.MultiIndex.from_product([['APPLICATIONS'], app_counts.columns])
+    qual_counts.columns = pd.MultiIndex.from_product([['QUALITY AUDIT'], qual_counts.columns])
+    port_counts.columns = pd.MultiIndex.from_product([['PORTAL STATUS'], port_counts.columns])
 
     # Master Merge
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
     master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
-    
-    # Insert visual separators (empty columns) to mimic the 3-table look
-    master.insert(1, " | ", "")
-    # Find where Quality ends to put the second separator
-    qual_end_idx = len(app_counts.columns) + len(qual_counts.columns) + 1
-    master.insert(qual_end_idx + 1, " || ", "")
-
-    master = master.sort_values('Total Apps', ascending=False)
+    master = master.sort_values(('APPLICATIONS', 'Total'), ascending=False)
 
     # Add Totals Row
-    totals = master.select_dtypes(include=['number']).sum().to_frame().T
+    totals = master.sum().to_frame().T
     totals.index = ["GRAND TOTAL"]
-    final_df = pd.concat([master, totals]).fillna("")
+    final_df = pd.concat([master, totals])
 
     # --- RENDERING ---
     st.divider()
-    st.info("💡 Hint: Click any column header to sort. The entire row will stay synced.")
+    st.info("💡 Sync Active: Sorting one column moves the entire row for that Advisor.")
     
     rows_to_style = final_df.index[:-1]
+    styler = final_df.style.format(precision=0)
 
-    # Setup styling logic
-    styler = final_df.style.format(precision=0, na_rep="")
+    # Apply Color Gradients using Multi-Index paths
+    # Apps
+    styler = styler.background_gradient(cmap='Greens', subset=(rows_to_style, ('APPLICATIONS', 'Total')))
     
-    # 1. Apps Color
-    styler = styler.background_gradient(cmap='Greens', subset=(rows_to_style, 'Total Apps'))
-    
-    # 2. Quality Colors
+    # Quality
     for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
-        if col in final_df.columns:
-            styler = styler.background_gradient(subset=(rows_to_style, col), cmap=cmap)
+        if ('QUALITY AUDIT', col) in final_df.columns:
+            styler = styler.background_gradient(subset=(rows_to_style, ('QUALITY AUDIT', col)), cmap=cmap)
             
-    # 3. Portal Colors
+    # Portal
     for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-        if col in final_df.columns:
-            styler = styler.background_gradient(subset=(rows_to_style, col), cmap=cmap)
+        if ('PORTAL STATUS', col) in final_df.columns:
+            styler = styler.background_gradient(subset=(rows_to_style, ('PORTAL STATUS', col)), cmap=cmap)
 
     st.dataframe(styler, use_container_width=True, height=800)
 
