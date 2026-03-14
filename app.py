@@ -51,7 +51,7 @@ def map_portal(val):
     return 'Others'
 
 # --- UI START ---
-st.title("🚀 Sparta Performance & Portal Dashboard")
+st.title("🚀 Sparta Telecom Dashboard")
 
 try:
     df1, df2 = fetch_data()
