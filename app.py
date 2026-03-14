@@ -139,43 +139,56 @@ try:
 
     with tab2:
             # --- TAB 2: AGENT WISE DAILY PERFORMANCE ---
-            st.subheader("Detailed Agent Analysis")
+            st.subheader("👤 Detailed Agent Analysis")
             selected_agent = st.selectbox("Select Agent:", all_advisors)
             
             if selected_agent:
+                # Filter data for the specific agent
                 ag1 = f1[f1['Advisor'] == selected_agent].copy()
                 ag2 = f2[f2['Advisor'] == selected_agent].copy()
                 
-                # 1. Group by Date
-                daily_apps = ag1.groupby(ag1['Date_Parsed'].dt.date).size().to_frame('Apps')
-                
-                # 2. Group Quality & Portal and ADD PREFIXES to prevent duplicate column names
-                daily_qual = ag1.groupby([ag1['Date_Parsed'].dt.date, 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
-                daily_port = ag2.groupby([ag2['Date_Parsed'].dt.date, 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
-                
-                # 3. Merge Daily Stats
-                daily_master = pd.concat([daily_apps, daily_qual, daily_port], axis=1).fillna(0)
-                daily_master.index.name = "Date"
-                
-                # 4. Clean up column names for display AFTER concat
-                # This allows the styler to work on unique internal names
-                st.write(f"Showing performance for **{selected_agent}** from {start_date} to {end_date}")
-                
-                # Styling logic
-                styler_daily = daily_master.style.format("{:,.0f}")
-                
-                # Apply gradients using the prefixed names
-                if 'Apps' in daily_master.columns:
-                    styler_daily = styler_daily.background_gradient(cmap='Greens', subset=['Apps'])
-                
-                # Specific colors for Quality and Portal
-                for col in daily_master.columns:
-                    if 'Approved' in col or 'Live' in col:
-                        styler_daily = styler_daily.background_gradient(cmap='YlGn', subset=[col])
-                    elif 'Cancelled' in col:
-                        styler_daily = styler_daily.background_gradient(cmap='Reds', subset=[col])
-                
-                st.dataframe(styler_daily, use_container_width=True, height=600)
+                st.write(f"Showing daily breakdown for **{selected_agent}**")
+                st.divider()
+    
+                # Create 3 Columns just like the first tab
+                ca, cb, cc = st.columns([1, 1.8, 1.8])
+    
+                # 1. Daily Apps
+                with ca:
+                    st.markdown("#### 📊 Daily Apps")
+                    daily_apps = ag1.groupby(ag1['Date_Parsed'].dt.date).size().to_frame('Apps')
+                    st.dataframe(
+                        daily_apps.style.format("{:,.0f}").background_gradient(cmap='Greens'),
+                        use_container_width=True
+                    )
+    
+                # 2. Daily Quality
+                with cb:
+                    st.markdown("#### ✅ Quality Audit")
+                    daily_qual = ag1.groupby([ag1['Date_Parsed'].dt.date, 'Q_Status']).size().unstack(fill_value=0)
+                    # Keep column order consistent
+                    q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
+                    actual_q = [c for c in q_order if c in daily_qual.columns]
+                    
+                    styler_dq = daily_qual[actual_q].style.format("{:,.0f}")
+                    for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
+                        if col in daily_qual.columns:
+                            styler_dq = styler_dq.background_gradient(subset=[col], cmap=cmap)
+                    st.dataframe(styler_dq, use_container_width=True)
+    
+                # 3. Daily Portal
+                with cc:
+                    st.markdown("#### 🌐 Portal Status")
+                    daily_port = ag2.groupby([ag2['Date_Parsed'].dt.date, 'P_Status']).size().unstack(fill_value=0)
+                    # Keep column order consistent
+                    p_order = ['Live', 'Committed', 'Cancelled', 'Others']
+                    actual_p = [c for c in p_order if c in daily_port.columns]
+                    
+                    styler_dp = daily_port[actual_p].style.format("{:,.0f}")
+                    for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
+                        if col in daily_port.columns:
+                            styler_dp = styler_dp.background_gradient(subset=[col], cmap=cmap)
+                    st.dataframe(styler_dp, use_container_width=True)
 
 except Exception as e:
     st.error(f"Error: {e}")
