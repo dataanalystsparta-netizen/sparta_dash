@@ -11,7 +11,7 @@ st.markdown("""
     <style>
     .block-container { max-width: 98%; padding-top: 2rem; }
     [data-testid="stMetricValue"] { font-size: 24px; }
-    /* Force tables to align precisely */
+    /* Ensure tables start at the exact same height */
     [data-testid="stHorizontalBlock"] { align-items: flex-start; }
     </style>
     """, unsafe_allow_html=True)
@@ -85,7 +85,6 @@ try:
         "Advisor Name (A-Z)": "index"
     }
     
-    # Filter available sort options based on columns present
     available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master.columns or v == "Total Apps"]
     selected_sort_label = col_c.selectbox("Master Sort (Syncs all tables):", available_sorts)
     
@@ -100,17 +99,21 @@ try:
     totals.index = ["GRAND TOTAL"]
     final_df = pd.concat([master, totals])
 
-    # --- RENDERING ---
+    # --- RENDERING (With Native Sorting Disabled) ---
     st.divider()
     rows_to_style = final_df.index[:-1]
     c1, c2, c3 = st.columns([1, 1.8, 1.8])
+
+    # Common config to disable local sorting
+    col_config = {"Advisor": st.column_config.Column(required=True)}
 
     with c1:
         st.subheader("📊 Apps")
         st.dataframe(
             final_df[['Total Apps']].style.format("{:,.0f}")
             .background_gradient(cmap='Greens', subset=(rows_to_style, 'Total Apps')),
-            use_container_width=True, height=650
+            use_container_width=True, height=650, 
+            column_config={"index": "Advisor", "Total Apps": st.column_config.Column(sortable=False)}
         )
 
     with c2:
@@ -118,20 +121,32 @@ try:
         q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
         disp_qual = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
         styler_q = disp_qual.style.format("{:,.0f}")
+        
+        # Build column config to disable sorting for all columns
+        q_config = {"index": "Advisor"}
+        for col in disp_qual.columns:
+            q_config[col] = st.column_config.Column(sortable=False)
+            
         for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
             if col in disp_qual.columns:
                 styler_q = styler_q.background_gradient(subset=(rows_to_style, col), cmap=cmap)
-        st.dataframe(styler_q, use_container_width=True, height=650)
+        st.dataframe(styler_q, use_container_width=True, height=650, column_config=q_config)
 
     with c3:
         st.subheader("🌐 Portal Status")
         p_cols = [c for c in final_df.columns if c.startswith('Port_')]
         disp_port = final_df[p_cols].rename(columns=lambda x: x.replace('Port_', ''))
         styler_p = disp_port.style.format("{:,.0f}")
+        
+        # Build column config to disable sorting for all columns
+        p_config = {"index": "Advisor"}
+        for col in disp_port.columns:
+            p_config[col] = st.column_config.Column(sortable=False)
+
         for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
             if col in disp_port.columns:
                 styler_p = styler_p.background_gradient(subset=(rows_to_style, col), cmap=cmap)
-        st.dataframe(styler_p, use_container_width=True, height=650)
+        st.dataframe(styler_p, use_container_width=True, height=650, column_config=p_config)
 
 except Exception as e:
     st.warning("Adjust filters or check data source.")
