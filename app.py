@@ -73,7 +73,7 @@ try:
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
     master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
 
-    # 2. MASTER SYNC SORTING (Advisors Only)
+    # 2. MASTER SYNC SORTING (Sorts Advisors only)
     sort_options = {
         "Total Apps (High to Low)": "Total Apps",
         "Quality: Approved": "Qual_Approved",
@@ -91,55 +91,48 @@ try:
     else:
         master = master.sort_values(sort_col, ascending=False)
 
-    # 3. Append Totals Row
+    # 3. Create Totals and Append
     totals_row = master.sum().to_frame().T
     totals_row.index = ["GRAND TOTAL"]
     final_df = pd.concat([master, totals_row])
     
+    # Track indices for color styling (exclude the grand total from gradients)
     advisor_indices = master.index
 
     st.divider()
 
-    # --- THREE-COLUMN DISPLAY WITH DISABLED SORTING ---
+    # --- THREE-COLUMN DISPLAY ---
     c1, c2, c3 = st.columns([1, 1.8, 1.8])
 
-    # Table 1: Apps
     with c1:
         st.subheader("📊 Apps")
         st.dataframe(
             final_df[['Total Apps']].style.format("{:,.0f}")
             .background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Apps')),
-            use_container_width=True, height=650,
-            column_config={"Total Apps": st.column_config.Column(sortable=False)}
+            use_container_width=True, height=650
         )
 
-    # Table 2: Quality Audit
     with c2:
         st.subheader("✅ Quality Audit")
         q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
         disp_qual = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
         
         styler_q = disp_qual.style.format("{:,.0f}")
-        q_config = {col: st.column_config.Column(sortable=False) for col in disp_qual.columns}
-        
         for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
             if col in disp_qual.columns:
                 styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap)
-        st.dataframe(styler_q, use_container_width=True, height=650, column_config=q_config)
+        st.dataframe(styler_q, use_container_width=True, height=650)
 
-    # Table 3: Portal Status
     with c3:
         st.subheader("🌐 Portal Status")
         p_cols = [c for c in final_df.columns if c.startswith('Port_')]
         disp_port = final_df[p_cols].rename(columns=lambda x: x.replace('Port_', ''))
         
         styler_p = disp_port.style.format("{:,.0f}")
-        p_config = {col: st.column_config.Column(sortable=False) for col in disp_port.columns}
-
         for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
             if col in disp_port.columns:
                 styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap)
-        st.dataframe(styler_p, use_container_width=True, height=650, column_config=p_config)
+        st.dataframe(styler_p, use_container_width=True, height=650)
 
 except Exception as e:
     st.warning("Please adjust filters or check data connection.")
