@@ -24,12 +24,10 @@ def fetch_data():
     client = gspread.authorize(creds)
     ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
     
-    # Sparta Sheet (Apps & Quality)
     df1 = pd.DataFrame(ss.worksheet('Sparta').get_all_records())
     df1['Standardized_Date'] = pd.to_datetime(df1['Standardized_Date'], format='mixed', dayfirst=True, errors='coerce')
     df1['Advisor'] = df1['Advisor'].astype(str).str.strip().str.title()
     
-    # Sparta2 Sheet (Portal Status)
     df2 = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
     df2['Sale Date'] = pd.to_datetime(df2['Sale Date'], format='mixed', dayfirst=True, errors='coerce')
     df2['Advisor'] = df2['Agent'].astype(str).str.strip().str.title()
@@ -56,7 +54,6 @@ st.title("🚀 Sparta Performance & Portal Dashboard")
 try:
     df1, df2 = fetch_data()
 
-    # Filter Controls row
     col_a, col_b, col_c = st.columns([1, 1, 1.5])
     start_date = col_a.date_input("Start Date", datetime.date.today().replace(day=1))
     end_date = col_b.date_input("End Date", datetime.date.today())
@@ -72,11 +69,11 @@ try:
     qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
     port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
 
-    # Master Merge for Syncing logic
+    # Master Merge
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
     master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
 
-    # 2. MASTER SYNC SORTING (Applied to advisors ONLY)
+    # 2. MASTER SYNC SORTING (Advisors Only)
     sort_options = {
         "Total Apps (High to Low)": "Total Apps",
         "Quality: Approved": "Qual_Approved",
@@ -94,17 +91,16 @@ try:
     else:
         master = master.sort_values(sort_col, ascending=False)
 
-    # 3. Calculate Totals AND THEN Append (Ensures bottom placement)
+    # 3. Append Totals Row
     totals_row = master.sum().to_frame().T
     totals_row.index = ["GRAND TOTAL"]
     final_df = pd.concat([master, totals_row])
     
-    # Identify indices for styling (excluding the fixed total row)
     advisor_indices = master.index
 
     st.divider()
 
-    # --- THREE-COLUMN DISPLAY ---
+    # --- THREE-COLUMN DISPLAY WITH DISABLED SORTING ---
     c1, c2, c3 = st.columns([1, 1.8, 1.8])
 
     # Table 1: Apps
@@ -113,7 +109,8 @@ try:
         st.dataframe(
             final_df[['Total Apps']].style.format("{:,.0f}")
             .background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Apps')),
-            use_container_width=True, height=650
+            use_container_width=True, height=650,
+            column_config={"Total Apps": st.column_config.Column(sortable=False)}
         )
 
     # Table 2: Quality Audit
@@ -123,10 +120,12 @@ try:
         disp_qual = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
         
         styler_q = disp_qual.style.format("{:,.0f}")
+        q_config = {col: st.column_config.Column(sortable=False) for col in disp_qual.columns}
+        
         for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
             if col in disp_qual.columns:
                 styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap)
-        st.dataframe(styler_q, use_container_width=True, height=650)
+        st.dataframe(styler_q, use_container_width=True, height=650, column_config=q_config)
 
     # Table 3: Portal Status
     with c3:
@@ -135,10 +134,12 @@ try:
         disp_port = final_df[p_cols].rename(columns=lambda x: x.replace('Port_', ''))
         
         styler_p = disp_port.style.format("{:,.0f}")
+        p_config = {col: st.column_config.Column(sortable=False) for col in disp_port.columns}
+
         for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
             if col in disp_port.columns:
                 styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap)
-        st.dataframe(styler_p, use_container_width=True, height=650)
+        st.dataframe(styler_p, use_container_width=True, height=650, column_config=p_config)
 
 except Exception as e:
     st.warning("Please adjust filters or check data connection.")
