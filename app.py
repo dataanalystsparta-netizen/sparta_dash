@@ -60,7 +60,7 @@ try:
     df1, df2, last_sync = fetch_data()
 
     col_title, col_time = st.columns([3, 1])
-    col_title.title("🚀 Sparta Performance & Portal Dashboard")
+    col_title.title("🚀 Sparta Performance & Live Status Dashboard")
     col_time.markdown(f"<p class='last-updated'>Data Last Synced:<br><b>{last_sync}</b></p>", unsafe_allow_html=True)
 
     col_a, col_b = st.columns(2)
@@ -84,7 +84,13 @@ try:
         all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
         master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
 
-        sort_options = {"Total Apps (High to Low)": "Total Apps", "Quality: Approved": "Qual_Approved", "Quality: Cancelled": "Qual_Cancelled", "Portal: Live": "Port_Live", "Advisor Name (A-Z)": "index"}
+        sort_options = {
+            "Total Apps (High to Low)": "Total Apps", 
+            "Quality: Approved": "Qual_Approved", 
+            "Quality: Cancelled": "Qual_Cancelled", 
+            "Live Status: Live": "Port_Live", 
+            "Advisor Name (A-Z)": "index"
+        }
         available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master.columns]
         selected_sort_label = col_sort.selectbox("Master Sort (Aligns all tables):", available_sorts)
         
@@ -110,7 +116,7 @@ try:
                 if col in disp_qual.columns: styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap)
             st.dataframe(styler_q, use_container_width=True, height=500)
         with c3:
-            st.subheader("🌐 Portal Status")
+            st.subheader("🌐 Live Status")
             p_cols = [c for c in final_df.columns if c.startswith('Port_')]
             p_order = ['Port_Live', 'Port_Committed', 'Port_Cancelled', 'Port_Others']
             actual_p_order = [c for c in p_order if c in p_cols]
@@ -157,9 +163,9 @@ try:
                     if col in df_qual.columns: styler_dq = styler_dq.background_gradient(subset=(daily_qual.index, col), cmap=cmap)
                 st.dataframe(styler_dq, use_container_width=True)
 
-            # 3. Daily Portal
+            # 3. Daily Live Status
             with cc:
-                st.markdown("#### 🌐 Portal Status")
+                st.markdown("#### 🌐 Live Status")
                 daily_port = ag2.groupby([ag2['Date_Parsed'].dt.date, 'P_Status']).size().unstack(fill_value=0)
                 p_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 actual_p = [c for c in p_order if c in daily_port.columns]
