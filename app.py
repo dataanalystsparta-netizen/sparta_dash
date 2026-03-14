@@ -138,26 +138,44 @@ try:
             st.dataframe(styler_p, use_container_width=True, height=500)
 
     with tab2:
-        # --- TAB 2: AGENT WISE DAILY PERFORMANCE ---
-        st.subheader("Detailed Agent Analysis")
-        selected_agent = st.selectbox("Select Agent:", all_advisors)
-        
-        if selected_agent:
-            ag1 = f1[f1['Advisor'] == selected_agent].copy()
-            ag2 = f2[f2['Advisor'] == selected_agent].copy()
+            # --- TAB 2: AGENT WISE DAILY PERFORMANCE ---
+            st.subheader("Detailed Agent Analysis")
+            selected_agent = st.selectbox("Select Agent:", all_advisors)
             
-            daily_apps = ag1.groupby(ag1['Date_Parsed'].dt.date).size().to_frame('Apps')
-            daily_qual = ag1.groupby([ag1['Date_Parsed'].dt.date, 'Q_Status']).size().unstack(fill_value=0)
-            daily_port = ag2.groupby([ag2['Date_Parsed'].dt.date, 'P_Status']).size().unstack(fill_value=0)
-            
-            daily_master = pd.concat([daily_apps, daily_qual, daily_port], axis=1).fillna(0)
-            daily_master.index.name = "Date"
-            
-            st.write(f"Showing performance for **{selected_agent}** from {start_date} to {end_date}")
-            st.dataframe(
-                daily_master.style.format("{:,.0f}").background_gradient(cmap='Blues'),
-                use_container_width=True, height=600
-            )
+            if selected_agent:
+                ag1 = f1[f1['Advisor'] == selected_agent].copy()
+                ag2 = f2[f2['Advisor'] == selected_agent].copy()
+                
+                # 1. Group by Date
+                daily_apps = ag1.groupby(ag1['Date_Parsed'].dt.date).size().to_frame('Apps')
+                
+                # 2. Group Quality & Portal and ADD PREFIXES to prevent duplicate column names
+                daily_qual = ag1.groupby([ag1['Date_Parsed'].dt.date, 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
+                daily_port = ag2.groupby([ag2['Date_Parsed'].dt.date, 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
+                
+                # 3. Merge Daily Stats
+                daily_master = pd.concat([daily_apps, daily_qual, daily_port], axis=1).fillna(0)
+                daily_master.index.name = "Date"
+                
+                # 4. Clean up column names for display AFTER concat
+                # This allows the styler to work on unique internal names
+                st.write(f"Showing performance for **{selected_agent}** from {start_date} to {end_date}")
+                
+                # Styling logic
+                styler_daily = daily_master.style.format("{:,.0f}")
+                
+                # Apply gradients using the prefixed names
+                if 'Apps' in daily_master.columns:
+                    styler_daily = styler_daily.background_gradient(cmap='Greens', subset=['Apps'])
+                
+                # Specific colors for Quality and Portal
+                for col in daily_master.columns:
+                    if 'Approved' in col or 'Live' in col:
+                        styler_daily = styler_daily.background_gradient(cmap='YlGn', subset=[col])
+                    elif 'Cancelled' in col:
+                        styler_daily = styler_daily.background_gradient(cmap='Reds', subset=[col])
+                
+                st.dataframe(styler_daily, use_container_width=True, height=600)
 
 except Exception as e:
     st.error(f"Error: {e}")
