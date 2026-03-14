@@ -25,17 +25,14 @@ def fetch_data():
     client = gspread.authorize(creds)
     ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
     
-    # Sparta Sheet (Apps & Quality)
     df1 = pd.DataFrame(ss.worksheet('Sparta').get_all_records())
     df1['Date_Parsed'] = pd.to_datetime(df1['Standardized_Date'], errors='coerce')
     df1['Advisor'] = df1['Advisor'].astype(str).str.strip().str.title()
     
-    # Sparta2 Sheet (Portal Status)
     df2 = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
     df2['Date_Parsed'] = pd.to_datetime(df2['Sale Date'], format='mixed', dayfirst=True, errors='coerce')
     df2['Advisor'] = df2['Agent'].astype(str).str.strip().str.title()
 
-    # Meta Data (Heartbeat)
     try:
         meta = ss.worksheet('Meta').get_all_values()
         last_sync = meta[0][1]
@@ -66,7 +63,6 @@ try:
     col_title.title("🚀 Sparta Performance & Portal Dashboard")
     col_time.markdown(f"<p class='last-updated'>Data Last Synced:<br><b>{last_sync}</b></p>", unsafe_allow_html=True)
 
-    # Global Filters (Apply to both tabs)
     col_a, col_b = st.columns(2)
     start_date = col_a.date_input("Start Date", datetime.date.today().replace(day=1))
     end_date = col_b.date_input("End Date", datetime.date.today())
@@ -77,14 +73,10 @@ try:
     f1['Q_Status'] = f1['Quality Status'].apply(map_quality)
     f2['P_Status'] = f2['Status'].apply(map_portal)
 
-    # CREATE TABS
     tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
     with tab1:
-        # --- TAB 1: MAIN DASHBOARD ---
         col_sort = st.columns([1, 1, 1.5])[2]
-        
-        # Grouping
         app_counts = f1.groupby('Advisor').size().to_frame('Total Apps')
         qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
         port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
@@ -92,13 +84,7 @@ try:
         all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
         master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
 
-        sort_options = {
-            "Total Apps (High to Low)": "Total Apps",
-            "Quality: Approved": "Qual_Approved",
-            "Quality: Cancelled": "Qual_Cancelled",
-            "Portal: Live": "Port_Live",
-            "Advisor Name (A-Z)": "index"
-        }
+        sort_options = {"Total Apps (High to Low)": "Total Apps", "Quality: Approved": "Qual_Approved", "Quality: Cancelled": "Qual_Cancelled", "Portal: Live": "Port_Live", "Advisor Name (A-Z)": "index"}
         available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master.columns]
         selected_sort_label = col_sort.selectbox("Master Sort (Aligns all tables):", available_sorts)
         
@@ -112,11 +98,9 @@ try:
 
         st.divider()
         c1, c2, c3 = st.columns([1, 1.8, 1.8])
-
         with c1:
             st.subheader("📊 Apps")
             st.dataframe(final_df[['Total Apps']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Apps')), use_container_width=True, height=500)
-
         with c2:
             st.subheader("✅ Quality Audit")
             q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
@@ -125,7 +109,6 @@ try:
             for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
                 if col in disp_qual.columns: styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap)
             st.dataframe(styler_q, use_container_width=True, height=500)
-
         with c3:
             st.subheader("🌐 Portal Status")
             p_cols = [c for c in final_df.columns if c.startswith('Port_')]
@@ -138,57 +121,57 @@ try:
             st.dataframe(styler_p, use_container_width=True, height=500)
 
     with tab2:
-            # --- TAB 2: AGENT WISE DAILY PERFORMANCE ---
-            st.subheader("👤 Detailed Agent Analysis")
-            selected_agent = st.selectbox("Select Agent:", all_advisors)
+        st.subheader("👤 Detailed Agent Analysis")
+        selected_agent = st.selectbox("Select Agent:", all_advisors)
+        
+        if selected_agent:
+            ag1 = f1[f1['Advisor'] == selected_agent].copy()
+            ag2 = f2[f2['Advisor'] == selected_agent].copy()
             
-            if selected_agent:
-                # Filter data for the specific agent
-                ag1 = f1[f1['Advisor'] == selected_agent].copy()
-                ag2 = f2[f2['Advisor'] == selected_agent].copy()
+            st.write(f"Daily breakdown for **{selected_agent}**")
+            st.divider()
+            ca, cb, cc = st.columns([1, 1.8, 1.8])
+
+            # 1. Daily Apps
+            with ca:
+                st.markdown("#### 📊 Daily Apps")
+                daily_apps = ag1.groupby(ag1['Date_Parsed'].dt.date).size().to_frame('Apps')
+                t_apps = daily_apps.sum().to_frame().T
+                t_apps.index = ["TOTAL"]
+                df_apps = pd.concat([daily_apps, t_apps])
+                st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Apps')), use_container_width=True)
+
+            # 2. Daily Quality
+            with cb:
+                st.markdown("#### ✅ Quality Audit")
+                daily_qual = ag1.groupby([ag1['Date_Parsed'].dt.date, 'Q_Status']).size().unstack(fill_value=0)
+                q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
+                actual_q = [c for c in q_order if c in daily_qual.columns]
+                dq_filtered = daily_qual[actual_q]
+                t_qual = dq_filtered.sum().to_frame().T
+                t_qual.index = ["TOTAL"]
+                df_qual = pd.concat([dq_filtered, t_qual])
                 
-                st.write(f"Showing daily breakdown for **{selected_agent}**")
-                st.divider()
-    
-                # Create 3 Columns just like the first tab
-                ca, cb, cc = st.columns([1, 1.8, 1.8])
-    
-                # 1. Daily Apps
-                with ca:
-                    st.markdown("#### 📊 Daily Apps")
-                    daily_apps = ag1.groupby(ag1['Date_Parsed'].dt.date).size().to_frame('Apps')
-                    st.dataframe(
-                        daily_apps.style.format("{:,.0f}").background_gradient(cmap='Greens'),
-                        use_container_width=True
-                    )
-    
-                # 2. Daily Quality
-                with cb:
-                    st.markdown("#### ✅ Quality Audit")
-                    daily_qual = ag1.groupby([ag1['Date_Parsed'].dt.date, 'Q_Status']).size().unstack(fill_value=0)
-                    # Keep column order consistent
-                    q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
-                    actual_q = [c for c in q_order if c in daily_qual.columns]
-                    
-                    styler_dq = daily_qual[actual_q].style.format("{:,.0f}")
-                    for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
-                        if col in daily_qual.columns:
-                            styler_dq = styler_dq.background_gradient(subset=[col], cmap=cmap)
-                    st.dataframe(styler_dq, use_container_width=True)
-    
-                # 3. Daily Portal
-                with cc:
-                    st.markdown("#### 🌐 Portal Status")
-                    daily_port = ag2.groupby([ag2['Date_Parsed'].dt.date, 'P_Status']).size().unstack(fill_value=0)
-                    # Keep column order consistent
-                    p_order = ['Live', 'Committed', 'Cancelled', 'Others']
-                    actual_p = [c for c in p_order if c in daily_port.columns]
-                    
-                    styler_dp = daily_port[actual_p].style.format("{:,.0f}")
-                    for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-                        if col in daily_port.columns:
-                            styler_dp = styler_dp.background_gradient(subset=[col], cmap=cmap)
-                    st.dataframe(styler_dp, use_container_width=True)
+                styler_dq = df_qual.style.format("{:,.0f}")
+                for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
+                    if col in df_qual.columns: styler_dq = styler_dq.background_gradient(subset=(daily_qual.index, col), cmap=cmap)
+                st.dataframe(styler_dq, use_container_width=True)
+
+            # 3. Daily Portal
+            with cc:
+                st.markdown("#### 🌐 Portal Status")
+                daily_port = ag2.groupby([ag2['Date_Parsed'].dt.date, 'P_Status']).size().unstack(fill_value=0)
+                p_order = ['Live', 'Committed', 'Cancelled', 'Others']
+                actual_p = [c for c in p_order if c in daily_port.columns]
+                dp_filtered = daily_port[actual_p]
+                t_port = dp_filtered.sum().to_frame().T
+                t_port.index = ["TOTAL"]
+                df_port = pd.concat([dp_filtered, t_port])
+                
+                styler_dp = df_port.style.format("{:,.0f}")
+                for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
+                    if col in df_port.columns: styler_dp = styler_dp.background_gradient(subset=(daily_port.index, col), cmap=cmap)
+                st.dataframe(styler_dp, use_container_width=True)
 
 except Exception as e:
     st.error(f"Error: {e}")
