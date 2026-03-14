@@ -10,9 +10,6 @@ st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 st.markdown("""
     <style>
     .block-container { max-width: 98%; padding-top: 2rem; }
-    [data-testid="stMetricValue"] { font-size: 24px; }
-    /* Ensure tables start at the exact same height */
-    [data-testid="stHorizontalBlock"] { align-items: flex-start; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -56,8 +53,7 @@ st.title("🚀 Sparta Performance & Portal Dashboard")
 try:
     df1, df2 = fetch_data()
 
-    # Filter Controls
-    col_a, col_b, col_c = st.columns([1, 1, 1.5])
+    col_a, col_b = st.columns(2)
     start_date = col_a.date_input("Start Date", datetime.date.today().replace(day=1))
     end_date = col_b.date_input("End Date", datetime.date.today())
 
@@ -69,84 +65,49 @@ try:
 
     # 1. Grouping
     app_counts = f1.groupby('Advisor').size().to_frame('Total Apps')
-    qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
-    port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
+    qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0)
+    port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0)
 
     # Master Merge
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
     master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
+    
+    # Insert visual separators (empty columns) to mimic the 3-table look
+    master.insert(1, " | ", "")
+    # Find where Quality ends to put the second separator
+    qual_end_idx = len(app_counts.columns) + len(qual_counts.columns) + 1
+    master.insert(qual_end_idx + 1, " || ", "")
 
-    # MASTER SORTING SYNC
-    sort_options = {
-        "Total Apps": "Total Apps",
-        "Quality: Approved": "Qual_Approved",
-        "Quality: Cancelled": "Qual_Cancelled",
-        "Portal: Live": "Port_Live",
-        "Advisor Name (A-Z)": "index"
-    }
-    
-    available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master.columns or v == "Total Apps"]
-    selected_sort_label = col_c.selectbox("Master Sort (Syncs all tables):", available_sorts)
-    
-    sort_col = sort_options[selected_sort_label]
-    if sort_col == "index":
-        master = master.sort_index()
-    else:
-        master = master.sort_values(sort_col, ascending=False)
+    master = master.sort_values('Total Apps', ascending=False)
 
     # Add Totals Row
-    totals = master.sum().to_frame().T
+    totals = master.select_dtypes(include=['number']).sum().to_frame().T
     totals.index = ["GRAND TOTAL"]
-    final_df = pd.concat([master, totals])
+    final_df = pd.concat([master, totals]).fillna("")
 
-    # --- RENDERING (With Native Sorting Disabled) ---
+    # --- RENDERING ---
     st.divider()
+    st.info("💡 Hint: Click any column header to sort. The entire row will stay synced.")
+    
     rows_to_style = final_df.index[:-1]
-    c1, c2, c3 = st.columns([1, 1.8, 1.8])
 
-    # Common config to disable local sorting
-    col_config = {"Advisor": st.column_config.Column(required=True)}
-
-    with c1:
-        st.subheader("📊 Apps")
-        st.dataframe(
-            final_df[['Total Apps']].style.format("{:,.0f}")
-            .background_gradient(cmap='Greens', subset=(rows_to_style, 'Total Apps')),
-            use_container_width=True, height=650, 
-            column_config={"index": "Advisor", "Total Apps": st.column_config.Column(sortable=False)}
-        )
-
-    with c2:
-        st.subheader("✅ Quality Audit")
-        q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
-        disp_qual = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
-        styler_q = disp_qual.style.format("{:,.0f}")
-        
-        # Build column config to disable sorting for all columns
-        q_config = {"index": "Advisor"}
-        for col in disp_qual.columns:
-            q_config[col] = st.column_config.Column(sortable=False)
+    # Setup styling logic
+    styler = final_df.style.format(precision=0, na_rep="")
+    
+    # 1. Apps Color
+    styler = styler.background_gradient(cmap='Greens', subset=(rows_to_style, 'Total Apps'))
+    
+    # 2. Quality Colors
+    for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
+        if col in final_df.columns:
+            styler = styler.background_gradient(subset=(rows_to_style, col), cmap=cmap)
             
-        for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
-            if col in disp_qual.columns:
-                styler_q = styler_q.background_gradient(subset=(rows_to_style, col), cmap=cmap)
-        st.dataframe(styler_q, use_container_width=True, height=650, column_config=q_config)
+    # 3. Portal Colors
+    for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
+        if col in final_df.columns:
+            styler = styler.background_gradient(subset=(rows_to_style, col), cmap=cmap)
 
-    with c3:
-        st.subheader("🌐 Portal Status")
-        p_cols = [c for c in final_df.columns if c.startswith('Port_')]
-        disp_port = final_df[p_cols].rename(columns=lambda x: x.replace('Port_', ''))
-        styler_p = disp_port.style.format("{:,.0f}")
-        
-        # Build column config to disable sorting for all columns
-        p_config = {"index": "Advisor"}
-        for col in disp_port.columns:
-            p_config[col] = st.column_config.Column(sortable=False)
-
-        for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-            if col in disp_port.columns:
-                styler_p = styler_p.background_gradient(subset=(rows_to_style, col), cmap=cmap)
-        st.dataframe(styler_p, use_container_width=True, height=650, column_config=p_config)
+    st.dataframe(styler, use_container_width=True, height=800)
 
 except Exception as e:
     st.warning("Adjust filters or check data source.")
