@@ -10,8 +10,8 @@ st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 st.markdown("""
     <style>
     .block-container { max-width: 98%; padding-top: 2rem; }
-    /* Style for the multi-index headers */
-    .dataframe thead tr:nth-child(1) th { background-color: #1E3A8A !important; color: white !important; }
+    /* Headers styling to match your original clean look */
+    h3 { margin-bottom: 0.5rem !important; font-size: 1.2rem !important; color: #1E3A8A; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -25,10 +25,12 @@ def fetch_data():
     client = gspread.authorize(creds)
     ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
     
+    # Sparta Sheet (Apps & Quality)
     df1 = pd.DataFrame(ss.worksheet('Sparta').get_all_records())
     df1['Standardized_Date'] = pd.to_datetime(df1['Standardized_Date'], format='mixed', dayfirst=True, errors='coerce')
     df1['Advisor'] = df1['Advisor'].astype(str).str.strip().str.title()
     
+    # Sparta2 Sheet (Portal Status)
     df2 = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
     df2['Sale Date'] = pd.to_datetime(df2['Sale Date'], format='mixed', dayfirst=True, errors='coerce')
     df2['Advisor'] = df2['Agent'].astype(str).str.strip().str.title()
@@ -55,7 +57,8 @@ st.title("🚀 Sparta Performance & Portal Dashboard")
 try:
     df1, df2 = fetch_data()
 
-    col_a, col_b = st.columns(2)
+    # Filter Controls row
+    col_a, col_b, col_c = st.columns([1, 1, 1.5])
     start_date = col_a.date_input("Start Date", datetime.date.today().replace(day=1))
     end_date = col_b.date_input("End Date", datetime.date.today())
 
@@ -66,49 +69,77 @@ try:
     f2['P_Status'] = f2['Status'].apply(map_portal)
 
     # 1. Grouping
-    app_counts = f1.groupby('Advisor').size().to_frame('Total')
-    qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0)
-    port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0)
+    app_counts = f1.groupby('Advisor').size().to_frame('Total Apps')
+    qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
+    port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
 
-    # 2. Add Top-Level Headers to prevent "Cancelled" overlap
-    app_counts.columns = pd.MultiIndex.from_product([['APPLICATIONS'], app_counts.columns])
-    qual_counts.columns = pd.MultiIndex.from_product([['QUALITY AUDIT'], qual_counts.columns])
-    port_counts.columns = pd.MultiIndex.from_product([['PORTAL STATUS'], port_counts.columns])
-
-    # Master Merge
+    # Master Merge for Syncing logic
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
     master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
-    master = master.sort_values(('APPLICATIONS', 'Total'), ascending=False)
 
-    # Add Totals Row
+    # 2. MASTER SYNC SORTING
+    sort_options = {
+        "Total Apps (High to Low)": "Total Apps",
+        "Quality: Approved": "Qual_Approved",
+        "Quality: Cancelled": "Qual_Cancelled",
+        "Portal: Live": "Port_Live",
+        "Advisor Name (A-Z)": "index"
+    }
+    
+    available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master.columns]
+    selected_sort_label = col_c.selectbox("Master Sort (Aligns all tables):", available_sorts)
+    
+    sort_col = sort_options[selected_sort_label]
+    if sort_col == "index":
+        master = master.sort_index()
+    else:
+        master = master.sort_values(sort_col, ascending=False)
+
+    # 3. Final Prepare with Totals Row (Excluded from Sort)
     totals = master.sum().to_frame().T
     totals.index = ["GRAND TOTAL"]
     final_df = pd.concat([master, totals])
-
-    # --- RENDERING ---
-    st.divider()
-    st.info("💡 Sync Active: Sorting one column moves the entire row for that Advisor.")
-    
     rows_to_style = final_df.index[:-1]
-    styler = final_df.style.format(precision=0)
 
-    # Apply Color Gradients using Multi-Index paths
-    # Apps
-    styler = styler.background_gradient(cmap='Greens', subset=(rows_to_style, ('APPLICATIONS', 'Total')))
-    
-    # Quality
-    for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
-        if ('QUALITY AUDIT', col) in final_df.columns:
-            styler = styler.background_gradient(subset=(rows_to_style, ('QUALITY AUDIT', col)), cmap=cmap)
-            
-    # Portal
-    for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-        if ('PORTAL STATUS', col) in final_df.columns:
-            styler = styler.background_gradient(subset=(rows_to_style, ('PORTAL STATUS', col)), cmap=cmap)
+    st.divider()
 
-    st.dataframe(styler, use_container_width=True, height=800)
+    # --- THREE-COLUMN DISPLAY ---
+    c1, c2, c3 = st.columns([1, 1.8, 1.8])
+
+    # Table 1: Apps
+    with c1:
+        st.subheader("📊 Apps")
+        st.dataframe(
+            final_df[['Total Apps']].style.format("{:,.0f}")
+            .background_gradient(cmap='Greens', subset=(rows_to_style, 'Total Apps')),
+            use_container_width=True, height=650
+        )
+
+    # Table 2: Quality Audit
+    with c2:
+        st.subheader("✅ Quality Audit")
+        q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
+        disp_qual = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
+        
+        styler_q = disp_qual.style.format("{:,.0f}")
+        for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
+            if col in disp_qual.columns:
+                styler_q = styler_q.background_gradient(subset=(rows_to_style, col), cmap=cmap)
+        st.dataframe(styler_q, use_container_width=True, height=650)
+
+    # Table 3: Portal Status
+    with c3:
+        st.subheader("🌐 Portal Status")
+        p_cols = [c for c in final_df.columns if c.startswith('Port_')]
+        disp_port = final_df[p_cols].rename(columns=lambda x: x.replace('Port_', ''))
+        
+        styler_p = disp_port.style.format("{:,.0f}")
+        for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
+            if col in disp_port.columns:
+                styler_p = styler_p.background_gradient(subset=(rows_to_style, col), cmap=cmap)
+        st.dataframe(styler_p, use_container_width=True, height=650)
 
 except Exception as e:
-    st.warning("Adjust filters or check data source.")
-    if st.checkbox("Show technical error"):
+    st.warning("Please adjust filters or check data connection.")
+    if st.checkbox("Show Technical Error"):
         st.error(e)
