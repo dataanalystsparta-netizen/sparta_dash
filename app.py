@@ -108,7 +108,7 @@ try:
 
     # Table 1: Apps
     with c1:
-        st.subheader("📊 Apps")
+        st.subheader("📊 Applications")
         st.dataframe(
             final_df[['Total Apps']].style.format("{:,.0f}")
             .background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Apps')),
@@ -117,7 +117,7 @@ try:
 
     # Table 2: Quality Audit
     with c2:
-        st.subheader("✅ Quality Audit")
+        st.subheader("✅ Quality Audit Status")
         q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
         # Optional: Define specific order for Quality if needed
         q_order = ['Qual_Approved', 'Qual_Rework', 'Qual_Cancelled', 'Qual_Others']
@@ -133,7 +133,7 @@ try:
 
     # Table 3: Portal Status (REARRANGED)
     with c3:
-        st.subheader("🌐 Portal Status")
+        st.subheader("🌐 Live Status")
         p_cols = [c for c in final_df.columns if c.startswith('Port_')]
         
         # DEFINED CUSTOM ORDER: Live, Committed, Cancelled, Others
