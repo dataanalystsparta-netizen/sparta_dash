@@ -24,10 +24,12 @@ def fetch_data():
     client = gspread.authorize(creds)
     ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
     
+    # Sparta Sheet (Apps & Quality)
     df1 = pd.DataFrame(ss.worksheet('Sparta').get_all_records())
     df1['Standardized_Date'] = pd.to_datetime(df1['Standardized_Date'], format='mixed', dayfirst=True, errors='coerce')
     df1['Advisor'] = df1['Advisor'].astype(str).str.strip().str.title()
     
+    # Sparta2 Sheet (Portal Status)
     df2 = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
     df2['Sale Date'] = pd.to_datetime(df2['Sale Date'], format='mixed', dayfirst=True, errors='coerce')
     df2['Advisor'] = df2['Agent'].astype(str).str.strip().str.title()
@@ -44,8 +46,8 @@ def map_quality(val):
 def map_portal(val):
     s = str(val).lower()
     if 'live' in s: return 'Live'
-    if any(x in s for x in ['can', 'rej']): return 'Cancelled'
     if 'com' in s: return 'Committed'
+    if any(x in s for x in ['can', 'rej']): return 'Cancelled'
     return 'Others'
 
 # --- UI START ---
@@ -96,7 +98,7 @@ try:
     totals_row.index = ["GRAND TOTAL"]
     final_df = pd.concat([master, totals_row])
     
-    # Track indices for color styling (exclude the grand total from gradients)
+    # Track indices for color styling
     advisor_indices = master.index
 
     st.divider()
@@ -104,6 +106,7 @@ try:
     # --- THREE-COLUMN DISPLAY ---
     c1, c2, c3 = st.columns([1, 1.8, 1.8])
 
+    # Table 1: Apps
     with c1:
         st.subheader("📊 Apps")
         st.dataframe(
@@ -112,10 +115,15 @@ try:
             use_container_width=True, height=650
         )
 
+    # Table 2: Quality Audit
     with c2:
         st.subheader("✅ Quality Audit")
         q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
-        disp_qual = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
+        # Optional: Define specific order for Quality if needed
+        q_order = ['Qual_Approved', 'Qual_Rework', 'Qual_Cancelled', 'Qual_Others']
+        actual_q_order = [c for c in q_order if c in q_cols] + [c for c in q_cols if c not in q_order]
+        
+        disp_qual = final_df[actual_q_order].rename(columns=lambda x: x.replace('Qual_', ''))
         
         styler_q = disp_qual.style.format("{:,.0f}")
         for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
@@ -123,10 +131,17 @@ try:
                 styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap)
         st.dataframe(styler_q, use_container_width=True, height=650)
 
+    # Table 3: Portal Status (REARRANGED)
     with c3:
         st.subheader("🌐 Portal Status")
         p_cols = [c for c in final_df.columns if c.startswith('Port_')]
-        disp_port = final_df[p_cols].rename(columns=lambda x: x.replace('Port_', ''))
+        
+        # DEFINED CUSTOM ORDER: Live, Committed, Cancelled, Others
+        p_order = ['Port_Live', 'Port_Committed', 'Port_Cancelled', 'Port_Others']
+        # Filter for only columns that exist in the current date range
+        actual_p_order = [c for c in p_order if c in p_cols]
+        
+        disp_port = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
         
         styler_p = disp_port.style.format("{:,.0f}")
         for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
