@@ -7,13 +7,15 @@ import datetime
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
-# Custom CSS to force the tables into a horizontal row and fix cell heights
+# Custom CSS for the 3-table horizontal layout and professional headers
 st.markdown("""
     <style>
     .block-container { max-width: 98%; padding-top: 2rem; }
-    .table-container { display: flex; flex-direction: row; gap: 20px; overflow-x: auto; align-items: flex-start; }
-    td, th { white-space: nowrap !important; font-size: 13px !important; padding: 4px 10px !important; }
-    th { background-color: #1E3A8A !important; color: white !important; }
+    .table-container { display: flex; flex-direction: row; gap: 25px; overflow-x: auto; align-items: flex-start; }
+    .table-box { border: 1px solid #e6e6e6; border-radius: 5px; padding: 10px; background-color: white; }
+    td, th { white-space: nowrap !important; font-size: 13px !important; padding: 6px 12px !important; border: 1px solid #f0f0f0 !important; }
+    th { background-color: #1E3A8A !important; color: white !important; text-align: center !important; }
+    .grand-total { font-weight: bold; background-color: #f8f9fa !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -25,21 +27,20 @@ def fetch_data():
         'https://www.googleapis.com/auth/drive'
     ])
     client = gspread.authorize(creds)
-    # Using your specific Sheet ID
     ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
     
-    # Load Sparta (Applications & Quality)
+    # Sparta Sheet (Apps & Quality)
     df1 = pd.DataFrame(ss.worksheet('Sparta').get_all_records())
     df1['Standardized_Date'] = pd.to_datetime(df1['Standardized_Date'], format='mixed', dayfirst=True, errors='coerce')
+    df1['Advisor'] = df1['Advisor'].astype(str).str.strip().str.title()
     
-    # Load Sparta2 (Portal Live Data)
+    # Sparta2 Sheet (Portal Status)
     df2 = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
     df2['Sale Date'] = pd.to_datetime(df2['Sale Date'], format='mixed', dayfirst=True, errors='coerce')
     df2['Advisor'] = df2['Agent'].astype(str).str.strip().str.title()
     
     return df1, df2
 
-# Mapping functions for Quality and Portal status
 def map_quality(val):
     s = str(val).lower()
     if any(x in s for x in ['appr', 'pass']): return 'Approved'
@@ -54,59 +55,82 @@ def map_portal(val):
     if 'com' in s: return 'Committed'
     return 'Others'
 
-# --- UI ---
+# --- UI START ---
 st.title("🚀 Sparta Performance & Portal Dashboard")
 
-df1, df2 = fetch_data()
+try:
+    df1, df2 = fetch_data()
 
-# Date Filter
-col1, col2 = st.columns(2)
-start_date = col1.date_input("Start Date", datetime.date.today().replace(day=1))
-end_date = col2.date_input("End Date", datetime.date.today())
+    # Date Range Selectors
+    col_a, col_b = st.columns(2)
+    with col_a:
+        start_date = st.date_input("Start Date", datetime.date.today().replace(day=1))
+    with col_b:
+        end_date = st.date_input("End Date", datetime.date.today())
 
-# Filtering logic
-f1 = df1[(df1['Standardized_Date'].dt.date >= start_date) & (df1['Standardized_Date'].dt.date <= end_date)].copy()
-f2 = df2[(df2['Sale Date'].dt.date >= start_date) & (df2['Sale Date'].dt.date <= end_date)].copy()
+    # Data Filtering
+    f1 = df1[(df1['Standardized_Date'].dt.date >= start_date) & (df1['Standardized_Date'].dt.date <= end_date)].copy()
+    f2 = df2[(df2['Sale Date'].dt.date >= start_date) & (df2['Sale Date'].dt.date <= end_date)].copy()
 
-f1['Q_Status'] = f1['Quality Status'].apply(map_quality)
-f2['P_Status'] = f2['Status'].apply(map_portal)
+    # Apply Logic Mappings
+    f1['Q_Status'] = f1['Quality Status'].apply(map_quality)
+    f2['P_Status'] = f2['Status'].apply(map_portal)
 
-# Create the 3 DataFrames
-app_counts = f1.groupby('Advisor').size().to_frame('Total Apps')
-qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0)
-port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0)
+    # 1. Total Apps Grouping
+    app_counts = f1.groupby('Advisor').size().to_frame('Total Apps')
 
-# Merge everything for a consistent Advisor list
-master = pd.DataFrame(index=sorted(f1['Advisor'].unique())).join([app_counts, qual_counts, port_counts]).fillna(0)
-master = master.sort_values('Total Apps', ascending=False)
+    # 2. Quality Status Grouping (Unique Names)
+    qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0)
+    qual_counts = qual_counts.add_prefix('Qual_')
 
-# Add Grand Total Row
-totals = master.sum().to_frame().T
-totals.index = ["GRAND TOTAL"]
-final_display = pd.concat([master, totals])
+    # 3. Portal Status Grouping (Unique Names)
+    port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0)
+    port_counts = port_counts.add_prefix('Port_')
 
-# --- DISPLAY TABLES WITH GRADIENTS ---
-st.write(f"Showing results for {len(f1)} applications and {len(f2)} portal entries.")
+    # Master Merge
+    all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
+    master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
+    master = master.sort_values('Total Apps', ascending=False)
 
-# 1. Applications Table (Green Gradient)
-html_apps = final_display[['Total Apps']].style.background_gradient(cmap='Greens').to_html()
+    # Add Totals Row
+    totals = master.sum().to_frame().T
+    totals.index = ["GRAND TOTAL"]
+    final_df = pd.concat([master, totals])
 
-# 2. Quality Table (Multi-Gradient)
-qual_cols = [c for c in ['Approved', 'Rework', 'Cancelled', 'Others'] if c in final_display.columns]
-html_qual = final_display[qual_cols].style.background_gradient(subset=['Approved'], cmap='Greens')\
-    .background_gradient(subset=['Rework'], cmap='YlOrBr')\
-    .background_gradient(subset=['Cancelled'], cmap='Reds').to_html()
+    # --- RENDER TABLES ---
+    
+    # Setup columns for the 3 tables (renaming them for clean display)
+    q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
+    p_cols = [c for c in final_df.columns if c.startswith('Port_')]
 
-# 3. Portal Table (Blue/Red Gradient)
-port_cols = [c for c in ['Live', 'Committed', 'Cancelled'] if c in final_display.columns]
-html_port = final_display[port_cols].style.background_gradient(subset=['Live'], cmap='Blues')\
-    .background_gradient(subset=['Cancelled'], cmap='Reds').to_html()
+    # Table 1: Apps (Green)
+    html_apps = final_df[['Total Apps']].style.background_gradient(cmap='Greens', subset=final_df.index[:-1]).to_html()
 
-# Render horizontally
-st.markdown(f"""
-<div class="table-container">
-    <div><b>Applications</b><br>{html_apps}</div>
-    <div><b>Quality Status</b><br>{html_qual}</div>
-    <div><b>Portal Status</b><br>{html_port}</div>
-</div>
-""", unsafe_allow_html=True)
+    # Table 2: Quality (Multi-colored)
+    # We rename columns here by removing 'Qual_' just for the UI
+    disp_qual = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
+    html_qual = disp_qual.style\
+        .background_gradient(subset=['Approved'], cmap='YlGn')\
+        .background_gradient(subset=['Cancelled'], cmap='Reds')\
+        .background_gradient(subset=['Rework'], cmap='YlOrBr').to_html()
+
+    # Table 3: Portal (Blue/Red)
+    disp_port = final_df[p_cols].rename(columns=lambda x: x.replace('Port_', ''))
+    html_port = disp_port.style\
+        .background_gradient(subset=['Live'], cmap='Blues')\
+        .background_gradient(subset=['Cancelled'], cmap='Reds')\
+        .background_gradient(subset=['Committed'], cmap='Purples').to_html()
+
+    st.divider()
+    
+    # Side-by-Side Display
+    st.markdown(f"""
+    <div class="table-container">
+        <div class="table-box"><b>📊 Total Applications</b><br><br>{html_apps}</div>
+        <div class="table-box"><b>✅ Quality Audit</b><br><br>{html_qual}</div>
+        <div class="table-box"><b>🌐 Portal Status</b><br><br>{html_port}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+except Exception as e:
+    st.error(f"Waiting for valid data or connection... Error: {e}")
