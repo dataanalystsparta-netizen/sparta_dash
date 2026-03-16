@@ -69,13 +69,13 @@ def map_portal(val):
     return 'Others'
 
 KPI_DEFS = {
-    "total_apps": "Total records extracted from the primary Sparta tracking sheet.",
-    "qual_approved": "Applications that have successfully passed through the Quality Audit process.",
+    "total_apps": "Total Applications.",
+    "qual_approved": "Applications that have successfully passed the Quality Audit process i.e. got Quality Approved.",
     "approv_rate": "Percentage of total applications that reached 'Approved' status.",
-    "commit_apps": "Total records logged in the Portal/Sparta2 tracking system.",
-    "commit_rate": "Efficiency of moving leads from Application to Portal stage.",
-    "total_live": "Records confirmed with a 'Live' status in the portal.",
-    "live_rate": "Conversion efficiency from Committed records to confirmed Live records."
+    "commit_apps": "Total applicaitons that got 'Committed'.",
+    "commit_rate": "Perentage of applications that got 'Committed'",
+    "total_live": "Total applications that got 'Live'.",
+    "live_rate": "Conversion rate from Committed applications to confirmed Live records."
 }
 
 # --- UI START ---
