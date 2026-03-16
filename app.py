@@ -87,7 +87,7 @@ try:
         master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
 
         sort_options = {
-            "Total Applications": "Total Apps", 
+            "Total Apps (High to Low)": "Total Apps", 
             "Quality: Approved": "Qual_Approved", 
             "Quality: Cancelled": "Qual_Cancelled", 
             "Live Status: Live": "Port_Live", 
@@ -136,6 +136,23 @@ try:
             ag1 = f1[f1['Advisor'] == selected_agent].copy()
             ag2 = f2[f2['Advisor'] == selected_agent].copy()
             
+            # --- METRIC CARDS ---
+            total_apps = len(ag1)
+            approved = len(ag1[ag1['Q_Status'] == 'Approved'])
+            total_port = len(ag2)
+            live = len(ag2[ag2['P_Status'] == 'Live'])
+            
+            approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
+            live_rate = f"{(live / total_port * 100):.1f}%" if total_port > 0 else "0.0%"
+            
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            mc1.metric("📝 Total Apps", f"{total_apps:,}")
+            mc2.metric("✅ Approval Rate", approval_rate)
+            mc3.metric("🌐 Total Live", f"{live:,}")
+            mc4.metric("🚀 Live Rate", live_rate)
+            
+            st.divider()
+            
             # --- VIEW TOGGLE ---
             view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
             
@@ -147,15 +164,13 @@ try:
                 ag2['Period'] = ag2['Date_Parsed'].dt.date
             
             st.write(f"**{view_mode}** breakdown for **{selected_agent}**")
-            st.divider()
+            
             ca, cb, cc = st.columns([1, 1.8, 1.8])
 
             # 1. Apps
             with ca:
                 st.markdown(f"#### 📊 {view_mode} Apps")
                 daily_apps = ag1.groupby('Period').size().to_frame('Apps')
-                
-                # Format index if Monthly
                 if view_mode == "Monthly":
                     daily_apps.index = daily_apps.index.strftime('%b %Y')
                     
@@ -172,7 +187,6 @@ try:
                 actual_q = [c for c in q_order if c in daily_qual.columns]
                 dq_filtered = daily_qual[actual_q]
                 
-                # Format index if Monthly
                 if view_mode == "Monthly":
                     dq_filtered.index = dq_filtered.index.strftime('%b %Y')
                     
@@ -181,7 +195,8 @@ try:
                 df_qual = pd.concat([dq_filtered, t_qual])
                 
                 styler_dq = df_qual.style.format("{:,.0f}")
-                for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr_r')]:
+                # --- COLOR SYNC: Wistia and Reds to match Main Page ---
+                for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
                     if col in df_qual.columns:
                         styler_dq = styler_dq.background_gradient(subset=(dq_filtered.index, col), cmap=cmap)
                 st.dataframe(styler_dq, use_container_width=True)
@@ -194,7 +209,6 @@ try:
                 actual_p = [c for c in p_order if c in daily_port.columns]
                 dp_filtered = daily_port[actual_p]
                 
-                # Format index if Monthly
                 if view_mode == "Monthly":
                     dp_filtered.index = dp_filtered.index.strftime('%b %Y')
                     
@@ -203,6 +217,7 @@ try:
                 df_port = pd.concat([dp_filtered, t_port])
                 
                 styler_dp = df_port.style.format("{:,.0f}")
+                # --- COLOR SYNC: Reds to match Main Page ---
                 for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
                     if col in df_port.columns:
                         styler_dp = styler_dp.background_gradient(subset=(dp_filtered.index, col), cmap=cmap)
