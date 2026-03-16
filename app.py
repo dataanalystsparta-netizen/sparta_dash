@@ -99,6 +99,29 @@ try:
     tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
     with tab1:
+        # --- TEAM-WIDE KPI CALCULATIONS ---
+        team_apps = len(f1)
+        team_approved = len(f1[f1['Q_Status'] == 'Approved'])
+        team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
+        
+        team_committed = len(f2)
+        team_commit_rate = f"{(team_committed / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
+        
+        team_live = len(f2[f2['P_Status'] == 'Live'])
+        team_live_rate = f"{(team_live / team_committed * 100):.1f}%" if team_committed > 0 else "0.0%"
+
+        # --- TEAM METRIC BAR ---
+        with st.container(border=True):
+            st.markdown("##### 🌏 Team Performance Snapshot")
+            tm1, tm2, tm3, tm4, tm5, tm6, tm7 = st.columns(7)
+            tm1.metric("📝 Tot. Applications", f"{team_apps:,}")
+            tm2.metric("✅ Quality Approv.", f"{team_approved:,}")
+            tm3.metric("📈 Approv. Rate", team_approv_rate)
+            tm4.metric("📦 Commit. Apps", f"{team_committed:,}")
+            tm5.metric("📋 Commit. Rate", team_commit_rate)
+            tm6.metric("🌐 Total Live", f"{team_live:,}")
+            tm7.metric("🚀 Live Rate", team_live_rate)
+
         sort_col = sort_options[selected_sort_label]
         master = master_base.sort_index() if sort_col == "index" else master_base.sort_values(sort_col, ascending=False)
         totals_row = master.sum().to_frame().T
@@ -131,14 +154,14 @@ try:
             st.dataframe(styler_p, use_container_width=True, height=500)
 
     with tab2:
-        st.subheader("👤 Agent Performance Breakdown")
+        st.subheader("👤 Detailed Agent Analysis")
         selected_agent = st.selectbox("Select Agent:", all_advisors)
         
         if selected_agent:
             ag1 = f1[f1['Advisor'] == selected_agent].copy()
             ag2 = f2[f2['Advisor'] == selected_agent].copy()
             
-            # --- CALCULATIONS ---
+            # --- AGENT CALCULATIONS ---
             total_apps = len(ag1)
             approved = len(ag1[ag1['Q_Status'] == 'Approved'])
             approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
