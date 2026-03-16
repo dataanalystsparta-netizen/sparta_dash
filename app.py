@@ -136,21 +136,25 @@ try:
             ag1 = f1[f1['Advisor'] == selected_agent].copy()
             ag2 = f2[f2['Advisor'] == selected_agent].copy()
             
-            # --- METRIC CARDS WITH SOFT BOUNDARY ---
+            # --- CALCULATIONS ---
             total_apps = len(ag1)
             approved = len(ag1[ag1['Q_Status'] == 'Approved'])
-            total_port = len(ag2)
+            
+            # Total Committed Applications is the sum of all Live Status categories
+            total_committed_apps = len(ag2) 
             live = len(ag2[ag2['P_Status'] == 'Live'])
             
             approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
-            live_rate = f"{(live / total_port * 100):.1f}%" if total_port > 0 else "0.0%"
+            live_rate = f"{(live / total_committed_apps * 100):.1f}%" if total_committed_apps > 0 else "0.0%"
             
+            # --- METRIC CARDS WITH 5 COLUMNS ---
             with st.container(border=True):
-                mc1, mc2, mc3, mc4 = st.columns(4)
+                mc1, mc2, mc3, mc4, mc5 = st.columns(5)
                 mc1.metric("📝 Total Applications", f"{total_apps:,}")
                 mc2.metric("✅ Approval Rate", approval_rate)
-                mc3.metric("🌐 Total Live", f"{live:,}")
-                mc4.metric("🚀 Live Rate", live_rate)
+                mc3.metric("📦 Total Committed Applications", f"{total_committed_apps:,}")
+                mc4.metric("🌐 Total Live", f"{live:,}")
+                mc5.metric("🚀 Live Rate", live_rate)
             
             st.divider()
             view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
@@ -166,7 +170,6 @@ try:
             ca, cb, cc = st.columns([1, 1.8, 1.8])
 
             with ca:
-                # Renamed "Monthly Apps" to "Monthly Applications"
                 st.markdown(f"#### 📊 {view_mode} Applications")
                 daily_apps = ag1.groupby('Period').size().to_frame('Applications')
                 if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
@@ -176,7 +179,7 @@ try:
                 st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), use_container_width=True)
 
             with cb:
-                st.markdown(f"#### ✅ Quality Audit")
+                st.markdown("#### ✅ Quality Audit")
                 daily_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
                 q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
                 actual_q = [c for c in q_order if c in daily_qual.columns]
@@ -192,7 +195,7 @@ try:
                 st.dataframe(styler_dq, use_container_width=True)
 
             with cc:
-                st.markdown(f"#### 🌐 Live Status")
+                st.markdown("#### 🌐 Live Status")
                 daily_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
                 p_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 actual_p = [c for c in p_order if c in daily_port.columns]
