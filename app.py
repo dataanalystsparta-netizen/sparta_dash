@@ -16,6 +16,9 @@ st.markdown("""
         color: #1E3A8A;
     }
    .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
+   /* Custom styling for compact metrics */
+   [data-testid="stMetricValue"] { font-size: 1.6rem !important; }
+   [data-testid="stMetricLabel"] { font-size: 0.85rem !important; white-space: nowrap; }
    </style>
    """, unsafe_allow_html=True)
 
@@ -146,22 +149,16 @@ try:
             live = len(ag2[ag2['P_Status'] == 'Live'])
             live_rate = f"{(live / total_committed_apps * 100):.1f}%" if total_committed_apps > 0 else "0.0%"
             
-            # --- UPDATED METRIC CARDS ---
+            # --- SINGLE LINE METRIC CARDS ---
             with st.container(border=True):
-                # Row 1: Quality Stats
-                r1_c1, r1_c2, r1_c3 = st.columns(3)
-                r1_c1.metric("📝 Total Applications", f"{total_apps:,}")
-                r1_c2.metric("✅ Quality Approved", f"{approved:,}")
-                r1_c3.metric("📈 Approval Rate", approval_rate)
-                
-                st.markdown("<div style='margin: 10px 0; border-top: 1px solid #f0f2f6;'></div>", unsafe_allow_html=True)
-                
-                # Row 2: Portal Stats
-                r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
-                r2_c1.metric("📦 Total Committed Apps", f"{total_committed_apps:,}")
-                r2_c2.metric("📋 Committed Rate", committed_rate)
-                r2_c3.metric("🌐 Total Live", f"{live:,}")
-                r2_c4.metric("🚀 Live Rate", live_rate)
+                m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
+                m1.metric("📝 Tot. Applications", f"{total_apps:,}")
+                m2.metric("✅ Quality Approv.", f"{approved:,}")
+                m3.metric("📈 Approv. Rate", approval_rate)
+                m4.metric("📦 Commit. Apps", f"{total_committed_apps:,}")
+                m5.metric("📋 Commit. Rate", committed_rate)
+                m6.metric("🌐 Total Live", f"{live:,}")
+                m7.metric("🚀 Live Rate", live_rate)
             
             st.divider()
             view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
