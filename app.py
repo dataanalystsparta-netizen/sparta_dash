@@ -64,13 +64,13 @@ def map_portal(val):
 
 # KPI Definitions for Tooltips
 KPI_DEFS = {
-    "total_apps": "Total records extracted from the primary Sparta tracking sheet.",
+    "total_apps": "Total applications.",
     "qual_approved": "Applications that have successfully passed through the Quality Audit process.",
-    "approv_rate": "Percentage of total applications that reached 'Approved' status.",
-    "commit_apps": "Total records logged in the Portal/Sparta2 tracking system.",
-    "commit_rate": "Efficiency of moving leads from Application to Portal stage.",
-    "total_live": "Records confirmed with a 'Live' status in the portal.",
-    "live_rate": "Conversion efficiency from Committed records to confirmed Live records."
+    "approv_rate": "Percentage of total applications that got 'Quality Approved'",
+    "commit_apps": "Total committed applications",
+    "commit_rate": "Percentage of applications that got 'Committed'",
+    "total_live": "Count of 'Live' customers",
+    "live_rate": "Conversion from Committed records to confirmed Live sales."
 }
 
 # --- UI START ---
