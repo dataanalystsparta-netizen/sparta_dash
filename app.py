@@ -10,8 +10,8 @@ st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 # --- MASTER AGENT LIST (LIVE AS OF TODAY) ---
 # Update this list as your team roster changes
 LIVE_AGENTS = [
-    "Anjali", "Aman", "Frogh", "Anshu", "Shailendra", 
-    "Saurabh", "Priyanka", "Deepak", "Rohan"
+    "Anshu","Anjali", "Aman", "Frogh", "Gaurav", "Guru", 
+    "Naveen", "Krrish", "Niki", "Manmeet","Sangeeta","Gungun"
 ]
 
 st.markdown("""
