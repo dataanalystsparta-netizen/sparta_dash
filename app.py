@@ -65,7 +65,8 @@ try:
     col_title.title("🚀 Sparta Performance & Live Status Dashboard")
     col_time.markdown(f"<p class='last-updated'>Data Last Synced:<br><b>{last_sync}</b></p>", unsafe_allow_html=True)
 
-    col_a, col_b = st.columns(2)
+    # --- UPDATED: ONE-LINE CONTROL BAR ---
+    col_a, col_b, col_c = st.columns([1, 1, 1.5])
     start_date = col_a.date_input("Start Date", datetime.date.today().replace(day=1))
     end_date = col_b.date_input("End Date", datetime.date.today())
 
@@ -75,29 +76,28 @@ try:
     f1['Q_Status'] = f1['Quality Status'].apply(map_quality)
     f2['P_Status'] = f2['Status'].apply(map_portal)
 
+    # Prepare sorting data early to populate the selector in the control bar
+    all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
+    app_counts = f1.groupby('Advisor').size().to_frame('Total Apps')
+    qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
+    port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
+    master_base = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
+
+    sort_options = {
+        "Total Apps (High to Low)": "Total Apps", 
+        "Quality: Approved": "Qual_Approved", 
+        "Quality: Cancelled": "Qual_Cancelled", 
+        "Live Status: Live": "Port_Live", 
+        "Advisor Name (A-Z)": "index"
+    }
+    available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master_base.columns]
+    selected_sort_label = col_c.selectbox("Master Sort (Aligns all tables):", available_sorts)
+
     tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
     with tab1:
-        col_sort = st.columns([1, 1, 1.5])[2]
-        app_counts = f1.groupby('Advisor').size().to_frame('Total Apps')
-        qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
-        port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
-
-        all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
-        master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
-
-        sort_options = {
-            "Total Apps (High to Low)": "Total Apps", 
-            "Quality: Approved": "Qual_Approved", 
-            "Quality: Cancelled": "Qual_Cancelled", 
-            "Live Status: Live": "Port_Live", 
-            "Advisor Name (A-Z)": "index"
-        }
-        available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master.columns]
-        selected_sort_label = col_sort.selectbox("Master Sort (Aligns all tables):", available_sorts)
-        
         sort_col = sort_options[selected_sort_label]
-        master = master.sort_index() if sort_col == "index" else master.sort_values(sort_col, ascending=False)
+        master = master_base.sort_index() if sort_col == "index" else master_base.sort_values(sort_col, ascending=False)
 
         totals_row = master.sum().to_frame().T
         totals_row.index = ["GRAND TOTAL"]
@@ -136,7 +136,6 @@ try:
             ag1 = f1[f1['Advisor'] == selected_agent].copy()
             ag2 = f2[f2['Advisor'] == selected_agent].copy()
             
-            # --- METRIC CARDS ---
             total_apps = len(ag1)
             approved = len(ag1[ag1['Q_Status'] == 'Approved'])
             total_port = len(ag2)
@@ -152,8 +151,6 @@ try:
             mc4.metric("🚀 Live Rate", live_rate)
             
             st.divider()
-            
-            # --- VIEW TOGGLE ---
             view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
             
             if view_mode == "Monthly":
@@ -164,60 +161,44 @@ try:
                 ag2['Period'] = ag2['Date_Parsed'].dt.date
             
             st.write(f"**{view_mode}** breakdown for **{selected_agent}**")
-            
             ca, cb, cc = st.columns([1, 1.8, 1.8])
 
-            # 1. Apps
             with ca:
                 st.markdown(f"#### 📊 {view_mode} Apps")
                 daily_apps = ag1.groupby('Period').size().to_frame('Apps')
-                if view_mode == "Monthly":
-                    daily_apps.index = daily_apps.index.strftime('%b %Y')
-                    
+                if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
                 t_apps = daily_apps.sum().to_frame().T
                 t_apps.index = ["TOTAL"]
                 df_apps = pd.concat([daily_apps, t_apps])
                 st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Apps')), use_container_width=True)
 
-            # 2. Quality
             with cb:
                 st.markdown(f"#### ✅ Quality Audit")
                 daily_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
                 q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
                 actual_q = [c for c in q_order if c in daily_qual.columns]
                 dq_filtered = daily_qual[actual_q]
-                
-                if view_mode == "Monthly":
-                    dq_filtered.index = dq_filtered.index.strftime('%b %Y')
-                    
+                if view_mode == "Monthly": dq_filtered.index = dq_filtered.index.strftime('%b %Y')
                 t_qual = dq_filtered.sum().to_frame().T
                 t_qual.index = ["TOTAL"]
                 df_qual = pd.concat([dq_filtered, t_qual])
-                
                 styler_dq = df_qual.style.format("{:,.0f}")
-                # --- COLOR SYNC: Wistia and Reds to match Main Page ---
                 for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
                     if col in df_qual.columns:
                         styler_dq = styler_dq.background_gradient(subset=(dq_filtered.index, col), cmap=cmap)
                 st.dataframe(styler_dq, use_container_width=True)
 
-            # 3. Live Status
             with cc:
                 st.markdown(f"#### 🌐 Live Status")
                 daily_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
                 p_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 actual_p = [c for c in p_order if c in daily_port.columns]
                 dp_filtered = daily_port[actual_p]
-                
-                if view_mode == "Monthly":
-                    dp_filtered.index = dp_filtered.index.strftime('%b %Y')
-                    
+                if view_mode == "Monthly": dp_filtered.index = dp_filtered.index.strftime('%b %Y')
                 t_port = dp_filtered.sum().to_frame().T
                 t_port.index = ["TOTAL"]
                 df_port = pd.concat([dp_filtered, t_port])
-                
                 styler_dp = df_port.style.format("{:,.0f}")
-                # --- COLOR SYNC: Reds to match Main Page ---
                 for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
                     if col in df_port.columns:
                         styler_dp = styler_dp.background_gradient(subset=(dp_filtered.index, col), cmap=cmap)
