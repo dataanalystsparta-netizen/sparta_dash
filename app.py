@@ -10,26 +10,6 @@ import datetime
 # Provide the URL or local file path to your logo here
 
 # --- UI START ---
-try:
-    df1, df2, last_sync = fetch_data()
-
-    col_title, col_time = st.columns([3, 1])
-    
-    # Replacing the Rocket Emoji with a 4x larger logo image
-    # Adjust width=200 to get the exact size you need (Standard logos are ~50)
-    with col_title:
-        st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d5ac6c503.png", width=250)
-        st.title("Sparta Performance & Live Status Dashboard")
-        
-    col_time.markdown(f"<p class='last-updated'>Data Last Synced:<br><b>{last_sync}</b></p>", unsafe_allow_html=True)
-
-    # ... (Rest of the code remains exactly the same)
-
-
-
-
-
-st.logo("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d5ac6c503.png")
 
 
 # --- CONFIG & STYLING ---
