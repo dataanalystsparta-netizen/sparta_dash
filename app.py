@@ -8,12 +8,14 @@ import datetime
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
 st.markdown("""
-    <style>
-    .block-container { max-width: 98%; padding-top: 2rem; }
-    h3 { margin-bottom: 0.5rem !important; font-size: 1.2rem !important; color: #1E3A8A; }
-    .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
-    </style>
-    """, unsafe_allow_html=True)
+   <style>
+   .block-container { max-width: 98%; padding-top: 2rem; }
+    h3 {
+margin-bottom: 0.5rem !important; font-size: 1.2rem !important; color: #1E3A8A;
+}
+   .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
+   </style>
+   """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=300)
 def fetch_data():
@@ -112,7 +114,8 @@ try:
             q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
             disp_qual = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
             styler_q = disp_qual.style.format("{:,.0f}")
-            for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
+            # --- COLOR UPDATE: 'Reds' for brighter red, 'Wistia' for bright yellow ---
+            for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
                 if col in disp_qual.columns: styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap)
             st.dataframe(styler_q, use_container_width=True, height=500)
         with c3:
@@ -122,6 +125,7 @@ try:
             actual_p_order = [c for c in p_order if c in p_cols]
             disp_port = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
             styler_p = disp_port.style.format("{:,.0f}")
+            # --- COLOR UPDATE: 'Reds' for brighter red ---
             for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
                 if col in disp_port.columns: styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap)
             st.dataframe(styler_p, use_container_width=True, height=500)
@@ -159,8 +163,10 @@ try:
                 df_qual = pd.concat([dq_filtered, t_qual])
                 
                 styler_dq = df_qual.style.format("{:,.0f}")
-                for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr')]:
-                    if col in df_qual.columns: styler_dq = styler_dq.background_gradient(subset=(daily_qual.index, col), cmap=cmap)
+                # --- COLOR UPDATE: 'Reds' for brighter red, 'Wistia' for bright yellow ---
+                for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
+                    if col in df_qual.columns:
+                        styler_dq = styler_dq.background_gradient(subset=(daily_qual.index, col), cmap=cmap)
                 st.dataframe(styler_dq, use_container_width=True)
 
             # 3. Daily Live Status
@@ -175,8 +181,10 @@ try:
                 df_port = pd.concat([dp_filtered, t_port])
                 
                 styler_dp = df_port.style.format("{:,.0f}")
+                # --- COLOR UPDATE: 'Reds' for brighter red ---
                 for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-                    if col in df_port.columns: styler_dp = styler_dp.background_gradient(subset=(daily_port.index, col), cmap=cmap)
+                    if col in df_port.columns:
+                        styler_dp = styler_dp.background_gradient(subset=(daily_port.index, col), cmap=cmap)
                 st.dataframe(styler_dp, use_container_width=True)
 
 except Exception as e:
