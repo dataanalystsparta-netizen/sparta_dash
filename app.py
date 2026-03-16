@@ -98,7 +98,6 @@ try:
     with tab1:
         sort_col = sort_options[selected_sort_label]
         master = master_base.sort_index() if sort_col == "index" else master_base.sort_values(sort_col, ascending=False)
-
         totals_row = master.sum().to_frame().T
         totals_row.index = ["GRAND TOTAL"]
         final_df = pd.concat([master, totals_row])
@@ -139,22 +138,30 @@ try:
             # --- CALCULATIONS ---
             total_apps = len(ag1)
             approved = len(ag1[ag1['Q_Status'] == 'Approved'])
-            
-            # Total Committed Applications is the sum of all Live Status categories
-            total_committed_apps = len(ag2) 
-            live = len(ag2[ag2['P_Status'] == 'Live'])
-            
             approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
+            
+            total_committed_apps = len(ag2) 
+            committed_rate = f"{(total_committed_apps / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
+            
+            live = len(ag2[ag2['P_Status'] == 'Live'])
             live_rate = f"{(live / total_committed_apps * 100):.1f}%" if total_committed_apps > 0 else "0.0%"
             
-            # --- METRIC CARDS WITH 5 COLUMNS ---
+            # --- UPDATED METRIC CARDS ---
             with st.container(border=True):
-                mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-                mc1.metric("📝 Total Applications", f"{total_apps:,}")
-                mc2.metric("✅ Approval Rate", approval_rate)
-                mc3.metric("📦 Total Committed Applications", f"{total_committed_apps:,}")
-                mc4.metric("🌐 Total Live", f"{live:,}")
-                mc5.metric("🚀 Live Rate", live_rate)
+                # Row 1: Quality Stats
+                r1_c1, r1_c2, r1_c3 = st.columns(3)
+                r1_c1.metric("📝 Total Applications", f"{total_apps:,}")
+                r1_c2.metric("✅ Quality Approved", f"{approved:,}")
+                r1_c3.metric("📈 Approval Rate", approval_rate)
+                
+                st.markdown("<div style='margin: 10px 0; border-top: 1px solid #f0f2f6;'></div>", unsafe_allow_html=True)
+                
+                # Row 2: Portal Stats
+                r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
+                r2_c1.metric("📦 Total Committed Apps", f"{total_committed_apps:,}")
+                r2_c2.metric("📋 Committed Rate", committed_rate)
+                r2_c3.metric("🌐 Total Live", f"{live:,}")
+                r2_c4.metric("🚀 Live Rate", live_rate)
             
             st.divider()
             view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
