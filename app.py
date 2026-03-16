@@ -8,6 +8,7 @@ import datetime
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
 # --- MASTER AGENT LIST (LIVE AS OF TODAY) ---
+# Update this list as your team roster changes
 LIVE_AGENTS = [
     "Anjali", "Aman", "Frogh", "Anshu", "Shailendra", 
     "Saurabh", "Priyanka", "Deepak", "Rohan"
@@ -114,7 +115,7 @@ try:
     tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
     with tab1:
-        # (Team Overview remains same for consistency)
+        # (Team Overview metrics and tables remain unchanged)
         team_apps = len(f1)
         team_approved = len(f1[f1['Q_Status'] == 'Approved'])
         team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
@@ -167,23 +168,21 @@ try:
     with tab2:
         st.subheader("👤 Detailed Agent Analysis")
         
-        # --- VERTICAL STACKED FILTERING ---
+        # --- FIXED LIST FILTERING ---
+        col_check, col_select = st.columns([1, 3])
+        show_live_only = col_check.checkbox("Show current roster only", value=False)
+        
+        # Format the hardcoded list to match Title Case for comparison
         formatted_live = [name.strip().title() for name in LIVE_AGENTS]
         
-        # Selectbox first
-        selected_agent = st.selectbox("Select Agent:", all_advisors, key="agent_select")
-        
-        # Checkbox directly underneath
-        show_live_only = st.checkbox("Show current roster only", value=False)
-        
-        # If checkbox is on, filter the list. If selected agent isn't in filtered list, it resets to first in list.
         if show_live_only:
             dropdown_list = [name for name in all_advisors if name in formatted_live]
-            # Use a dummy key or rerun logic to update the selectbox if needed
-            if selected_agent not in dropdown_list and len(dropdown_list) > 0:
-                selected_agent = dropdown_list[0]
-                st.rerun() 
+            if not dropdown_list: dropdown_list = all_advisors # Fallback
+        else:
+            dropdown_list = all_advisors
 
+        selected_agent = col_select.selectbox("Select Agent:", dropdown_list)
+        
         if selected_agent:
             ag1 = f1[f1['Advisor'] == selected_agent].copy()
             ag2 = f2[f2['Advisor'] == selected_agent].copy()
@@ -262,4 +261,3 @@ try:
 
 except Exception as e:
     st.error(f"Error: {e}")
-    
