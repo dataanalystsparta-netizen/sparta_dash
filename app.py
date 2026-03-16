@@ -8,7 +8,6 @@ import datetime
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
 # --- MASTER AGENT LIST (LIVE AS OF TODAY) ---
-# Update this list as your team roster changes
 LIVE_AGENTS = [
     "Anshu","Anjali", "Aman", "Frogh", "Gaurav", "Guru", 
     "Naveen", "Krrish", "Niki", "Manmeet","Sangeeta","Gungun"
@@ -97,11 +96,9 @@ try:
     f2['P_Status'] = f2['Status'].apply(map_portal)
 
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
-    app_counts = f1.groupby('Advisor').size().to_frame('Total Applications')
-    qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
-    port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
-    master_base = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
+    formatted_live = [name.strip().title() for name in LIVE_AGENTS]
 
+    # --- MASTER SORT SELECTBOX ---
     sort_options = {
         "Total Applications (High to Low)": "Total Applications", 
         "Quality: Approved": "Qual_Approved", 
@@ -109,19 +106,39 @@ try:
         "Live Status: Live": "Port_Live", 
         "Advisor Name (A-Z)": "index"
     }
+    
+    # Pre-calculating master_base here for the sort selector to work
+    app_counts_base = f1.groupby('Advisor').size().to_frame('Total Applications')
+    qual_counts_base = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
+    port_counts_base = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
+    master_base = pd.DataFrame(index=all_advisors).join([app_counts_base, qual_counts_base, port_counts_base]).fillna(0)
+
     available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master_base.columns]
     selected_sort_label = col_c.selectbox("Master Sort (Aligns all tables):", available_sorts)
 
     tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
     with tab1:
-        # (Team Overview metrics and tables remain unchanged)
-        team_apps = len(f1)
-        team_approved = len(f1[f1['Q_Status'] == 'Approved'])
+        # --- NEW ROSTER FILTER FOR TEAM OVERVIEW ---
+        show_live_team = st.checkbox("Show current roster only", value=False, key="team_roster_filter")
+        
+        # Apply filtering to the localized dataframes for this tab
+        if show_live_team:
+            f1_team = f1[f1['Advisor'].isin(formatted_live)].copy()
+            f2_team = f2[f2['Advisor'].isin(formatted_live)].copy()
+            active_advisors_team = [name for name in all_advisors if name in formatted_live]
+        else:
+            f1_team = f1.copy()
+            f2_team = f2.copy()
+            active_advisors_team = all_advisors
+
+        # --- TEAM METRICS (Filtered) ---
+        team_apps = len(f1_team)
+        team_approved = len(f1_team[f1_team['Q_Status'] == 'Approved'])
         team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
-        team_committed = len(f2)
+        team_committed = len(f2_team)
         team_commit_rate = f"{(team_committed / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
-        team_live = len(f2[f2['P_Status'] == 'Live'])
+        team_live = len(f2_team[f2_team['P_Status'] == 'Live'])
         team_live_rate = f"{(team_live / team_committed * 100):.1f}%" if team_committed > 0 else "0.0%"
 
         with st.container(border=True):
@@ -134,8 +151,16 @@ try:
             tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
             tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
 
+        # --- TEAM TABLES (Filtered) ---
+        app_counts = f1_team.groupby('Advisor').size().to_frame('Total Applications')
+        qual_counts = f1_team.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
+        port_counts = f2_team.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
+        
+        tab_master = pd.DataFrame(index=active_advisors_team).join([app_counts, qual_counts, port_counts]).fillna(0)
+        
         sort_col = sort_options[selected_sort_label]
-        master = master_base.sort_index() if sort_col == "index" else master_base.sort_values(sort_col, ascending=False)
+        master = tab_master.sort_index() if sort_col == "index" else tab_master.sort_values(sort_col, ascending=False)
+        
         totals_row = master.sum().to_frame().T
         totals_row.index = ["GRAND TOTAL"]
         final_df = pd.concat([master, totals_row])
@@ -167,17 +192,12 @@ try:
 
     with tab2:
         st.subheader("👤 Detailed Agent Analysis")
-        
-        # --- FIXED LIST FILTERING ---
         col_check, col_select = st.columns([1, 3])
-        show_live_only = col_check.checkbox("Show current roster only", value=False)
-        
-        # Format the hardcoded list to match Title Case for comparison
-        formatted_live = [name.strip().title() for name in LIVE_AGENTS]
+        show_live_only = col_check.checkbox("Show current roster only", value=False, key="individual_roster_filter")
         
         if show_live_only:
             dropdown_list = [name for name in all_advisors if name in formatted_live]
-            if not dropdown_list: dropdown_list = all_advisors # Fallback
+            if not dropdown_list: dropdown_list = all_advisors
         else:
             dropdown_list = all_advisors
 
