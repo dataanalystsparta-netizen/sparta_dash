@@ -151,6 +151,7 @@ try:
         port_counts = f2_team.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
         
         tab_master = pd.DataFrame(index=active_advisors_team).join([app_counts, qual_counts, port_counts]).fillna(0)
+        
         sort_col = sort_options[selected_sort_label]
         master = tab_master.sort_index() if sort_col == "index" else tab_master.sort_values(sort_col, ascending=False)
         
@@ -161,6 +162,7 @@ try:
 
         st.divider()
         c1, c2, c3 = st.columns([1, 1.8, 1.8])
+        
         with c1:
             st.subheader("📊 Applications")
             st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
@@ -169,47 +171,33 @@ try:
             st.subheader("✅ Quality Audit")
             q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
             disp_qual = final_df[q_cols].copy()
-            # Calculate percentages for each status
+            # Calculate percentages for Quality based on Total Applications
             for col in disp_qual.columns:
-                clean_name = col.replace('Qual_', '')
-                disp_qual[f"{clean_name} %"] = (disp_qual[col] / final_df['Total Applications'] * 100).fillna(0)
+                p_col = col.replace('Qual_', '')
+                # Apply format: Count (Percentage%)
+                disp_qual[p_col] = disp_qual.apply(lambda row: f"{row[col]:,.0f} ({(row[col]/final_df.loc[row.name, 'Total Applications']*100 if final_df.loc[row.name, 'Total Applications'] > 0 else 0):.1f}%)", axis=1)
             
-            # Reorder columns to show Count next to Percentage
-            ordered_q = []
-            for col in ['Qual_Approved', 'Qual_Rework', 'Qual_Cancelled']:
-                if col in disp_qual.columns:
-                    ordered_q.extend([col, col.replace('Qual_', '') + " %"])
-            
-            styler_q = disp_qual[ordered_q].rename(columns=lambda x: x.replace('Qual_', '')).style.format(
-                {col: "{:,.0f}" if "%" not in col else "{:.1f}%" for col in disp_qual.columns}
-            )
-            for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
-                if col in disp_qual.columns: styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap)
-            st.dataframe(styler_q, use_container_width=True, height=500)
+            final_qual = disp_qual[[c.replace('Qual_', '') for c in q_cols]]
+            st.dataframe(final_qual, use_container_width=True, height=500)
             
         with c3:
             st.subheader("🌐 Live Status")
             p_cols = [c for c in final_df.columns if c.startswith('Port_')]
             disp_port = final_df[p_cols].copy()
-            # Calculate percentages for Live status
-            for col in disp_port.columns:
-                clean_name = col.replace('Port_', '')
-                disp_port[f"{clean_name} %"] = (disp_port[col] / final_df['Total Applications'] * 100).fillna(0)
+            # Calculate percentages for Live Status based on Port_Committed (which is 'Committed' in df)
+            # If Committed column doesn't exist yet, we default to Total Apps for safety
+            base_col = 'Port_Committed' if 'Port_Committed' in final_df.columns else 'Total Applications'
             
-            ordered_p = []
-            for col in ['Port_Live', 'Port_Committed', 'Port_Cancelled']:
-                if col in disp_port.columns:
-                    ordered_p.extend([col, col.replace('Port_', '') + " %"])
-
-            styler_p = disp_port[ordered_p].rename(columns=lambda x: x.replace('Port_', '')).style.format(
-                {col: "{:,.0f}" if "%" not in col else "{:.1f}%" for col in disp_port.columns}
-            )
-            for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-                if col in disp_port.columns: styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap)
-            st.dataframe(styler_p, use_container_width=True, height=500)
+            for col in disp_port.columns:
+                p_col = col.replace('Port_', '')
+                disp_port[p_col] = disp_port.apply(lambda row: f"{row[col]:,.0f} ({(row[col]/final_df.loc[row.name, base_col]*100 if final_df.loc[row.name, base_col] > 0 else 0):.1f}%)", axis=1)
+            
+            p_order = ['Live', 'Committed', 'Cancelled', 'Others']
+            actual_p_order = [c for c in p_order if c in disp_port.columns]
+            st.dataframe(disp_port[actual_p_order], use_container_width=True, height=500)
 
     with tab2:
-        # Tab 2 remains exactly as in v3.1
+        # Tab 2 remains exactly as it was in v3.1
         st.subheader("👤 Detailed Agent Analysis")
         col_check, col_select = st.columns([1, 3])
         show_live_only = col_check.checkbox("Show current roster only", value=False, key="individual_roster_filter")
