@@ -68,12 +68,22 @@ def map_portal(val):
     if any(x in s for x in ['can', 'rej']): return 'Cancelled'
     return 'Others'
 
+def format_with_pct(val_df, total_series):
+    """Helper to add (XX%) while keeping original numeric structure for gradients."""
+    display_df = val_df.copy()
+    for col in val_df.columns:
+        # Calculate percentage against the total column
+        pcts = (val_df[col] / total_series * 100).fillna(0)
+        # Convert to string format: Count (Percentage%)
+        display_df[col] = val_df[col].apply(lambda x: f"{int(x):,}") + " (" + pcts.map("{:.1f}%".format) + ")"
+    return display_df
+
 KPI_DEFS = {
     "total_apps": "Total Applications.",
-    "qual_approved": "Applications that have successfully passed the Quality Audit process i.e. got Quality Approved.",
+    "qual_approved": "Applications that have successfully passed the Quality Audit process.",
     "approv_rate": "Percentage of total applications that reached 'Approved' status.",
-    "commit_apps": "Total applicaitons that got 'Committed'.",
-    "commit_rate": "Perentage of applications that got 'Committed'",
+    "commit_apps": "Total applications that got 'Committed'.",
+    "commit_rate": "Percentage of applications that got 'Committed'",
     "total_live": "Total applications that got 'Live'.",
     "live_rate": "Conversion rate from Committed applications to confirmed Live records."
 }
@@ -83,8 +93,6 @@ try:
     df1, df2, last_sync = fetch_data()
 
     col_title, col_time = st.columns([3, 1])
-    
-    # 4X LARGE LOGO IMPLEMENTATION (Replacing Rocket Emoji)
     with col_title:
         st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d5ac6c503.png", width=280)
         st.title("Sparta Performance & Live Status Dashboard")
@@ -104,7 +112,6 @@ try:
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
     formatted_live = [name.strip().title() for name in LIVE_AGENTS]
 
-    # --- MASTER SORT SELECTBOX ---
     sort_options = {
         "Total Applications (High to Low)": "Total Applications", 
         "Quality: Approved": "Qual_Approved", 
@@ -158,7 +165,6 @@ try:
         port_counts = f2_team.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
         
         tab_master = pd.DataFrame(index=active_advisors_team).join([app_counts, qual_counts, port_counts]).fillna(0)
-        
         sort_col = sort_options[selected_sort_label]
         master = tab_master.sort_index() if sort_col == "index" else tab_master.sort_values(sort_col, ascending=False)
         
@@ -172,42 +178,49 @@ try:
         with c1:
             st.subheader("📊 Applications")
             st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
+        
         with c2:
             st.subheader("✅ Quality Audit")
             q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
-            disp_qual = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
-            styler_q = disp_qual.style.format("{:,.0f}")
+            # Numeric DF for Gradients
+            disp_qual_num = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
+            # String DF with percentages
+            disp_qual_str = format_with_pct(disp_qual_num, final_df['Total Applications'])
+            
+            styler_q = disp_qual_str.style
             for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
-                if col in disp_qual.columns: styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap)
+                if col in disp_qual_num.columns:
+                    # Using gmap to apply numeric gradients to string content
+                    styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_qual_num[col])
             st.dataframe(styler_q, use_container_width=True, height=500)
+            
         with c3:
             st.subheader("🌐 Live Status")
             p_cols = [c for c in final_df.columns if c.startswith('Port_')]
             p_order = ['Port_Live', 'Port_Committed', 'Port_Cancelled', 'Port_Others']
             actual_p_order = [c for c in p_order if c in p_cols]
-            disp_port = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
-            styler_p = disp_port.style.format("{:,.0f}")
+            # Numeric DF for Gradients
+            disp_port_num = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
+            # String DF with percentages
+            disp_port_str = format_with_pct(disp_port_num, final_df['Total Applications'])
+            
+            styler_p = disp_port_str.style
             for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-                if col in disp_port.columns: styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap)
+                if col in disp_port_num.columns:
+                    # Using gmap to apply numeric gradients to string content
+                    styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_port_num[col])
             st.dataframe(styler_p, use_container_width=True, height=500)
 
     with tab2:
         st.subheader("👤 Detailed Agent Analysis")
         col_check, col_select = st.columns([1, 3])
         show_live_only = col_check.checkbox("Show current roster only", value=False, key="individual_roster_filter")
-        
-        if show_live_only:
-            dropdown_list = [name for name in all_advisors if name in formatted_live]
-            if not dropdown_list: dropdown_list = all_advisors
-        else:
-            dropdown_list = all_advisors
-
-        selected_agent = col_select.selectbox("Select Agent:", dropdown_list)
+        dropdown_list = [n for n in all_advisors if n in formatted_live] if show_live_only else all_advisors
+        selected_agent = col_select.selectbox("Select Agent:", dropdown_list if dropdown_list else all_advisors)
         
         if selected_agent:
             ag1 = f1[f1['Advisor'] == selected_agent].copy()
             ag2 = f2[f2['Advisor'] == selected_agent].copy()
-            
             total_apps = len(ag1)
             approved = len(ag1[ag1['Q_Status'] == 'Approved'])
             approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
@@ -228,7 +241,6 @@ try:
             
             st.divider()
             view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
-            
             if view_mode == "Monthly":
                 ag1['Period'] = ag1['Date_Parsed'].dt.to_period('M')
                 ag2['Period'] = ag2['Date_Parsed'].dt.to_period('M')
@@ -253,15 +265,23 @@ try:
                 daily_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
                 q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
                 actual_q = [c for c in q_order if c in daily_qual.columns]
-                dq_filtered = daily_qual[actual_q]
-                if view_mode == "Monthly": dq_filtered.index = dq_filtered.index.strftime('%b %Y')
-                t_qual = dq_filtered.sum().to_frame().T
-                t_qual.index = ["TOTAL"]
-                df_qual = pd.concat([dq_filtered, t_qual])
-                styler_dq = df_qual.style.format("{:,.0f}")
+                dq_num = daily_qual[actual_q]
+                if view_mode == "Monthly": dq_num.index = dq_num.index.strftime('%b %Y')
+                
+                # Percentages for Individual View
+                row_totals = daily_apps['Applications']
+                dq_str = format_with_pct(dq_num, row_totals)
+                
+                # Grand Totals row for Individual View
+                t_qual_num = dq_num.sum().to_frame().T
+                t_qual_num.index = ["TOTAL"]
+                t_qual_str = format_with_pct(t_qual_num, pd.Series([total_apps], index=["TOTAL"]))
+                
+                final_q_str = pd.concat([dq_str, t_qual_str])
+                styler_dq = final_q_str.style
                 for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
-                    if col in df_qual.columns:
-                        styler_dq = styler_dq.background_gradient(subset=(dq_filtered.index, col), cmap=cmap)
+                    if col in dq_num.columns:
+                        styler_dq = styler_dq.background_gradient(subset=(dq_num.index, col), cmap=cmap, gmap=dq_num[col])
                 st.dataframe(styler_dq, use_container_width=True)
 
             with cc:
@@ -269,15 +289,22 @@ try:
                 daily_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
                 p_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 actual_p = [c for c in p_order if c in daily_port.columns]
-                dp_filtered = daily_port[actual_p]
-                if view_mode == "Monthly": dp_filtered.index = dp_filtered.index.strftime('%b %Y')
-                t_port = dp_filtered.sum().to_frame().T
-                t_port.index = ["TOTAL"]
-                df_port = pd.concat([dp_filtered, t_port])
-                styler_dp = df_port.style.format("{:,.0f}")
+                dp_num = daily_port[actual_p]
+                if view_mode == "Monthly": dp_num.index = dp_num.index.strftime('%b %Y')
+                
+                # Percentages for Individual View
+                dp_str = format_with_pct(dp_num, row_totals)
+                
+                # Grand Totals row
+                t_port_num = dp_num.sum().to_frame().T
+                t_port_num.index = ["TOTAL"]
+                t_port_str = format_with_pct(t_port_num, pd.Series([total_apps], index=["TOTAL"]))
+                
+                final_p_str = pd.concat([dp_str, t_port_str])
+                styler_dp = final_p_str.style
                 for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-                    if col in df_port.columns:
-                        styler_dp = styler_dp.background_gradient(subset=(dp_filtered.index, col), cmap=cmap)
+                    if col in dp_num.columns:
+                        styler_dp = styler_dp.background_gradient(subset=(dp_num.index, col), cmap=cmap, gmap=dp_num[col])
                 st.dataframe(styler_dp, use_container_width=True)
 
 except Exception as e:
