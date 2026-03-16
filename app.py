@@ -7,6 +7,14 @@ import datetime
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
+# --- NEW: ADD COMPANY LOGO ---
+# Provide the URL or local file path to your logo here
+st.logo("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d5ac6c503.png")
+
+
+# --- CONFIG & STYLING ---
+st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
+
 # --- MASTER AGENT LIST (LIVE AS OF TODAY) ---
 LIVE_AGENTS = [
     "Anshu","Anjali", "Aman", "Frogh", "Gaurav", "Guru", 
