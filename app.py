@@ -11,8 +11,10 @@ st.markdown("""
    <style>
    .block-container { max-width: 98%; padding-top: 2rem; }
     h3 {
-margin-bottom: 0.5rem !important; font-size: 1.2rem !important; color: #1E3A8A;
-}
+        margin-bottom: 0.5rem !important; 
+        font-size: 1.2rem !important; 
+        color: #1E3A8A;
+    }
    .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
    </style>
    """, unsafe_allow_html=True)
@@ -65,7 +67,6 @@ try:
     col_title.title("🚀 Sparta Performance & Live Status Dashboard")
     col_time.markdown(f"<p class='last-updated'>Data Last Synced:<br><b>{last_sync}</b></p>", unsafe_allow_html=True)
 
-    # --- UPDATED: ONE-LINE CONTROL BAR ---
     col_a, col_b, col_c = st.columns([1, 1, 1.5])
     start_date = col_a.date_input("Start Date", datetime.date.today().replace(day=1))
     end_date = col_b.date_input("End Date", datetime.date.today())
@@ -76,15 +77,14 @@ try:
     f1['Q_Status'] = f1['Quality Status'].apply(map_quality)
     f2['P_Status'] = f2['Status'].apply(map_portal)
 
-    # Prepare sorting data early to populate the selector in the control bar
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
-    app_counts = f1.groupby('Advisor').size().to_frame('Total Apps')
+    app_counts = f1.groupby('Advisor').size().to_frame('Total Applications')
     qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
     port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
     master_base = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
 
     sort_options = {
-        "Total Apps (High to Low)": "Total Apps", 
+        "Total Applications (High to Low)": "Total Applications", 
         "Quality: Approved": "Qual_Approved", 
         "Quality: Cancelled": "Qual_Cancelled", 
         "Live Status: Live": "Port_Live", 
@@ -107,8 +107,8 @@ try:
         st.divider()
         c1, c2, c3 = st.columns([1, 1.8, 1.8])
         with c1:
-            st.subheader("📊 Apps")
-            st.dataframe(final_df[['Total Apps']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Apps')), use_container_width=True, height=500)
+            st.subheader("📊 Applications")
+            st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
         with c2:
             st.subheader("✅ Quality Audit")
             q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
@@ -136,6 +136,7 @@ try:
             ag1 = f1[f1['Advisor'] == selected_agent].copy()
             ag2 = f2[f2['Advisor'] == selected_agent].copy()
             
+            # --- METRIC CARDS WITH SOFT BOUNDARY ---
             total_apps = len(ag1)
             approved = len(ag1[ag1['Q_Status'] == 'Approved'])
             total_port = len(ag2)
@@ -144,11 +145,12 @@ try:
             approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
             live_rate = f"{(live / total_port * 100):.1f}%" if total_port > 0 else "0.0%"
             
-            mc1, mc2, mc3, mc4 = st.columns(4)
-            mc1.metric("📝 Total Apps", f"{total_apps:,}")
-            mc2.metric("✅ Approval Rate", approval_rate)
-            mc3.metric("🌐 Total Live", f"{live:,}")
-            mc4.metric("🚀 Live Rate", live_rate)
+            with st.container(border=True):
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                mc1.metric("📝 Total Applications", f"{total_apps:,}")
+                mc2.metric("✅ Approval Rate", approval_rate)
+                mc3.metric("🌐 Total Live", f"{live:,}")
+                mc4.metric("🚀 Live Rate", live_rate)
             
             st.divider()
             view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
@@ -164,13 +166,14 @@ try:
             ca, cb, cc = st.columns([1, 1.8, 1.8])
 
             with ca:
-                st.markdown(f"#### 📊 {view_mode} Apps")
-                daily_apps = ag1.groupby('Period').size().to_frame('Apps')
+                # Renamed "Monthly Apps" to "Monthly Applications"
+                st.markdown(f"#### 📊 {view_mode} Applications")
+                daily_apps = ag1.groupby('Period').size().to_frame('Applications')
                 if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
                 t_apps = daily_apps.sum().to_frame().T
                 t_apps.index = ["TOTAL"]
                 df_apps = pd.concat([daily_apps, t_apps])
-                st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Apps')), use_container_width=True)
+                st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), use_container_width=True)
 
             with cb:
                 st.markdown(f"#### ✅ Quality Audit")
