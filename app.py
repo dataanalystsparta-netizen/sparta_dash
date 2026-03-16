@@ -114,7 +114,6 @@ try:
             q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
             disp_qual = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
             styler_q = disp_qual.style.format("{:,.0f}")
-            # --- COLOR UPDATE: 'Reds' for brighter red, 'Wistia' for bright yellow ---
             for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
                 if col in disp_qual.columns: styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap)
             st.dataframe(styler_q, use_container_width=True, height=500)
@@ -125,7 +124,6 @@ try:
             actual_p_order = [c for c in p_order if c in p_cols]
             disp_port = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
             styler_p = disp_port.style.format("{:,.0f}")
-            # --- COLOR UPDATE: 'Reds' for brighter red ---
             for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
                 if col in disp_port.columns: styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap)
             st.dataframe(styler_p, use_container_width=True, height=500)
@@ -138,53 +136,76 @@ try:
             ag1 = f1[f1['Advisor'] == selected_agent].copy()
             ag2 = f2[f2['Advisor'] == selected_agent].copy()
             
-            st.write(f"Daily breakdown for **{selected_agent}**")
+            # --- VIEW TOGGLE ---
+            view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
+            
+            if view_mode == "Monthly":
+                ag1['Period'] = ag1['Date_Parsed'].dt.to_period('M')
+                ag2['Period'] = ag2['Date_Parsed'].dt.to_period('M')
+            else:
+                ag1['Period'] = ag1['Date_Parsed'].dt.date
+                ag2['Period'] = ag2['Date_Parsed'].dt.date
+            
+            st.write(f"**{view_mode}** breakdown for **{selected_agent}**")
             st.divider()
             ca, cb, cc = st.columns([1, 1.8, 1.8])
 
-            # 1. Daily Apps
+            # 1. Apps
             with ca:
-                st.markdown("#### 📊 Daily Apps")
-                daily_apps = ag1.groupby(ag1['Date_Parsed'].dt.date).size().to_frame('Apps')
+                st.markdown(f"#### 📊 {view_mode} Apps")
+                daily_apps = ag1.groupby('Period').size().to_frame('Apps')
+                
+                # Format index if Monthly
+                if view_mode == "Monthly":
+                    daily_apps.index = daily_apps.index.strftime('%b %Y')
+                    
                 t_apps = daily_apps.sum().to_frame().T
                 t_apps.index = ["TOTAL"]
                 df_apps = pd.concat([daily_apps, t_apps])
                 st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Apps')), use_container_width=True)
 
-            # 2. Daily Quality
+            # 2. Quality
             with cb:
-                st.markdown("#### ✅ Quality Audit")
-                daily_qual = ag1.groupby([ag1['Date_Parsed'].dt.date, 'Q_Status']).size().unstack(fill_value=0)
+                st.markdown(f"#### ✅ Quality Audit")
+                daily_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
                 q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
                 actual_q = [c for c in q_order if c in daily_qual.columns]
                 dq_filtered = daily_qual[actual_q]
+                
+                # Format index if Monthly
+                if view_mode == "Monthly":
+                    dq_filtered.index = dq_filtered.index.strftime('%b %Y')
+                    
                 t_qual = dq_filtered.sum().to_frame().T
                 t_qual.index = ["TOTAL"]
                 df_qual = pd.concat([dq_filtered, t_qual])
                 
                 styler_dq = df_qual.style.format("{:,.0f}")
-                # --- COLOR UPDATE: 'Reds' for brighter red, 'Wistia' for bright yellow ---
-                for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
+                for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'YlOrBr_r')]:
                     if col in df_qual.columns:
-                        styler_dq = styler_dq.background_gradient(subset=(daily_qual.index, col), cmap=cmap)
+                        styler_dq = styler_dq.background_gradient(subset=(dq_filtered.index, col), cmap=cmap)
                 st.dataframe(styler_dq, use_container_width=True)
 
-            # 3. Daily Live Status
+            # 3. Live Status
             with cc:
-                st.markdown("#### 🌐 Live Status")
-                daily_port = ag2.groupby([ag2['Date_Parsed'].dt.date, 'P_Status']).size().unstack(fill_value=0)
+                st.markdown(f"#### 🌐 Live Status")
+                daily_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
                 p_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 actual_p = [c for c in p_order if c in daily_port.columns]
                 dp_filtered = daily_port[actual_p]
+                
+                # Format index if Monthly
+                if view_mode == "Monthly":
+                    dp_filtered.index = dp_filtered.index.strftime('%b %Y')
+                    
                 t_port = dp_filtered.sum().to_frame().T
                 t_port.index = ["TOTAL"]
                 df_port = pd.concat([dp_filtered, t_port])
                 
                 styler_dp = df_port.style.format("{:,.0f}")
-                # --- COLOR UPDATE: 'Reds' for brighter red ---
                 for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
                     if col in df_port.columns:
-                        styler_dp = styler_dp.background_gradient(subset=(daily_port.index, col), cmap=cmap)
+                        styler_dp = styler_dp.background_gradient(subset=(dp_filtered.index, col), cmap=cmap)
                 st.dataframe(styler_dp, use_container_width=True)
 
 except Exception as e:
