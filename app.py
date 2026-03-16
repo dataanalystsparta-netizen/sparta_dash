@@ -87,7 +87,7 @@ try:
         master = pd.DataFrame(index=all_advisors).join([app_counts, qual_counts, port_counts]).fillna(0)
 
         sort_options = {
-            "Total Apps (High to Low)": "Total Apps", 
+            "Total Applications": "Total Apps", 
             "Quality: Approved": "Qual_Approved", 
             "Quality: Cancelled": "Qual_Cancelled", 
             "Live Status: Live": "Port_Live", 
