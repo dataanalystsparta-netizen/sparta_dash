@@ -133,7 +133,7 @@ try:
             ag1 = f1[f1['Advisor'] == selected_agent].copy()
             ag2 = f2[f2['Advisor'] == selected_agent].copy()
             
-            st.write(f"Daily breakdown for **{selected_agent}** (Dates formatted as DD-MM-YYYY)")
+            st.write(f"Daily breakdown for **{selected_agent}**")
             st.divider()
             ca, cb, cc = st.columns([1, 1.8, 1.8])
 
