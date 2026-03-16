@@ -15,7 +15,7 @@ LIVE_AGENTS = [
 
 st.markdown("""
    <style>
-   .block-container { max-width: 98%; padding-top: 2rem; }
+   .block-container { max-width: 98%; padding-top: 5rem; }
     h3 {
         margin-bottom: 0.5rem !important; 
         font-size: 1.2rem !important; 
