@@ -62,6 +62,17 @@ def map_portal(val):
     if any(x in s for x in ['can', 'rej']): return 'Cancelled'
     return 'Others'
 
+# KPI Definitions for Tooltips
+KPI_DEFS = {
+    "total_apps": "Total records extracted from the primary Sparta tracking sheet.",
+    "qual_approved": "Applications that have successfully passed through the Quality Audit process.",
+    "approv_rate": "Percentage of total applications that reached 'Approved' status.",
+    "commit_apps": "Total records logged in the Portal/Sparta2 tracking system.",
+    "commit_rate": "Efficiency of moving leads from Application to Portal stage.",
+    "total_live": "Records confirmed with a 'Live' status in the portal.",
+    "live_rate": "Conversion efficiency from Committed records to confirmed Live records."
+}
+
 # --- UI START ---
 try:
     df1, df2, last_sync = fetch_data()
@@ -103,25 +114,23 @@ try:
         team_apps = len(f1)
         team_approved = len(f1[f1['Q_Status'] == 'Approved'])
         team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
-        
         team_committed = len(f2)
         team_commit_rate = f"{(team_committed / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
-        
         team_live = len(f2[f2['P_Status'] == 'Live'])
         team_live_rate = f"{(team_live / team_committed * 100):.1f}%" if team_committed > 0 else "0.0%"
 
-        # --- TEAM METRIC BAR ---
         with st.container(border=True):
             st.markdown("##### 🌏 Team Performance Snapshot")
             tm1, tm2, tm3, tm4, tm5, tm6, tm7 = st.columns(7)
-            tm1.metric("📝 Tot. Applications", f"{team_apps:,}")
-            tm2.metric("✅ Quality Approv.", f"{team_approved:,}")
-            tm3.metric("📈 Approv. Rate", team_approv_rate)
-            tm4.metric("📦 Commit. Apps", f"{team_committed:,}")
-            tm5.metric("📋 Commit. Rate", team_commit_rate)
-            tm6.metric("🌐 Total Live", f"{team_live:,}")
-            tm7.metric("🚀 Live Rate", team_live_rate)
+            tm1.metric("📝 Tot. Applications", f"{team_apps:,}", help=KPI_DEFS["total_apps"])
+            tm2.metric("✅ Quality Approv.", f"{team_approved:,}", help=KPI_DEFS["qual_approved"])
+            tm3.metric("📈 Approv. Rate", team_approv_rate, help=KPI_DEFS["approv_rate"])
+            tm4.metric("📦 Commit. Apps", f"{team_committed:,}", help=KPI_DEFS["commit_apps"])
+            tm5.metric("📋 Commit. Rate", team_commit_rate, help=KPI_DEFS["commit_rate"])
+            tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
+            tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
 
+        # Table sorting logic
         sort_col = sort_options[selected_sort_label]
         master = master_base.sort_index() if sort_col == "index" else master_base.sort_values(sort_col, ascending=False)
         totals_row = master.sum().to_frame().T
@@ -131,6 +140,7 @@ try:
 
         st.divider()
         c1, c2, c3 = st.columns([1, 1.8, 1.8])
+        # ... (Application, Quality Audit, and Live Status tables remain same as previous turn)
         with c1:
             st.subheader("📊 Applications")
             st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
@@ -165,25 +175,24 @@ try:
             total_apps = len(ag1)
             approved = len(ag1[ag1['Q_Status'] == 'Approved'])
             approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
-            
             total_committed_apps = len(ag2) 
             committed_rate = f"{(total_committed_apps / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
-            
             live = len(ag2[ag2['P_Status'] == 'Live'])
             live_rate = f"{(live / total_committed_apps * 100):.1f}%" if total_committed_apps > 0 else "0.0%"
             
-            # --- SINGLE LINE METRIC CARDS ---
+            # --- SINGLE LINE METRIC CARDS WITH HOVER DEFS ---
             with st.container(border=True):
                 m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
-                m1.metric("📝 Tot. Applications", f"{total_apps:,}")
-                m2.metric("✅ Quality Approv.", f"{approved:,}")
-                m3.metric("📈 Approv. Rate", approval_rate)
-                m4.metric("📦 Commit. Apps", f"{total_committed_apps:,}")
-                m5.metric("📋 Commit. Rate", committed_rate)
-                m6.metric("🌐 Total Live", f"{live:,}")
-                m7.metric("🚀 Live Rate", live_rate)
+                m1.metric("📝 Tot. Applications", f"{total_apps:,}", help=KPI_DEFS["total_apps"])
+                m2.metric("✅ Quality Approv.", f"{approved:,}", help=KPI_DEFS["qual_approved"])
+                m3.metric("📈 Approv. Rate", approval_rate, help=KPI_DEFS["approv_rate"])
+                m4.metric("📦 Commit. Apps", f"{total_committed_apps:,}", help=KPI_DEFS["commit_apps"])
+                m5.metric("📋 Commit. Rate", committed_rate, help=KPI_DEFS["commit_rate"])
+                m6.metric("🌐 Total Live", f"{live:,}", help=KPI_DEFS["total_live"])
+                m7.metric("🚀 Live Rate", live_rate, help=KPI_DEFS["live_rate"])
             
             st.divider()
+            # ... (Rest of tab 2 breakdown logic remains same)
             view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
             
             if view_mode == "Monthly":
