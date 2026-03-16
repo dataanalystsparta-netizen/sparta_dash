@@ -16,7 +16,6 @@ st.markdown("""
         color: #1E3A8A;
     }
    .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
-   /* Custom styling for compact metrics */
    [data-testid="stMetricValue"] { font-size: 1.6rem !important; }
    [data-testid="stMetricLabel"] { font-size: 0.85rem !important; white-space: nowrap; }
    </style>
@@ -48,6 +47,7 @@ def fetch_data():
     
     return df1, df2, last_sync
 
+# --- HELPER FUNCTIONS ---
 def map_quality(val):
     s = str(val).lower()
     if any(x in s for x in ['appr', 'pass']): return 'Approved'
@@ -62,15 +62,14 @@ def map_portal(val):
     if any(x in s for x in ['can', 'rej']): return 'Cancelled'
     return 'Others'
 
-# KPI Definitions for Tooltips
 KPI_DEFS = {
-    "total_apps": "Total applications.",
+    "total_apps": "Total records extracted from the primary Sparta tracking sheet.",
     "qual_approved": "Applications that have successfully passed through the Quality Audit process.",
-    "approv_rate": "Percentage of total applications that got 'Quality Approved'",
-    "commit_apps": "Total committed applications",
-    "commit_rate": "Percentage of applications that got 'Committed'",
-    "total_live": "Count of 'Live' customers",
-    "live_rate": "Conversion from Committed records to confirmed Live sales."
+    "approv_rate": "Percentage of total applications that reached 'Approved' status.",
+    "commit_apps": "Total records logged in the Portal/Sparta2 tracking system.",
+    "commit_rate": "Efficiency of moving leads from Application to Portal stage.",
+    "total_live": "Records confirmed with a 'Live' status in the portal.",
+    "live_rate": "Conversion efficiency from Committed records to confirmed Live records."
 }
 
 # --- UI START ---
@@ -91,7 +90,9 @@ try:
     f1['Q_Status'] = f1['Quality Status'].apply(map_quality)
     f2['P_Status'] = f2['Status'].apply(map_portal)
 
+    # Base Advisor Lists
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
+    
     app_counts = f1.groupby('Advisor').size().to_frame('Total Applications')
     qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
     port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
@@ -110,7 +111,7 @@ try:
     tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
     with tab1:
-        # --- TEAM-WIDE KPI CALCULATIONS ---
+        # --- TEAM METRICS ---
         team_apps = len(f1)
         team_approved = len(f1[f1['Q_Status'] == 'Approved'])
         team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
@@ -120,7 +121,6 @@ try:
         team_live_rate = f"{(team_live / team_committed * 100):.1f}%" if team_committed > 0 else "0.0%"
 
         with st.container(border=True):
-            st.markdown("##### 🌏 Team Performance Snapshot")
             tm1, tm2, tm3, tm4, tm5, tm6, tm7 = st.columns(7)
             tm1.metric("📝 Tot. Applications", f"{team_apps:,}", help=KPI_DEFS["total_apps"])
             tm2.metric("✅ Quality Approv.", f"{team_approved:,}", help=KPI_DEFS["qual_approved"])
@@ -130,7 +130,6 @@ try:
             tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
             tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
 
-        # Table sorting logic
         sort_col = sort_options[selected_sort_label]
         master = master_base.sort_index() if sort_col == "index" else master_base.sort_values(sort_col, ascending=False)
         totals_row = master.sum().to_frame().T
@@ -140,7 +139,6 @@ try:
 
         st.divider()
         c1, c2, c3 = st.columns([1, 1.8, 1.8])
-        # ... (Application, Quality Audit, and Live Status tables remain same as previous turn)
         with c1:
             st.subheader("📊 Applications")
             st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
@@ -165,13 +163,26 @@ try:
 
     with tab2:
         st.subheader("👤 Detailed Agent Analysis")
-        selected_agent = st.selectbox("Select Agent:", all_advisors)
+        
+        # --- NEW FILTERING LOGIC ---
+        col_check, col_select = st.columns([1, 3])
+        only_active = col_check.checkbox("Only show active agents", value=False, help="Filters out agents with 0 applications in the selected date range.")
+        
+        if only_active:
+            # Active agents are those present in the filtered dataframes f1 or f2
+            active_list = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
+            dropdown_list = active_list
+        else:
+            # Show all agents ever recorded
+            dropdown_list = all_advisors
+
+        selected_agent = col_select.selectbox("Select Agent:", dropdown_list)
         
         if selected_agent:
             ag1 = f1[f1['Advisor'] == selected_agent].copy()
             ag2 = f2[f2['Advisor'] == selected_agent].copy()
             
-            # --- AGENT CALCULATIONS ---
+            # Agent Calculations
             total_apps = len(ag1)
             approved = len(ag1[ag1['Q_Status'] == 'Approved'])
             approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
@@ -180,7 +191,6 @@ try:
             live = len(ag2[ag2['P_Status'] == 'Live'])
             live_rate = f"{(live / total_committed_apps * 100):.1f}%" if total_committed_apps > 0 else "0.0%"
             
-            # --- SINGLE LINE METRIC CARDS WITH HOVER DEFS ---
             with st.container(border=True):
                 m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
                 m1.metric("📝 Tot. Applications", f"{total_apps:,}", help=KPI_DEFS["total_apps"])
@@ -192,9 +202,9 @@ try:
                 m7.metric("🚀 Live Rate", live_rate, help=KPI_DEFS["live_rate"])
             
             st.divider()
-            # ... (Rest of tab 2 breakdown logic remains same)
             view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
             
+            # Period mapping and table renders remain as established...
             if view_mode == "Monthly":
                 ag1['Period'] = ag1['Date_Parsed'].dt.to_period('M')
                 ag2['Period'] = ag2['Date_Parsed'].dt.to_period('M')
