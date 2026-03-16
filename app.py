@@ -5,14 +5,6 @@ from google.oauth2.service_account import Credentials
 import datetime
 
 # --- CONFIG & STYLING ---
-
-# --- NEW: ADD COMPANY LOGO ---
-# Provide the URL or local file path to your logo here
-
-# --- UI START ---
-
-
-# --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
 # --- MASTER AGENT LIST (LIVE AS OF TODAY) ---
@@ -90,7 +82,12 @@ try:
     df1, df2, last_sync = fetch_data()
 
     col_title, col_time = st.columns([3, 1])
-    col_title.title("🚀 Sparta Performance & Live Status Dashboard")
+    
+    # 4X LARGE LOGO IMPLEMENTATION (Replacing Rocket Emoji)
+    with col_title:
+        st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d5ac6c503.png", width=280)
+        st.title("Sparta Performance & Live Status Dashboard")
+        
     col_time.markdown(f"<p class='last-updated'>Data Last Synced:<br><b>{last_sync}</b></p>", unsafe_allow_html=True)
 
     col_a, col_b, col_c = st.columns([1, 1, 1.5])
@@ -115,7 +112,6 @@ try:
         "Advisor Name (A-Z)": "index"
     }
     
-    # Pre-calculating master_base here for the sort selector to work
     app_counts_base = f1.groupby('Advisor').size().to_frame('Total Applications')
     qual_counts_base = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
     port_counts_base = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
@@ -127,10 +123,8 @@ try:
     tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
     with tab1:
-        # --- NEW ROSTER FILTER FOR TEAM OVERVIEW ---
         show_live_team = st.checkbox("Show current roster only", value=False, key="team_roster_filter")
         
-        # Apply filtering to the localized dataframes for this tab
         if show_live_team:
             f1_team = f1[f1['Advisor'].isin(formatted_live)].copy()
             f2_team = f2[f2['Advisor'].isin(formatted_live)].copy()
@@ -140,7 +134,6 @@ try:
             f2_team = f2.copy()
             active_advisors_team = all_advisors
 
-        # --- TEAM METRICS (Filtered) ---
         team_apps = len(f1_team)
         team_approved = len(f1_team[f1_team['Q_Status'] == 'Approved'])
         team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
@@ -159,7 +152,6 @@ try:
             tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
             tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
 
-        # --- TEAM TABLES (Filtered) ---
         app_counts = f1_team.groupby('Advisor').size().to_frame('Total Applications')
         qual_counts = f1_team.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
         port_counts = f2_team.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
