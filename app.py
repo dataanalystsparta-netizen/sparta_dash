@@ -7,6 +7,13 @@ import datetime
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
+# --- MASTER AGENT LIST (LIVE AS OF TODAY) ---
+# Update this list as your team roster changes
+LIVE_AGENTS = [
+    "Anjali", "Aman", "Frogh", "Anshu", "Shailendra", 
+    "Saurabh", "Priyanka", "Deepak", "Rohan"
+]
+
 st.markdown("""
    <style>
    .block-container { max-width: 98%; padding-top: 2rem; }
@@ -47,7 +54,6 @@ def fetch_data():
     
     return df1, df2, last_sync
 
-# --- HELPER FUNCTIONS ---
 def map_quality(val):
     s = str(val).lower()
     if any(x in s for x in ['appr', 'pass']): return 'Approved'
@@ -90,9 +96,7 @@ try:
     f1['Q_Status'] = f1['Quality Status'].apply(map_quality)
     f2['P_Status'] = f2['Status'].apply(map_portal)
 
-    # Base Advisor Lists
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
-    
     app_counts = f1.groupby('Advisor').size().to_frame('Total Applications')
     qual_counts = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
     port_counts = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
@@ -111,7 +115,7 @@ try:
     tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
     with tab1:
-        # --- TEAM METRICS ---
+        # (Team Overview metrics and tables remain unchanged)
         team_apps = len(f1)
         team_approved = len(f1[f1['Q_Status'] == 'Approved'])
         team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
@@ -164,16 +168,17 @@ try:
     with tab2:
         st.subheader("👤 Detailed Agent Analysis")
         
-        # --- NEW FILTERING LOGIC ---
+        # --- FIXED LIST FILTERING ---
         col_check, col_select = st.columns([1, 3])
-        only_active = col_check.checkbox("Only show active agents", value=False, help="Filters out agents with 0 applications in the selected date range.")
+        show_live_only = col_check.checkbox("Show current roster only", value=False)
         
-        if only_active:
-            # Active agents are those present in the filtered dataframes f1 or f2
-            active_list = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
-            dropdown_list = active_list
+        # Format the hardcoded list to match Title Case for comparison
+        formatted_live = [name.strip().title() for name in LIVE_AGENTS]
+        
+        if show_live_only:
+            dropdown_list = [name for name in all_advisors if name in formatted_live]
+            if not dropdown_list: dropdown_list = all_advisors # Fallback
         else:
-            # Show all agents ever recorded
             dropdown_list = all_advisors
 
         selected_agent = col_select.selectbox("Select Agent:", dropdown_list)
@@ -182,7 +187,6 @@ try:
             ag1 = f1[f1['Advisor'] == selected_agent].copy()
             ag2 = f2[f2['Advisor'] == selected_agent].copy()
             
-            # Agent Calculations
             total_apps = len(ag1)
             approved = len(ag1[ag1['Q_Status'] == 'Approved'])
             approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
@@ -204,7 +208,6 @@ try:
             st.divider()
             view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
             
-            # Period mapping and table renders remain as established...
             if view_mode == "Monthly":
                 ag1['Period'] = ag1['Date_Parsed'].dt.to_period('M')
                 ag2['Period'] = ag2['Date_Parsed'].dt.to_period('M')
