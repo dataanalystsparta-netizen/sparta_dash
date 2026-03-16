@@ -131,7 +131,7 @@ try:
             st.dataframe(styler_p, use_container_width=True, height=500)
 
     with tab2:
-        st.subheader("👤 Detailed Agent Analysis")
+        st.subheader("👤 Agent Performance Breakdown")
         selected_agent = st.selectbox("Select Agent:", all_advisors)
         
         if selected_agent:
