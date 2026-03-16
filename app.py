@@ -98,7 +98,6 @@ try:
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
     formatted_live = [name.strip().title() for name in LIVE_AGENTS]
 
-    # --- MASTER SORT SELECTBOX ---
     sort_options = {
         "Total Applications (High to Low)": "Total Applications", 
         "Quality: Approved": "Qual_Approved", 
@@ -107,7 +106,6 @@ try:
         "Advisor Name (A-Z)": "index"
     }
     
-    # Pre-calculating master_base here for the sort selector to work
     app_counts_base = f1.groupby('Advisor').size().to_frame('Total Applications')
     qual_counts_base = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
     port_counts_base = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
@@ -119,10 +117,8 @@ try:
     tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
     with tab1:
-        # --- NEW ROSTER FILTER FOR TEAM OVERVIEW ---
         show_live_team = st.checkbox("Show current roster only", value=False, key="team_roster_filter")
         
-        # Apply filtering to the localized dataframes for this tab
         if show_live_team:
             f1_team = f1[f1['Advisor'].isin(formatted_live)].copy()
             f2_team = f2[f2['Advisor'].isin(formatted_live)].copy()
@@ -132,7 +128,6 @@ try:
             f2_team = f2.copy()
             active_advisors_team = all_advisors
 
-        # --- TEAM METRICS (Filtered) ---
         team_apps = len(f1_team)
         team_approved = len(f1_team[f1_team['Q_Status'] == 'Approved'])
         team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
@@ -151,13 +146,11 @@ try:
             tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
             tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
 
-        # --- TEAM TABLES (Filtered) ---
         app_counts = f1_team.groupby('Advisor').size().to_frame('Total Applications')
         qual_counts = f1_team.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
         port_counts = f2_team.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
         
         tab_master = pd.DataFrame(index=active_advisors_team).join([app_counts, qual_counts, port_counts]).fillna(0)
-        
         sort_col = sort_options[selected_sort_label]
         master = tab_master.sort_index() if sort_col == "index" else tab_master.sort_values(sort_col, ascending=False)
         
@@ -171,26 +164,52 @@ try:
         with c1:
             st.subheader("📊 Applications")
             st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
+        
         with c2:
             st.subheader("✅ Quality Audit")
             q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
-            disp_qual = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
-            styler_q = disp_qual.style.format("{:,.0f}")
+            disp_qual = final_df[q_cols].copy()
+            # Calculate percentages for each status
+            for col in disp_qual.columns:
+                clean_name = col.replace('Qual_', '')
+                disp_qual[f"{clean_name} %"] = (disp_qual[col] / final_df['Total Applications'] * 100).fillna(0)
+            
+            # Reorder columns to show Count next to Percentage
+            ordered_q = []
+            for col in ['Qual_Approved', 'Qual_Rework', 'Qual_Cancelled']:
+                if col in disp_qual.columns:
+                    ordered_q.extend([col, col.replace('Qual_', '') + " %"])
+            
+            styler_q = disp_qual[ordered_q].rename(columns=lambda x: x.replace('Qual_', '')).style.format(
+                {col: "{:,.0f}" if "%" not in col else "{:.1f}%" for col in disp_qual.columns}
+            )
             for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
                 if col in disp_qual.columns: styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap)
             st.dataframe(styler_q, use_container_width=True, height=500)
+            
         with c3:
             st.subheader("🌐 Live Status")
             p_cols = [c for c in final_df.columns if c.startswith('Port_')]
-            p_order = ['Port_Live', 'Port_Committed', 'Port_Cancelled', 'Port_Others']
-            actual_p_order = [c for c in p_order if c in p_cols]
-            disp_port = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
-            styler_p = disp_port.style.format("{:,.0f}")
+            disp_port = final_df[p_cols].copy()
+            # Calculate percentages for Live status
+            for col in disp_port.columns:
+                clean_name = col.replace('Port_', '')
+                disp_port[f"{clean_name} %"] = (disp_port[col] / final_df['Total Applications'] * 100).fillna(0)
+            
+            ordered_p = []
+            for col in ['Port_Live', 'Port_Committed', 'Port_Cancelled']:
+                if col in disp_port.columns:
+                    ordered_p.extend([col, col.replace('Port_', '') + " %"])
+
+            styler_p = disp_port[ordered_p].rename(columns=lambda x: x.replace('Port_', '')).style.format(
+                {col: "{:,.0f}" if "%" not in col else "{:.1f}%" for col in disp_port.columns}
+            )
             for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
                 if col in disp_port.columns: styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap)
             st.dataframe(styler_p, use_container_width=True, height=500)
 
     with tab2:
+        # Tab 2 remains exactly as in v3.1
         st.subheader("👤 Detailed Agent Analysis")
         col_check, col_select = st.columns([1, 3])
         show_live_only = col_check.checkbox("Show current roster only", value=False, key="individual_roster_filter")
