@@ -5,8 +5,8 @@ from google.oauth2.service_account import Credentials
 import datetime
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go # Added for Dual-Axis
-from plotly.subplots import make_subplots # Added for Dual-Axis
+import plotly.graph_objects as go 
+from plotly.subplots import make_subplots 
 
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
@@ -173,7 +173,6 @@ try:
         st.divider()
         c1, c2, c3 = st.columns([1, 1.8, 1.8])
         
-        # --- ORIGINAL TABLES PRESERVED ---
         with c1:
             st.subheader("📊 Applications")
             st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
@@ -202,13 +201,11 @@ try:
                     styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_port_num[col])
             st.dataframe(styler_p, use_container_width=True, height=500)
 
-        # --- CAREFULLY ADDED GRAPHS ---
         st.divider()
         st.subheader("📈 Team Performance Trends")
         tg_1, tg_2 = st.columns(2)
         
         with tg_1:
-            # DUAL AXIS: Apps vs Quality Approved
             daily_v = f1_team.groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Apps')
             daily_q = f1_team[f1_team['Q_Status'] == 'Approved'].groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Approved')
             combined = pd.merge(daily_v, daily_q, on='Date_Parsed', how='left').fillna(0)
@@ -221,9 +218,9 @@ try:
             st.plotly_chart(fig_dual, use_container_width=True)
             
         with tg_2:
-            # LIVE vs CANCELLED: Grouped Bar from the last table's data
+            # FIX APPLIED HERE: Changed x='Advisor' to x='index'
             status_plot = master[['Port_Live', 'Port_Cancelled']].rename(columns={'Port_Live':'Live', 'Port_Cancelled':'Cancelled'}).reset_index()
-            fig_status = px.bar(status_plot, x='Advisor', y=['Live', 'Cancelled'], barmode='group', 
+            fig_status = px.bar(status_plot, x='index', y=['Live', 'Cancelled'], barmode='group', 
                                 color_discrete_map={'Live': '#2563EB', 'Cancelled': '#DC2626'},
                                 title="Agent-wise Live vs. Cancelled Volume")
             st.plotly_chart(fig_status, use_container_width=True)
@@ -314,7 +311,6 @@ try:
                         styler_dp = styler_dp.background_gradient(subset=(dp_num.index, col), cmap=cmap, gmap=dp_num[col])
                 st.dataframe(styler_dp, use_container_width=True)
 
-            # --- DUAL AXIS INDIVIDUAL ---
             st.divider()
             st.subheader(f"📈 Performance Trend: {selected_agent}")
             i_comb = pd.merge(daily_apps.reset_index(), dq_num[['Approved']].reset_index(), on='Period', how='left').fillna(0)
