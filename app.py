@@ -6,7 +6,6 @@ import datetime
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go 
-from plotly.subplots import make_subplots 
 
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
@@ -206,19 +205,19 @@ try:
         tg_1, tg_2 = st.columns(2)
         
         with tg_1:
+            # SINGLE AXIS: Apps vs Quality Approved
             daily_v = f1_team.groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Apps')
             daily_q = f1_team[f1_team['Q_Status'] == 'Approved'].groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Approved')
             combined = pd.merge(daily_v, daily_q, on='Date_Parsed', how='left').fillna(0)
             combined['Date_Parsed'] = combined['Date_Parsed'].astype(str)
 
-            fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
-            fig_dual.add_trace(go.Bar(x=combined['Date_Parsed'], y=combined['Apps'], name="Total Apps", marker_color='#1E3A8A'), secondary_y=False)
-            fig_dual.add_trace(go.Scatter(x=combined['Date_Parsed'], y=combined['Approved'], name="Approved (Audit)", line=dict(color='#2E7D32', width=3)), secondary_y=True)
-            fig_dual.update_layout(title_text="Daily Apps vs. Quality Approval (Dual Axis)", hovermode="x unified")
-            st.plotly_chart(fig_dual, use_container_width=True)
+            fig_single = go.Figure()
+            fig_single.add_trace(go.Bar(x=combined['Date_Parsed'], y=combined['Apps'], name="Total Apps", marker_color='#1E3A8A'))
+            fig_single.add_trace(go.Scatter(x=combined['Date_Parsed'], y=combined['Approved'], name="Approved (Audit)", line=dict(color='#2E7D32', width=3)))
+            fig_single.update_layout(title_text="Daily Apps vs. Quality Approval", hovermode="x unified")
+            st.plotly_chart(fig_single, use_container_width=True)
             
         with tg_2:
-            # FIX APPLIED HERE: Changed x='Advisor' to x='index'
             status_plot = master[['Port_Live', 'Port_Cancelled']].rename(columns={'Port_Live':'Live', 'Port_Cancelled':'Cancelled'}).reset_index()
             fig_status = px.bar(status_plot, x='index', y=['Live', 'Cancelled'], barmode='group', 
                                 color_discrete_map={'Live': '#2563EB', 'Cancelled': '#DC2626'},
@@ -311,14 +310,16 @@ try:
                         styler_dp = styler_dp.background_gradient(subset=(dp_num.index, col), cmap=cmap, gmap=dp_num[col])
                 st.dataframe(styler_dp, use_container_width=True)
 
+            # --- SINGLE AXIS INDIVIDUAL ---
             st.divider()
             st.subheader(f"📈 Performance Trend: {selected_agent}")
             i_comb = pd.merge(daily_apps.reset_index(), dq_num[['Approved']].reset_index(), on='Period', how='left').fillna(0)
             i_comb['Period'] = i_comb['Period'].astype(str)
             
-            fig_i = make_subplots(specs=[[{"secondary_y": True}]])
-            fig_i.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Applications'], name="Apps", marker_color='#60A5FA'), secondary_y=False)
-            fig_i.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Approved'], name="Approved", line=dict(color='#059669', width=3)), secondary_y=True)
+            fig_i = go.Figure()
+            fig_i.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Applications'], name="Apps", marker_color='#60A5FA'))
+            fig_i.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Approved'], name="Approved", line=dict(color='#059669', width=3)))
+            fig_i.update_layout(hovermode="x unified")
             st.plotly_chart(fig_i, use_container_width=True)
 
 except Exception as e:
