@@ -331,32 +331,35 @@ try:
                 else:
                     st.info("No live status records found for this agent.")
 
-            # --- UPDATED TREND GRAPH: 2 BARS & 2 LINES ---
+            # --- UPDATED TREND GRAPHS: 2 SEPARATE CHARTS ---
             st.divider()
-            st.subheader(f"📈 Performance Trend: {selected_agent}")
+            st.subheader(f"📈 Performance Trends: {selected_agent}")
             if not ag1.empty:
-                # 1. Prep Bar Data (Total Apps & Committed)
+                # Prep Data
                 d_apps = ag1.groupby('Period').size().to_frame('Total Apps')
                 d_comm = ag2.groupby('Period').size().to_frame('Committed')
-                
-                # 2. Prep Line Data (Approved & Live)
                 d_appr = ag1[ag1['Q_Status'] == 'Approved'].groupby('Period').size().to_frame('Approved')
                 d_live = ag2[ag2['P_Status'] == 'Live'].groupby('Period').size().to_frame('Live')
                 
-                # Merge all metrics for the agent
+                # Merge all metrics for alignment
                 i_comb = d_apps.join([d_comm, d_appr, d_live], how='left').fillna(0).reset_index()
                 i_comb['Period'] = i_comb['Period'].astype(str)
                 
-                fig_i = go.Figure()
-                # Bars
-                fig_i.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Total Apps'], name="Total Apps", marker_color='#60A5FA'))
-                fig_i.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Committed'], name="Commit. Apps", marker_color='#8B5CF6'))
-                # Lines
-                fig_i.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Approved'], name="Quality Approved", line=dict(color='#059669', width=3)))
-                fig_i.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Live'], name="Live", line=dict(color='#F59E0B', width=3)))
+                ig1, ig2 = st.columns(2)
                 
-                fig_i.update_layout(barmode='group', hovermode="x unified")
-                st.plotly_chart(fig_i, use_container_width=True)
+                with ig1:
+                    fig1 = go.Figure()
+                    fig1.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Total Apps'], name="Total Apps", marker_color='#60A5FA'))
+                    fig1.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Approved'], name="Quality Approved", line=dict(color='#059669', width=3)))
+                    fig1.update_layout(title="Apps vs Quality Approved", hovermode="x unified")
+                    st.plotly_chart(fig1, use_container_width=True)
+                    
+                with ig2:
+                    fig2 = go.Figure()
+                    fig2.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Committed'], name="Commit. Apps", marker_color='#8B5CF6'))
+                    fig2.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Live'], name="Live", line=dict(color='#F59E0B', width=3)))
+                    fig2.update_layout(title="Committed vs Live", hovermode="x unified")
+                    st.plotly_chart(fig2, use_container_width=True)
 
 except Exception as e:
     st.error(f"Error: {e}")
