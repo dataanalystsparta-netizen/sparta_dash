@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import datetime
+import numpy as np
 
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
@@ -160,6 +161,45 @@ try:
             tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
             tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
 
+        # --- TEAM GRAPHS SECTION ---
+        st.divider()
+        st.subheader("📈 Team Trend Visualizations")
+        team_view_mode = st.radio("Filter Graphs By:", ["Daily", "Weekly", "Monthly", "Yearly"], horizontal=True, key="team_graph_filter")
+        
+        t1_graphs = f1_team.copy()
+        t2_graphs = f2_team.copy()
+        
+        if team_view_mode == "Yearly":
+            t1_graphs['Period'] = t1_graphs['Date_Parsed'].dt.to_period('Y').astype(str)
+            t2_graphs['Period'] = t2_graphs['Date_Parsed'].dt.to_period('Y').astype(str)
+        elif team_view_mode == "Monthly":
+            t1_graphs['Period'] = t1_graphs['Date_Parsed'].dt.to_period('M').astype(str)
+            t2_graphs['Period'] = t2_graphs['Date_Parsed'].dt.to_period('M').astype(str)
+        elif team_view_mode == "Weekly":
+            t1_graphs['Period'] = t1_graphs['Date_Parsed'].dt.to_period('W').astype(str)
+            t2_graphs['Period'] = t2_graphs['Date_Parsed'].dt.to_period('W').astype(str)
+        else:
+            t1_graphs['Period'] = t1_graphs['Date_Parsed'].dt.date.astype(str)
+            t2_graphs['Period'] = t2_graphs['Date_Parsed'].dt.date.astype(str)
+
+        trend_apps = t1_graphs.groupby('Period').size().to_frame("Applications")
+        trend_qual = t1_graphs.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
+        trend_port = t2_graphs.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
+
+        tg1, tg2, tg3 = st.columns(3)
+        with tg1:
+            st.markdown("**Total Applications**")
+            st.bar_chart(trend_apps)
+        with tg2:
+            st.markdown("**Quality Audit**")
+            q_chart_cols = [c for c in ['Approved', 'Cancelled', 'Rework'] if c in trend_qual.columns]
+            if q_chart_cols: st.bar_chart(trend_qual[q_chart_cols])
+        with tg3:
+            st.markdown("**Live Status**")
+            p_chart_cols = [c for c in ['Live', 'Cancelled'] if c in trend_port.columns]
+            if p_chart_cols: st.bar_chart(trend_port[p_chart_cols])
+
+        # --- TEAM MASTER TABLES ---
         app_counts = f1_team.groupby('Advisor').size().to_frame('Total Applications')
         qual_counts = f1_team.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
         port_counts = f2_team.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
@@ -240,10 +280,17 @@ try:
                 m7.metric("🚀 Live Rate", live_rate, help=KPI_DEFS["live_rate"])
             
             st.divider()
-            view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
-            if view_mode == "Monthly":
+            view_mode = st.radio("View Breakdown By:", ["Daily", "Weekly", "Monthly", "Yearly"], horizontal=True)
+            
+            if view_mode == "Yearly":
+                ag1['Period'] = ag1['Date_Parsed'].dt.to_period('Y')
+                ag2['Period'] = ag2['Date_Parsed'].dt.to_period('Y')
+            elif view_mode == "Monthly":
                 ag1['Period'] = ag1['Date_Parsed'].dt.to_period('M')
                 ag2['Period'] = ag2['Date_Parsed'].dt.to_period('M')
+            elif view_mode == "Weekly":
+                ag1['Period'] = ag1['Date_Parsed'].dt.to_period('W')
+                ag2['Period'] = ag2['Date_Parsed'].dt.to_period('W')
             else:
                 ag1['Period'] = ag1['Date_Parsed'].dt.date
                 ag2['Period'] = ag2['Date_Parsed'].dt.date
@@ -254,7 +301,14 @@ try:
             with ca:
                 st.markdown(f"#### 📊 {view_mode} Applications")
                 daily_apps = ag1.groupby('Period').size().to_frame('Applications')
+                
                 if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
+                elif view_mode == "Yearly": daily_apps.index = daily_apps.index.strftime('%Y')
+                elif view_mode == "Weekly": daily_apps.index = daily_apps.index.astype(str)
+                
+                # Dynamic Bar Chart
+                st.bar_chart(daily_apps)
+
                 t_apps = daily_apps.sum().to_frame().T
                 t_apps.index = ["TOTAL"]
                 df_apps = pd.concat([daily_apps, t_apps])
@@ -266,8 +320,15 @@ try:
                 q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
                 actual_q = [c for c in q_order if c in daily_qual.columns]
                 dq_num = daily_qual[actual_q]
-                if view_mode == "Monthly": dq_num.index = dq_num.index.strftime('%b %Y')
                 
+                if view_mode == "Monthly": dq_num.index = dq_num.index.strftime('%b %Y')
+                elif view_mode == "Yearly": dq_num.index = dq_num.index.strftime('%Y')
+                elif view_mode == "Weekly": dq_num.index = dq_num.index.astype(str)
+                
+                # Dynamic Bar Chart
+                ind_q_chart_cols = [c for c in ['Approved', 'Cancelled', 'Rework'] if c in dq_num.columns]
+                if ind_q_chart_cols: st.bar_chart(dq_num[ind_q_chart_cols])
+
                 # Percentages for Individual View
                 row_totals = daily_apps['Applications']
                 dq_str = format_with_pct(dq_num, row_totals)
@@ -290,8 +351,15 @@ try:
                 p_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 actual_p = [c for c in p_order if c in daily_port.columns]
                 dp_num = daily_port[actual_p]
-                if view_mode == "Monthly": dp_num.index = dp_num.index.strftime('%b %Y')
                 
+                if view_mode == "Monthly": dp_num.index = dp_num.index.strftime('%b %Y')
+                elif view_mode == "Yearly": dp_num.index = dp_num.index.strftime('%Y')
+                elif view_mode == "Weekly": dp_num.index = dp_num.index.astype(str)
+                
+                # Dynamic Bar Chart
+                ind_p_chart_cols = [c for c in ['Live', 'Cancelled'] if c in dp_num.columns]
+                if ind_p_chart_cols: st.bar_chart(dp_num[ind_p_chart_cols])
+
                 # Percentages for Individual View
                 dp_str = format_with_pct(dp_num, row_totals)
                 
