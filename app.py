@@ -161,7 +161,58 @@ try:
             tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
             tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
 
-        # --- TEAM GRAPHS SECTION ---
+        app_counts = f1_team.groupby('Advisor').size().to_frame('Total Applications')
+        qual_counts = f1_team.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
+        port_counts = f2_team.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
+        
+        tab_master = pd.DataFrame(index=active_advisors_team).join([app_counts, qual_counts, port_counts]).fillna(0)
+        sort_col = sort_options[selected_sort_label]
+        master = tab_master.sort_index() if sort_col == "index" else tab_master.sort_values(sort_col, ascending=False)
+        
+        totals_row = master.sum().to_frame().T
+        totals_row.index = ["GRAND TOTAL"]
+        final_df = pd.concat([master, totals_row])
+        advisor_indices = master.index
+
+        st.divider()
+        c1, c2, c3 = st.columns([1, 1.8, 1.8])
+        
+        # --- ORIGINAL MASTER TABLES ---
+        with c1:
+            st.subheader("📊 Applications")
+            st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
+        
+        with c2:
+            st.subheader("✅ Quality Audit")
+            q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
+            # Numeric DF for Gradients
+            disp_qual_num = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
+            # String DF with percentages
+            disp_qual_str = format_with_pct(disp_qual_num, final_df['Total Applications'])
+            
+            styler_q = disp_qual_str.style
+            for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
+                if col in disp_qual_num.columns:
+                    styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_qual_num[col])
+            st.dataframe(styler_q, use_container_width=True, height=500)
+            
+        with c3:
+            st.subheader("🌐 Live Status")
+            p_cols = [c for c in final_df.columns if c.startswith('Port_')]
+            p_order = ['Port_Live', 'Port_Committed', 'Port_Cancelled', 'Port_Others']
+            actual_p_order = [c for c in p_order if c in p_cols]
+            # Numeric DF for Gradients
+            disp_port_num = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
+            # String DF with percentages
+            disp_port_str = format_with_pct(disp_port_num, final_df['Total Applications'])
+            
+            styler_p = disp_port_str.style
+            for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
+                if col in disp_port_num.columns:
+                    styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_port_num[col])
+            st.dataframe(styler_p, use_container_width=True, height=500)
+
+        # --- TEAM GRAPHS PLACED BELOW THE TABLES ---
         st.divider()
         st.subheader("📈 Team Trend Visualizations")
         team_view_mode = st.radio("Filter Graphs By:", ["Daily", "Weekly", "Monthly", "Yearly"], horizontal=True, key="team_graph_filter")
@@ -169,6 +220,7 @@ try:
         t1_graphs = f1_team.copy()
         t2_graphs = f2_team.copy()
         
+        # Convert periods strictly to strings early to prevent PyArrow TypedDict crashes
         if team_view_mode == "Yearly":
             t1_graphs['Period'] = t1_graphs['Date_Parsed'].dt.to_period('Y').astype(str)
             t2_graphs['Period'] = t2_graphs['Date_Parsed'].dt.to_period('Y').astype(str)
@@ -199,57 +251,6 @@ try:
             p_chart_cols = [c for c in ['Live', 'Cancelled'] if c in trend_port.columns]
             if p_chart_cols: st.bar_chart(trend_port[p_chart_cols])
 
-        # --- TEAM MASTER TABLES ---
-        app_counts = f1_team.groupby('Advisor').size().to_frame('Total Applications')
-        qual_counts = f1_team.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
-        port_counts = f2_team.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
-        
-        tab_master = pd.DataFrame(index=active_advisors_team).join([app_counts, qual_counts, port_counts]).fillna(0)
-        sort_col = sort_options[selected_sort_label]
-        master = tab_master.sort_index() if sort_col == "index" else tab_master.sort_values(sort_col, ascending=False)
-        
-        totals_row = master.sum().to_frame().T
-        totals_row.index = ["GRAND TOTAL"]
-        final_df = pd.concat([master, totals_row])
-        advisor_indices = master.index
-
-        st.divider()
-        c1, c2, c3 = st.columns([1, 1.8, 1.8])
-        with c1:
-            st.subheader("📊 Applications")
-            st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
-        
-        with c2:
-            st.subheader("✅ Quality Audit")
-            q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
-            # Numeric DF for Gradients
-            disp_qual_num = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
-            # String DF with percentages
-            disp_qual_str = format_with_pct(disp_qual_num, final_df['Total Applications'])
-            
-            styler_q = disp_qual_str.style
-            for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
-                if col in disp_qual_num.columns:
-                    # Using gmap to apply numeric gradients to string content
-                    styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_qual_num[col])
-            st.dataframe(styler_q, use_container_width=True, height=500)
-            
-        with c3:
-            st.subheader("🌐 Live Status")
-            p_cols = [c for c in final_df.columns if c.startswith('Port_')]
-            p_order = ['Port_Live', 'Port_Committed', 'Port_Cancelled', 'Port_Others']
-            actual_p_order = [c for c in p_order if c in p_cols]
-            # Numeric DF for Gradients
-            disp_port_num = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
-            # String DF with percentages
-            disp_port_str = format_with_pct(disp_port_num, final_df['Total Applications'])
-            
-            styler_p = disp_port_str.style
-            for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-                if col in disp_port_num.columns:
-                    # Using gmap to apply numeric gradients to string content
-                    styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_port_num[col])
-            st.dataframe(styler_p, use_container_width=True, height=500)
 
     with tab2:
         st.subheader("👤 Detailed Agent Analysis")
@@ -280,6 +281,7 @@ try:
                 m7.metric("🚀 Live Rate", live_rate, help=KPI_DEFS["live_rate"])
             
             st.divider()
+            # ADDED NEW FILTERS HERE
             view_mode = st.radio("View Breakdown By:", ["Daily", "Weekly", "Monthly", "Yearly"], horizontal=True)
             
             if view_mode == "Yearly":
@@ -302,17 +304,20 @@ try:
                 st.markdown(f"#### 📊 {view_mode} Applications")
                 daily_apps = ag1.groupby('Period').size().to_frame('Applications')
                 
+                # Format to strings to avoid PyArrow error
                 if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
                 elif view_mode == "Yearly": daily_apps.index = daily_apps.index.strftime('%Y')
-                elif view_mode == "Weekly": daily_apps.index = daily_apps.index.astype(str)
+                else: daily_apps.index = daily_apps.index.astype(str)
                 
-                # Dynamic Bar Chart
-                st.bar_chart(daily_apps)
-
+                # ORIGINAL TABLE REMAINS UNTOUCHED
                 t_apps = daily_apps.sum().to_frame().T
                 t_apps.index = ["TOTAL"]
                 df_apps = pd.concat([daily_apps, t_apps])
                 st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), use_container_width=True)
+
+                # GRAPH BELOW TABLE
+                st.markdown("##### 📈 Trend")
+                st.bar_chart(daily_apps)
 
             with cb:
                 st.markdown("#### ✅ Quality Audit")
@@ -321,19 +326,14 @@ try:
                 actual_q = [c for c in q_order if c in daily_qual.columns]
                 dq_num = daily_qual[actual_q]
                 
+                # Format to strings to avoid PyArrow error
                 if view_mode == "Monthly": dq_num.index = dq_num.index.strftime('%b %Y')
                 elif view_mode == "Yearly": dq_num.index = dq_num.index.strftime('%Y')
-                elif view_mode == "Weekly": dq_num.index = dq_num.index.astype(str)
+                else: dq_num.index = dq_num.index.astype(str)
                 
-                # Dynamic Bar Chart
-                ind_q_chart_cols = [c for c in ['Approved', 'Cancelled', 'Rework'] if c in dq_num.columns]
-                if ind_q_chart_cols: st.bar_chart(dq_num[ind_q_chart_cols])
-
-                # Percentages for Individual View
+                # ORIGINAL TABLE REMAINS UNTOUCHED
                 row_totals = daily_apps['Applications']
                 dq_str = format_with_pct(dq_num, row_totals)
-                
-                # Grand Totals row for Individual View
                 t_qual_num = dq_num.sum().to_frame().T
                 t_qual_num.index = ["TOTAL"]
                 t_qual_str = format_with_pct(t_qual_num, pd.Series([total_apps], index=["TOTAL"]))
@@ -345,6 +345,11 @@ try:
                         styler_dq = styler_dq.background_gradient(subset=(dq_num.index, col), cmap=cmap, gmap=dq_num[col])
                 st.dataframe(styler_dq, use_container_width=True)
 
+                # GRAPH BELOW TABLE
+                st.markdown("##### 📈 Trend")
+                ind_q_chart_cols = [c for c in ['Approved', 'Cancelled', 'Rework'] if c in dq_num.columns]
+                if ind_q_chart_cols: st.bar_chart(dq_num[ind_q_chart_cols])
+
             with cc:
                 st.markdown("#### 🌐 Live Status")
                 daily_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
@@ -352,18 +357,13 @@ try:
                 actual_p = [c for c in p_order if c in daily_port.columns]
                 dp_num = daily_port[actual_p]
                 
+                # Format to strings to avoid PyArrow error
                 if view_mode == "Monthly": dp_num.index = dp_num.index.strftime('%b %Y')
                 elif view_mode == "Yearly": dp_num.index = dp_num.index.strftime('%Y')
-                elif view_mode == "Weekly": dp_num.index = dp_num.index.astype(str)
+                else: dp_num.index = dp_num.index.astype(str)
                 
-                # Dynamic Bar Chart
-                ind_p_chart_cols = [c for c in ['Live', 'Cancelled'] if c in dp_num.columns]
-                if ind_p_chart_cols: st.bar_chart(dp_num[ind_p_chart_cols])
-
-                # Percentages for Individual View
+                # ORIGINAL TABLE REMAINS UNTOUCHED
                 dp_str = format_with_pct(dp_num, row_totals)
-                
-                # Grand Totals row
                 t_port_num = dp_num.sum().to_frame().T
                 t_port_num.index = ["TOTAL"]
                 t_port_str = format_with_pct(t_port_num, pd.Series([total_apps], index=["TOTAL"]))
@@ -374,6 +374,11 @@ try:
                     if col in dp_num.columns:
                         styler_dp = styler_dp.background_gradient(subset=(dp_num.index, col), cmap=cmap, gmap=dp_num[col])
                 st.dataframe(styler_dp, use_container_width=True)
+
+                # GRAPH BELOW TABLE
+                st.markdown("##### 📈 Trend")
+                ind_p_chart_cols = [c for c in ['Live', 'Cancelled'] if c in dp_num.columns]
+                if ind_p_chart_cols: st.bar_chart(dp_num[ind_p_chart_cols])
 
 except Exception as e:
     st.error(f"Error: {e}")
