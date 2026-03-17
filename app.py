@@ -179,50 +179,62 @@ try:
         with c2:
             st.subheader("✅ Quality Audit")
             q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
-            disp_qual_num = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
-            disp_qual_str = format_with_pct(disp_qual_num, final_df['Total Applications'])
-            styler_q = disp_qual_str.style
-            for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
-                if col in disp_qual_num.columns:
-                    styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_qual_num[col])
-            st.dataframe(styler_q, use_container_width=True, height=500)
+            if q_cols:
+                disp_qual_num = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
+                disp_qual_str = format_with_pct(disp_qual_num, final_df['Total Applications'])
+                styler_q = disp_qual_str.style
+                for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
+                    if col in disp_qual_num.columns:
+                        styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_qual_num[col])
+                st.dataframe(styler_q, use_container_width=True, height=500)
+            else:
+                st.info("No quality data available.")
             
         with c3:
             st.subheader("🌐 Live Status")
             p_cols = [c for c in final_df.columns if c.startswith('Port_')]
-            p_order = ['Port_Live', 'Port_Committed', 'Port_Cancelled', 'Port_Others']
-            actual_p_order = [c for c in p_order if c in p_cols]
-            disp_port_num = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
-            disp_port_str = format_with_pct(disp_port_num, final_df['Total Applications'])
-            styler_p = disp_port_str.style
-            for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-                if col in disp_port_num.columns:
-                    styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_port_num[col])
-            st.dataframe(styler_p, use_container_width=True, height=500)
+            if p_cols:
+                p_order = ['Port_Live', 'Port_Committed', 'Port_Cancelled', 'Port_Others']
+                actual_p_order = [c for c in p_order if c in p_cols]
+                disp_port_num = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
+                disp_port_str = format_with_pct(disp_port_num, final_df['Total Applications'])
+                styler_p = disp_port_str.style
+                for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
+                    if col in disp_port_num.columns:
+                        styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_port_num[col])
+                st.dataframe(styler_p, use_container_width=True, height=500)
+            else:
+                st.info("No live status data available.")
 
         st.divider()
         st.subheader("📈 Team Performance Trends")
         tg_1, tg_2 = st.columns(2)
         
         with tg_1:
-            # SINGLE AXIS: Apps vs Quality Approved
-            daily_v = f1_team.groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Apps')
-            daily_q = f1_team[f1_team['Q_Status'] == 'Approved'].groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Approved')
-            combined = pd.merge(daily_v, daily_q, on='Date_Parsed', how='left').fillna(0)
-            combined['Date_Parsed'] = combined['Date_Parsed'].astype(str)
+            if not f1_team.empty:
+                daily_v = f1_team.groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Apps')
+                daily_q = f1_team[f1_team['Q_Status'] == 'Approved'].groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Approved')
+                combined = pd.merge(daily_v, daily_q, on='Date_Parsed', how='left').fillna(0)
+                combined['Date_Parsed'] = combined['Date_Parsed'].astype(str)
 
-            fig_single = go.Figure()
-            fig_single.add_trace(go.Bar(x=combined['Date_Parsed'], y=combined['Apps'], name="Total Apps", marker_color='#1E3A8A'))
-            fig_single.add_trace(go.Scatter(x=combined['Date_Parsed'], y=combined['Approved'], name="Approved (Audit)", line=dict(color='#2E7D32', width=3)))
-            fig_single.update_layout(title_text="Daily Apps vs. Quality Approval", hovermode="x unified")
-            st.plotly_chart(fig_single, use_container_width=True)
+                fig_single = go.Figure()
+                fig_single.add_trace(go.Bar(x=combined['Date_Parsed'], y=combined['Apps'], name="Total Apps", marker_color='#1E3A8A'))
+                fig_single.add_trace(go.Scatter(x=combined['Date_Parsed'], y=combined['Approved'], name="Approved (Audit)", line=dict(color='#2E7D32', width=3)))
+                fig_single.update_layout(title_text="Daily Apps vs. Quality Approval", hovermode="x unified")
+                st.plotly_chart(fig_single, use_container_width=True)
+            else:
+                st.info("No application trend data for this period.")
             
         with tg_2:
-            status_plot = master[['Port_Live', 'Port_Cancelled']].rename(columns={'Port_Live':'Live', 'Port_Cancelled':'Cancelled'}).reset_index()
-            fig_status = px.bar(status_plot, x='index', y=['Live', 'Cancelled'], barmode='group', 
-                                color_discrete_map={'Live': '#2563EB', 'Cancelled': '#DC2626'},
-                                title="Agent-wise Live vs. Cancelled Volume")
-            st.plotly_chart(fig_status, use_container_width=True)
+            available_cols = [c for c in ['Port_Live', 'Port_Cancelled'] if c in master.columns]
+            if available_cols:
+                status_plot = master[available_cols].rename(columns={'Port_Live':'Live', 'Port_Cancelled':'Cancelled'}).reset_index()
+                fig_status = px.bar(status_plot, x='index', y=[c.replace('Port_', '') for c in available_cols], barmode='group', 
+                                    color_discrete_map={'Live': '#2563EB', 'Cancelled': '#DC2626'},
+                                    title="Agent-wise Live vs. Cancelled Volume")
+                st.plotly_chart(fig_status, use_container_width=True)
+            else:
+                st.info("No Live/Cancelled records found for this selection.")
 
     with tab2:
         st.subheader("👤 Detailed Agent Analysis")
@@ -266,61 +278,72 @@ try:
 
             with ca:
                 st.markdown(f"#### 📊 {view_mode} Applications")
-                daily_apps = ag1.groupby('Period').size().to_frame('Applications')
-                if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
-                t_apps = daily_apps.sum().to_frame().T
-                t_apps.index = ["TOTAL"]
-                df_apps = pd.concat([daily_apps, t_apps])
-                st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), use_container_width=True)
+                if not ag1.empty:
+                    daily_apps = ag1.groupby('Period').size().to_frame('Applications')
+                    if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
+                    t_apps = daily_apps.sum().to_frame().T
+                    t_apps.index = ["TOTAL"]
+                    df_apps = pd.concat([daily_apps, t_apps])
+                    st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), use_container_width=True)
+                else:
+                    st.info("No applications found.")
 
             with cb:
                 st.markdown("#### ✅ Quality Audit")
-                daily_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
-                q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
-                actual_q = [c for c in q_order if c in daily_qual.columns]
-                dq_num = daily_qual[actual_q]
-                if view_mode == "Monthly": dq_num.index = dq_num.index.strftime('%b %Y')
-                row_totals = daily_apps['Applications']
-                dq_str = format_with_pct(dq_num, row_totals)
-                t_qual_num = dq_num.sum().to_frame().T
-                t_qual_num.index = ["TOTAL"]
-                t_qual_str = format_with_pct(t_qual_num, pd.Series([total_apps], index=["TOTAL"]))
-                final_q_str = pd.concat([dq_str, t_qual_str])
-                styler_dq = final_q_str.style
-                for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
-                    if col in dq_num.columns:
-                        styler_dq = styler_dq.background_gradient(subset=(dq_num.index, col), cmap=cmap, gmap=dq_num[col])
-                st.dataframe(styler_dq, use_container_width=True)
+                if not ag1.empty:
+                    daily_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
+                    q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
+                    actual_q = [c for c in q_order if c in daily_qual.columns]
+                    dq_num = daily_qual[actual_q]
+                    if view_mode == "Monthly": dq_num.index = dq_num.index.strftime('%b %Y')
+                    row_totals = daily_apps['Applications']
+                    dq_str = format_with_pct(dq_num, row_totals)
+                    t_qual_num = dq_num.sum().to_frame().T
+                    t_qual_num.index = ["TOTAL"]
+                    t_qual_str = format_with_pct(t_qual_num, pd.Series([total_apps], index=["TOTAL"]))
+                    final_q_str = pd.concat([dq_str, t_qual_str])
+                    styler_dq = final_q_str.style
+                    for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
+                        if col in dq_num.columns:
+                            styler_dq = styler_dq.background_gradient(subset=(dq_num.index, col), cmap=cmap, gmap=dq_num[col])
+                    st.dataframe(styler_dq, use_container_width=True)
+                else:
+                    st.info("No quality records.")
 
             with cc:
                 st.markdown("#### 🌐 Live Status")
-                daily_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
-                p_order = ['Live', 'Committed', 'Cancelled', 'Others']
-                actual_p = [c for c in p_order if c in daily_port.columns]
-                dp_num = daily_port[actual_p]
-                if view_mode == "Monthly": dp_num.index = dp_num.index.strftime('%b %Y')
-                dp_str = format_with_pct(dp_num, row_totals)
-                t_port_num = dp_num.sum().to_frame().T
-                t_port_num.index = ["TOTAL"]
-                t_port_str = format_with_pct(t_port_num, pd.Series([total_apps], index=["TOTAL"]))
-                final_p_str = pd.concat([dp_str, t_port_str])
-                styler_dp = final_p_str.style
-                for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-                    if col in dp_num.columns:
-                        styler_dp = styler_dp.background_gradient(subset=(dp_num.index, col), cmap=cmap, gmap=dp_num[col])
-                st.dataframe(styler_dp, use_container_width=True)
+                if not ag2.empty:
+                    daily_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
+                    p_order = ['Live', 'Committed', 'Cancelled', 'Others']
+                    actual_p = [c for c in p_order if c in daily_port.columns]
+                    dp_num = daily_port[actual_p]
+                    if view_mode == "Monthly": dp_num.index = dp_num.index.strftime('%b %Y')
+                    dp_str = format_with_pct(dp_num, row_totals)
+                    t_port_num = dp_num.sum().to_frame().T
+                    t_port_num.index = ["TOTAL"]
+                    t_port_str = format_with_pct(t_port_num, pd.Series([total_apps], index=["TOTAL"]))
+                    final_p_str = pd.concat([dp_str, t_port_str])
+                    styler_dp = final_p_str.style
+                    for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
+                        if col in dp_num.columns:
+                            styler_dp = styler_dp.background_gradient(subset=(dp_num.index, col), cmap=cmap, gmap=dp_num[col])
+                    st.dataframe(styler_dp, use_container_width=True)
+                else:
+                    st.info("No live status records found for this agent.")
 
-            # --- SINGLE AXIS INDIVIDUAL ---
             st.divider()
             st.subheader(f"📈 Performance Trend: {selected_agent}")
-            i_comb = pd.merge(daily_apps.reset_index(), dq_num[['Approved']].reset_index(), on='Period', how='left').fillna(0)
-            i_comb['Period'] = i_comb['Period'].astype(str)
-            
-            fig_i = go.Figure()
-            fig_i.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Applications'], name="Apps", marker_color='#60A5FA'))
-            fig_i.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Approved'], name="Approved", line=dict(color='#059669', width=3)))
-            fig_i.update_layout(hovermode="x unified")
-            st.plotly_chart(fig_i, use_container_width=True)
+            if not ag1.empty:
+                # Safely handle 'Approved' column existence for trend line
+                approved_col = dq_num[['Approved']] if 'Approved' in dq_num.columns else pd.DataFrame(0, index=daily_apps.index, columns=['Approved'])
+                i_comb = pd.merge(daily_apps.reset_index(), approved_col.reset_index(), on='Period', how='left').fillna(0)
+                i_comb['Period'] = i_comb['Period'].astype(str)
+                
+                fig_i = go.Figure()
+                fig_i.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Applications'], name="Apps", marker_color='#60A5FA'))
+                fig_i.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Approved'], name="Approved", line=dict(color='#059669', width=3)))
+                fig_i.update_layout(hovermode="x unified")
+                st.plotly_chart(fig_i, use_container_width=True)
 
 except Exception as e:
     st.error(f"Error: {e}")
