@@ -4,15 +4,16 @@ import gspread
 from google.oauth2.service_account import Credentials
 import datetime
 import numpy as np
+import plotly.express as px  # Added for stable charting
 
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
 # --- MASTER AGENT LIST (LIVE AS OF TODAY) ---
 LIVE_AGENTS = [
-    "Anshu","Anjali", "Aman", "Frogh", "Gaurav", "Guru", 
-    "Naveen", "Krrish", "Niki", "Manmeet","Sangeeta","Gungun",
-    "Animesh","Ajay","Shaheen"
+   "Anshu","Anjali", "Aman", "Frogh", "Gaurav", "Guru", 
+   "Naveen", "Krrish", "Niki", "Manmeet","Sangeeta","Gungun",
+   "Animesh","Ajay","Shaheen"
 ]
 
 st.markdown("""
@@ -70,12 +71,9 @@ def map_portal(val):
     return 'Others'
 
 def format_with_pct(val_df, total_series):
-    """Helper to add (XX%) while keeping original numeric structure for gradients."""
     display_df = val_df.copy()
     for col in val_df.columns:
-        # Calculate percentage against the total column
         pcts = (val_df[col] / total_series * 100).fillna(0)
-        # Convert to string format: Count (Percentage%)
         display_df[col] = val_df[col].apply(lambda x: f"{int(x):,}") + " (" + pcts.map("{:.1f}%".format) + ")"
     return display_df
 
@@ -176,6 +174,8 @@ try:
 
         st.divider()
         c1, c2, c3 = st.columns([1, 1.8, 1.8])
+        
+        # --- ORIGINAL TABLES ---
         with c1:
             st.subheader("📊 Applications")
             st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
@@ -183,15 +183,11 @@ try:
         with c2:
             st.subheader("✅ Quality Audit")
             q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
-            # Numeric DF for Gradients
             disp_qual_num = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
-            # String DF with percentages
             disp_qual_str = format_with_pct(disp_qual_num, final_df['Total Applications'])
-            
             styler_q = disp_qual_str.style
             for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
                 if col in disp_qual_num.columns:
-                    # Using gmap to apply numeric gradients to string content
                     styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_qual_num[col])
             st.dataframe(styler_q, use_container_width=True, height=500)
             
@@ -200,17 +196,32 @@ try:
             p_cols = [c for c in final_df.columns if c.startswith('Port_')]
             p_order = ['Port_Live', 'Port_Committed', 'Port_Cancelled', 'Port_Others']
             actual_p_order = [c for c in p_order if c in p_cols]
-            # Numeric DF for Gradients
             disp_port_num = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
-            # String DF with percentages
             disp_port_str = format_with_pct(disp_port_num, final_df['Total Applications'])
-            
             styler_p = disp_port_str.style
             for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
                 if col in disp_port_num.columns:
-                    # Using gmap to apply numeric gradients to string content
                     styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_port_num[col])
             st.dataframe(styler_p, use_container_width=True, height=500)
+
+        # --- NEW TREND GRAPHS (TEAM) ---
+        st.divider()
+        st.subheader("📈 Team Performance Trends")
+        tg_1, tg_2 = st.columns(2)
+        
+        # Trend Data Processing
+        f1_trend = f1_team.groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Apps')
+        f1_trend['Date_Parsed'] = f1_trend['Date_Parsed'].astype(str)
+        
+        with tg_1:
+            fig_apps = px.bar(f1_trend, x='Date_Parsed', y='Apps', title="Daily Team Applications", color_discrete_sequence=['#2E7D32'])
+            st.plotly_chart(fig_apps, use_container_width=True)
+            
+        with tg_2:
+            q_trend = f1_team.groupby([f1_team['Date_Parsed'].dt.date, 'Q_Status']).size().unstack(fill_value=0).reset_index()
+            q_trend['Date_Parsed'] = q_trend['Date_Parsed'].astype(str)
+            fig_q = px.line(q_trend, x='Date_Parsed', y=[c for c in ['Approved', 'Cancelled', 'Rework'] if c in q_trend.columns], title="Quality Trends")
+            st.plotly_chart(fig_q, use_container_width=True)
 
     with tab2:
         st.subheader("👤 Detailed Agent Analysis")
@@ -268,16 +279,11 @@ try:
                 actual_q = [c for c in q_order if c in daily_qual.columns]
                 dq_num = daily_qual[actual_q]
                 if view_mode == "Monthly": dq_num.index = dq_num.index.strftime('%b %Y')
-                
-                # Percentages for Individual View
                 row_totals = daily_apps['Applications']
                 dq_str = format_with_pct(dq_num, row_totals)
-                
-                # Grand Totals row for Individual View
                 t_qual_num = dq_num.sum().to_frame().T
                 t_qual_num.index = ["TOTAL"]
                 t_qual_str = format_with_pct(t_qual_num, pd.Series([total_apps], index=["TOTAL"]))
-                
                 final_q_str = pd.concat([dq_str, t_qual_str])
                 styler_dq = final_q_str.style
                 for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
@@ -292,21 +298,36 @@ try:
                 actual_p = [c for c in p_order if c in daily_port.columns]
                 dp_num = daily_port[actual_p]
                 if view_mode == "Monthly": dp_num.index = dp_num.index.strftime('%b %Y')
-                
-                # Percentages for Individual View
                 dp_str = format_with_pct(dp_num, row_totals)
-                
-                # Grand Totals row
                 t_port_num = dp_num.sum().to_frame().T
                 t_port_num.index = ["TOTAL"]
                 t_port_str = format_with_pct(t_port_num, pd.Series([total_apps], index=["TOTAL"]))
-                
                 final_p_str = pd.concat([dp_str, t_port_str])
                 styler_dp = final_p_str.style
                 for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
                     if col in dp_num.columns:
                         styler_dp = styler_dp.background_gradient(subset=(dp_num.index, col), cmap=cmap, gmap=dp_num[col])
                 st.dataframe(styler_dp, use_container_width=True)
+
+            # --- NEW TREND GRAPHS (INDIVIDUAL) ---
+            st.divider()
+            st.subheader(f"📈 Trends for {selected_agent}")
+            i_tg1, i_tg2 = st.columns(2)
+            
+            # Prepare Plotly data (casting Period to string to avoid Python 3.13 issues)
+            ind_trend_data = daily_apps.reset_index()
+            ind_trend_data['Period'] = ind_trend_data['Period'].astype(str)
+            
+            with i_tg1:
+                fig_ind_apps = px.line(ind_trend_data, x='Period', y='Applications', title="Application Trend", markers=True)
+                st.plotly_chart(fig_ind_apps, use_container_width=True)
+            
+            with i_tg2:
+                # Merge Quality statuses for plotting
+                ind_q_plot = dq_num.reset_index()
+                ind_q_plot['Period'] = ind_q_plot['Period'].astype(str)
+                fig_ind_q = px.bar(ind_q_plot, x='Period', y=[c for c in ['Approved', 'Cancelled'] if c in ind_q_plot.columns], barmode='group', title="Quality Volume")
+                st.plotly_chart(fig_ind_q, use_container_width=True)
 
 except Exception as e:
     st.error(f"Error: {e}")
