@@ -5,17 +5,17 @@ from google.oauth2.service_account import Credentials
 import datetime
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import plotly.graph_objects as go # Added for Dual-Axis
+from plotly.subplots import make_subplots # Added for Dual-Axis
 
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
-# --- MASTER AGENT LIST ---
+# --- MASTER AGENT LIST (LIVE AS OF TODAY) ---
 LIVE_AGENTS = [
-   "Anshu","Anjali", "Aman", "Frogh", "Gaurav", "Guru", 
-   "Naveen", "Krrish", "Niki", "Manmeet","Sangeeta","Gungun",
-   "Animesh","Ajay","Shaheen"
+    "Anshu","Anjali", "Aman", "Frogh", "Gaurav", "Guru", 
+    "Naveen", "Krrish", "Niki", "Manmeet","Sangeeta","Gungun",
+    "Animesh","Ajay","Shaheen"
 ]
 
 st.markdown("""
@@ -77,12 +77,12 @@ def format_with_pct(val_df, total_series):
 
 KPI_DEFS = {
     "total_apps": "Total Applications.",
-    "qual_approved": "Passed Quality Audit.",
-    "approv_rate": "% of Apps Approved.",
-    "commit_apps": "Total Committed.",
-    "commit_rate": "% of Apps Committed",
-    "total_live": "Total Live.",
-    "live_rate": "Committed to Live conversion."
+    "qual_approved": "Applications that have successfully passed the Quality Audit process.",
+    "approv_rate": "Percentage of total applications that reached 'Approved' status.",
+    "commit_apps": "Total applications that got 'Committed'.",
+    "commit_rate": "Percentage of applications that got 'Committed'",
+    "total_live": "Total applications that got 'Live'.",
+    "live_rate": "Conversion rate from Committed applications to confirmed Live records."
 }
 
 # --- UI START ---
@@ -112,6 +112,7 @@ try:
     sort_options = {
         "Total Applications (High to Low)": "Total Applications", 
         "Quality: Approved": "Qual_Approved", 
+        "Quality: Cancelled": "Qual_Cancelled", 
         "Live Status: Live": "Port_Live", 
         "Advisor Name (A-Z)": "index"
     }
@@ -122,143 +123,207 @@ try:
     master_base = pd.DataFrame(index=all_advisors).join([app_counts_base, qual_counts_base, port_counts_base]).fillna(0)
 
     available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master_base.columns]
-    selected_sort_label = col_c.selectbox("Master Sort:", available_sorts)
+    selected_sort_label = col_c.selectbox("Master Sort (Aligns all tables):", available_sorts)
 
     tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
-    # --- TAB 1: TEAM ---
     with tab1:
-        show_live_team = st.checkbox("Show current roster only", value=False, key="t_roster")
+        show_live_team = st.checkbox("Show current roster only", value=False, key="team_roster_filter")
+        
         if show_live_team:
-            f1_t = f1[f1['Advisor'].isin(formatted_live)].copy()
-            f2_t = f2[f2['Advisor'].isin(formatted_live)].copy()
-            active_adv = [n for n in all_advisors if n in formatted_live]
+            f1_team = f1[f1['Advisor'].isin(formatted_live)].copy()
+            f2_team = f2[f2['Advisor'].isin(formatted_live)].copy()
+            active_advisors_team = [name for name in all_advisors if name in formatted_live]
         else:
-            f1_t, f2_t, active_adv = f1.copy(), f2.copy(), all_advisors
+            f1_team = f1.copy()
+            f2_team = f2.copy()
+            active_advisors_team = all_advisors
 
-        # Metrics...
-        t_apps = len(f1_t)
-        t_appr = len(f1_t[f1_t['Q_Status'] == 'Approved'])
-        t_comm = len(f2_t)
-        t_live = len(f2_t[f2_t['P_Status'] == 'Live'])
+        team_apps = len(f1_team)
+        team_approved = len(f1_team[f1_team['Q_Status'] == 'Approved'])
+        team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
+        team_committed = len(f2_team)
+        team_commit_rate = f"{(team_committed / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
+        team_live = len(f2_team[f2_team['P_Status'] == 'Live'])
+        team_live_rate = f"{(team_live / team_committed * 100):.1f}%" if team_committed > 0 else "0.0%"
 
         with st.container(border=True):
-            m = st.columns(7)
-            m[0].metric("📝 Apps", f"{t_apps:,}")
-            m[1].metric("✅ Appr.", f"{t_appr:,}")
-            m[2].metric("📈 Rate", f"{(t_appr/t_apps*100 if t_apps>0 else 0):.1f}%")
-            m[3].metric("📦 Comm.", f"{t_comm:,}")
-            m[4].metric("📋 Rate", f"{(t_comm/t_apps*100 if t_apps>0 else 0):.1f}%")
-            m[5].metric("🌐 Live", f"{t_live:,}")
-            m[6].metric("🚀 Rate", f"{(t_live/t_comm*100 if t_comm>0 else 0):.1f}%")
+            tm1, tm2, tm3, tm4, tm5, tm6, tm7 = st.columns(7)
+            tm1.metric("📝 Tot. Applications", f"{team_apps:,}", help=KPI_DEFS["total_apps"])
+            tm2.metric("✅ Quality Approv.", f"{team_approved:,}", help=KPI_DEFS["qual_approved"])
+            tm3.metric("📈 Approv. Rate", team_approv_rate, help=KPI_DEFS["approv_rate"])
+            tm4.metric("📦 Commit. Apps", f"{team_committed:,}", help=KPI_DEFS["commit_apps"])
+            tm5.metric("📋 Commit. Rate", team_commit_rate, help=KPI_DEFS["commit_rate"])
+            tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
+            tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
 
-        # Table Assembly...
-        ac = f1_t.groupby('Advisor').size().to_frame('Total Applications')
-        qc = f1_t.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
-        pc = f2_t.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
+        app_counts = f1_team.groupby('Advisor').size().to_frame('Total Applications')
+        qual_counts = f1_team.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
+        port_counts = f2_team.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
         
-        mst = pd.DataFrame(index=active_adv).join([ac, qc, pc]).fillna(0)
-        sc = sort_options[selected_sort_label]
-        mst = mst.sort_index() if sc == "index" else mst.sort_values(sc, ascending=False)
+        tab_master = pd.DataFrame(index=active_advisors_team).join([app_counts, qual_counts, port_counts]).fillna(0)
+        sort_col = sort_options[selected_sort_label]
+        master = tab_master.sort_index() if sort_col == "index" else tab_master.sort_values(sort_col, ascending=False)
         
-        final_mst = pd.concat([mst, mst.sum().to_frame().T.rename(index={0: "GRAND TOTAL"})])
-        idx = mst.index
+        totals_row = master.sum().to_frame().T
+        totals_row.index = ["GRAND TOTAL"]
+        final_df = pd.concat([master, totals_row])
+        advisor_indices = master.index
 
         st.divider()
         c1, c2, c3 = st.columns([1, 1.8, 1.8])
+        
+        # --- ORIGINAL TABLES PRESERVED ---
         with c1:
             st.subheader("📊 Applications")
-            st.dataframe(final_mst[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(idx, 'Total Applications')), use_container_width=True)
+            st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
+        
         with c2:
             st.subheader("✅ Quality Audit")
-            dq = final_mst[[c for c in final_mst.columns if c.startswith('Qual_')]].rename(columns=lambda x: x.replace('Qual_', ''))
-            st.dataframe(format_with_pct(dq, final_mst['Total Applications']).style.background_gradient(subset=(idx, 'Approved'), cmap='YlGn', gmap=dq['Approved']), use_container_width=True)
+            q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
+            disp_qual_num = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
+            disp_qual_str = format_with_pct(disp_qual_num, final_df['Total Applications'])
+            styler_q = disp_qual_str.style
+            for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
+                if col in disp_qual_num.columns:
+                    styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_qual_num[col])
+            st.dataframe(styler_q, use_container_width=True, height=500)
+            
         with c3:
             st.subheader("🌐 Live Status")
-            dp = final_mst[[c for c in final_mst.columns if c.startswith('Port_')]].rename(columns=lambda x: x.replace('Port_', ''))
-            st.dataframe(format_with_pct(dp, final_mst['Total Applications']).style.background_gradient(subset=(idx, 'Live'), cmap='Blues', gmap=dp['Live']), use_container_width=True)
+            p_cols = [c for c in final_df.columns if c.startswith('Port_')]
+            p_order = ['Port_Live', 'Port_Committed', 'Port_Cancelled', 'Port_Others']
+            actual_p_order = [c for c in p_order if c in p_cols]
+            disp_port_num = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
+            disp_port_str = format_with_pct(disp_port_num, final_df['Total Applications'])
+            styler_p = disp_port_str.style
+            for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
+                if col in disp_port_num.columns:
+                    styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_port_num[col])
+            st.dataframe(styler_p, use_container_width=True, height=500)
 
-        # TEAM GRAPHS
+        # --- CAREFULLY ADDED GRAPHS ---
         st.divider()
-        g1, g2 = st.columns(2)
-        with g1:
-            st.subheader("📈 Trend: Apps vs Quality")
-            f1_t['Day'] = f1_t['Date_Parsed'].dt.date.astype(str)
-            v = f1_t.groupby('Day').size().reset_index(name='Apps')
-            q = f1_t[f1_t['Q_Status'] == 'Approved'].groupby('Day').size().reset_index(name='Approved')
-            cb = pd.merge(v, q, on='Day', how='left').fillna(0)
-            fig = make_subplots(specs=[[{"secondary_y": True}]])
-            fig.add_trace(go.Bar(x=cb['Day'], y=cb['Apps'], name="Apps", marker_color='#1E3A8A'), secondary_y=False)
-            fig.add_trace(go.Scatter(x=cb['Day'], y=cb['Approved'], name="Approved", line=dict(color='#2E7D32', width=3)), secondary_y=True)
-            st.plotly_chart(fig, use_container_width=True)
-        with g2:
-            st.subheader("🚀 Status: Live vs. Cancelled")
-            sp = mst[['Port_Live', 'Port_Cancelled']].rename(columns={'Port_Live':'Live', 'Port_Cancelled':'Cancelled'}).reset_index()
-            fig2 = px.bar(sp, x='index', y=['Live', 'Cancelled'], barmode='group', color_discrete_map={'Live': '#2563EB', 'Cancelled': '#DC2626'})
-            st.plotly_chart(fig2, use_container_width=True)
+        st.subheader("📈 Team Performance Trends")
+        tg_1, tg_2 = st.columns(2)
+        
+        with tg_1:
+            # DUAL AXIS: Apps vs Quality Approved
+            daily_v = f1_team.groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Apps')
+            daily_q = f1_team[f1_team['Q_Status'] == 'Approved'].groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Approved')
+            combined = pd.merge(daily_v, daily_q, on='Date_Parsed', how='left').fillna(0)
+            combined['Date_Parsed'] = combined['Date_Parsed'].astype(str)
 
-    # --- TAB 2: INDIVIDUAL (RESTORED FULLY) ---
+            fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_dual.add_trace(go.Bar(x=combined['Date_Parsed'], y=combined['Apps'], name="Total Apps", marker_color='#1E3A8A'), secondary_y=False)
+            fig_dual.add_trace(go.Scatter(x=combined['Date_Parsed'], y=combined['Approved'], name="Approved (Audit)", line=dict(color='#2E7D32', width=3)), secondary_y=True)
+            fig_dual.update_layout(title_text="Daily Apps vs. Quality Approval (Dual Axis)", hovermode="x unified")
+            st.plotly_chart(fig_dual, use_container_width=True)
+            
+        with tg_2:
+            # LIVE vs CANCELLED: Grouped Bar from the last table's data
+            status_plot = master[['Port_Live', 'Port_Cancelled']].rename(columns={'Port_Live':'Live', 'Port_Cancelled':'Cancelled'}).reset_index()
+            fig_status = px.bar(status_plot, x='Advisor', y=['Live', 'Cancelled'], barmode='group', 
+                                color_discrete_map={'Live': '#2563EB', 'Cancelled': '#DC2626'},
+                                title="Agent-wise Live vs. Cancelled Volume")
+            st.plotly_chart(fig_status, use_container_width=True)
+
     with tab2:
         st.subheader("👤 Detailed Agent Analysis")
-        col_chk, col_sel = st.columns([1, 3])
-        live_only = col_chk.checkbox("Show current roster only", value=False, key="i_roster")
-        dd = [n for n in all_advisors if n in formatted_live] if live_only else all_advisors
-        sel_agent = col_sel.selectbox("Select Agent:", dd)
+        col_check, col_select = st.columns([1, 3])
+        show_live_only = col_check.checkbox("Show current roster only", value=False, key="individual_roster_filter")
+        dropdown_list = [n for n in all_advisors if n in formatted_live] if show_live_only else all_advisors
+        selected_agent = col_select.selectbox("Select Agent:", dropdown_list if dropdown_list else all_advisors)
         
-        if sel_agent:
-            ag1, ag2 = f1[f1['Advisor'] == sel_agent].copy(), f2[f2['Advisor'] == sel_agent].copy()
-            
-            # Metrics
-            a_tot = len(ag1)
-            a_app = len(ag1[ag1['Q_Status'] == 'Approved'])
-            a_com = len(ag2)
-            a_liv = len(ag2[ag2['P_Status'] == 'Live'])
+        if selected_agent:
+            ag1 = f1[f1['Advisor'] == selected_agent].copy()
+            ag2 = f2[f2['Advisor'] == selected_agent].copy()
+            total_apps = len(ag1)
+            approved = len(ag1[ag1['Q_Status'] == 'Approved'])
+            approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
+            total_committed_apps = len(ag2) 
+            committed_rate = f"{(total_committed_apps / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
+            live = len(ag2[ag2['P_Status'] == 'Live'])
+            live_rate = f"{(live / total_committed_apps * 100):.1f}%" if total_committed_apps > 0 else "0.0%"
             
             with st.container(border=True):
-                im = st.columns(7)
-                im[0].metric("📝 Apps", f"{a_tot:,}")
-                im[1].metric("✅ Appr.", f"{a_app:,}")
-                im[2].metric("📈 Rate", f"{(a_app/a_tot*100 if a_tot>0 else 0):.1f}%")
-                im[3].metric("📦 Comm.", f"{a_com:,}")
-                im[4].metric("📋 Rate", f"{(a_com/a_tot*100 if a_tot>0 else 0):.1f}%")
-                im[5].metric("🌐 Live", f"{a_liv:,}")
-                im[6].metric("🚀 Rate", f"{(a_liv/a_com*100 if a_com>0 else 0):.1f}%")
-
+                m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
+                m1.metric("📝 Tot. Applications", f"{total_apps:,}", help=KPI_DEFS["total_apps"])
+                m2.metric("✅ Quality Approv.", f"{approved:,}", help=KPI_DEFS["qual_approved"])
+                m3.metric("📈 Approv. Rate", approval_rate, help=KPI_DEFS["approv_rate"])
+                m4.metric("📦 Commit. Apps", f"{total_committed_apps:,}", help=KPI_DEFS["commit_apps"])
+                m5.metric("📋 Commit. Rate", committed_rate, help=KPI_DEFS["commit_rate"])
+                m6.metric("🌐 Total Live", f"{live:,}", help=KPI_DEFS["total_live"])
+                m7.metric("🚀 Live Rate", live_rate, help=KPI_DEFS["live_rate"])
+            
             st.divider()
-            vm = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
-            ag1['Period'] = ag1['Date_Parsed'].dt.to_period('M').astype(str) if vm == "Monthly" else ag1['Date_Parsed'].dt.date.astype(str)
-            ag2['Period'] = ag2['Date_Parsed'].dt.to_period('M').astype(str) if vm == "Monthly" else ag2['Date_Parsed'].dt.date.astype(str)
+            view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
+            if view_mode == "Monthly":
+                ag1['Period'] = ag1['Date_Parsed'].dt.to_period('M')
+                ag2['Period'] = ag2['Date_Parsed'].dt.to_period('M')
+            else:
+                ag1['Period'] = ag1['Date_Parsed'].dt.date
+                ag2['Period'] = ag2['Date_Parsed'].dt.date
             
-            # Individual Table Logic
-            i_ac = ag1.groupby('Period').size().to_frame('Total Applications')
-            i_qc = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
-            i_pc = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
-            
-            i_mst = i_ac.join([i_qc, i_pc]).fillna(0).sort_index(ascending=False)
-            
+            st.write(f"**{view_mode}** breakdown for **{selected_agent}**")
             ca, cb, cc = st.columns([1, 1.8, 1.8])
-            with ca:
-                st.write("**Applications**")
-                st.dataframe(i_mst[['Total Applications']], use_container_width=True)
-            with cb:
-                st.write("**Quality**")
-                idq = i_mst[[c for c in i_mst.columns if c.startswith('Qual_')]].rename(columns=lambda x: x.replace('Qual_', ''))
-                st.dataframe(format_with_pct(idq, i_mst['Total Applications']), use_container_width=True)
-            with cc:
-                st.write("**Live Status**")
-                idp = i_mst[[c for c in i_mst.columns if c.startswith('Port_')]].rename(columns=lambda x: x.replace('Port_', ''))
-                st.dataframe(format_with_pct(idp, i_mst['Total Applications']), use_container_width=True)
 
-            # INDIVIDUAL GRAPH
+            with ca:
+                st.markdown(f"#### 📊 {view_mode} Applications")
+                daily_apps = ag1.groupby('Period').size().to_frame('Applications')
+                if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
+                t_apps = daily_apps.sum().to_frame().T
+                t_apps.index = ["TOTAL"]
+                df_apps = pd.concat([daily_apps, t_apps])
+                st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), use_container_width=True)
+
+            with cb:
+                st.markdown("#### ✅ Quality Audit")
+                daily_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
+                q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
+                actual_q = [c for c in q_order if c in daily_qual.columns]
+                dq_num = daily_qual[actual_q]
+                if view_mode == "Monthly": dq_num.index = dq_num.index.strftime('%b %Y')
+                row_totals = daily_apps['Applications']
+                dq_str = format_with_pct(dq_num, row_totals)
+                t_qual_num = dq_num.sum().to_frame().T
+                t_qual_num.index = ["TOTAL"]
+                t_qual_str = format_with_pct(t_qual_num, pd.Series([total_apps], index=["TOTAL"]))
+                final_q_str = pd.concat([dq_str, t_qual_str])
+                styler_dq = final_q_str.style
+                for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
+                    if col in dq_num.columns:
+                        styler_dq = styler_dq.background_gradient(subset=(dq_num.index, col), cmap=cmap, gmap=dq_num[col])
+                st.dataframe(styler_dq, use_container_width=True)
+
+            with cc:
+                st.markdown("#### 🌐 Live Status")
+                daily_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
+                p_order = ['Live', 'Committed', 'Cancelled', 'Others']
+                actual_p = [c for c in p_order if c in daily_port.columns]
+                dp_num = daily_port[actual_p]
+                if view_mode == "Monthly": dp_num.index = dp_num.index.strftime('%b %Y')
+                dp_str = format_with_pct(dp_num, row_totals)
+                t_port_num = dp_num.sum().to_frame().T
+                t_port_num.index = ["TOTAL"]
+                t_port_str = format_with_pct(t_port_num, pd.Series([total_apps], index=["TOTAL"]))
+                final_p_str = pd.concat([dp_str, t_port_str])
+                styler_dp = final_p_str.style
+                for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
+                    if col in dp_num.columns:
+                        styler_dp = styler_dp.background_gradient(subset=(dp_num.index, col), cmap=cmap, gmap=dp_num[col])
+                st.dataframe(styler_dp, use_container_width=True)
+
+            # --- DUAL AXIS INDIVIDUAL ---
             st.divider()
-            i_vol = ag1.groupby('Period').size().reset_index(name='Apps')
-            i_q = ag1[ag1['Q_Status'] == 'Approved'].groupby('Period').size().reset_index(name='Approved')
-            icb = pd.merge(i_vol, i_q, on='Period', how='left').fillna(0)
-            if not icb.empty:
-                fig_i = make_subplots(specs=[[{"secondary_y": True}]])
-                fig_i.add_trace(go.Bar(x=icb['Period'], y=icb['Apps'], name="Apps", marker_color='#60A5FA'), secondary_y=False)
-                fig_i.add_trace(go.Scatter(x=icb['Period'], y=icb['Approved'], name="Approved", line=dict(color='#059669', width=3)), secondary_y=True)
-                st.plotly_chart(fig_i, use_container_width=True)
+            st.subheader(f"📈 Performance Trend: {selected_agent}")
+            i_comb = pd.merge(daily_apps.reset_index(), dq_num[['Approved']].reset_index(), on='Period', how='left').fillna(0)
+            i_comb['Period'] = i_comb['Period'].astype(str)
+            
+            fig_i = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_i.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Applications'], name="Apps", marker_color='#60A5FA'), secondary_y=False)
+            fig_i.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Approved'], name="Approved", line=dict(color='#059669', width=3)), secondary_y=True)
+            st.plotly_chart(fig_i, use_container_width=True)
 
 except Exception as e:
     st.error(f"Error: {e}")
