@@ -72,8 +72,14 @@ def map_portal(val):
 def format_with_pct(val_df, total_series):
     display_df = val_df.copy()
     for col in val_df.columns:
+        # Calculate percentages
         pcts = (val_df[col] / total_series * 100).fillna(0)
-        display_df[col] = val_df[col].apply(lambda x: f"{int(x):,}") + " (" + pcts.map("{:.1f}%".format) + ")"
+        
+        # Logic: If the raw value is 0, show "-", otherwise show "Value (Percentage)"
+        display_df[col] = [
+            f"{int(v):,} ({p:.1f}%)" if v > 0 else "-" 
+            for v, p in zip(val_df[col], pcts)
+        ]
     return display_df
 
 # --- NEW: PDF FORMATTING ENGINE ---
