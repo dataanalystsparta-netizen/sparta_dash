@@ -146,11 +146,11 @@ TABLE_TOOLTIPS = {
     "Total Applications": "Grand total of all applications logged by the advisor.",
     "Applications": "Number of applications logged for this specific period.",
     "Approved": "Applications that have cleared the Quality Audit process.",
-    "Rework": "Applications requiring corrections or missing information.",
+    "Rework": "Applications requiring corrections/rework or missing information.",
     "Cancelled": "Applications that were rejected or did not proceed.",
-    "Others": "Applications in pending or miscellaneous statuses.",
+    "Others": "These applications are pending, hold or other miscellaneous statuses.",
     "Live": "Applications successfully activated and confirmed.",
-    "Committed": "Applications processed and awaiting final activation."
+    "Committed": "Applications that are currently in a 'committed' state, and awaiting final activation or cancellation."
 }
 
 # --- UI START ---
