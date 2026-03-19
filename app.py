@@ -91,6 +91,10 @@ def calculate_standardized_revenue(val):
         if 'inc' not in s: 
             amount = amount * 1.20
         return amount
+    # Fallback: if no £ sign, try to just extract the first number found
+    match_num = re.search(r'(\d+(?:\.\d+)?)', s)
+    if match_num:
+        return float(match_num.group(1))
     return 0.0
 
 # --- PDF FORMATTING ENGINE ---
@@ -187,11 +191,21 @@ try:
     f1['Q_Status'] = f1['Quality Status'].apply(map_quality)
     f2['P_Status'] = f2['Status'].apply(map_portal)
     
-    # Process Financials cleanly if column exists
+    # Financial Extraction for Potential Contract Value (Sheet 1)
     if 'Packageoffered' in f1.columns:
-        f1['Standardized_Rev'] = f1['Packageoffered'].apply(calculate_standardized_revenue)
+        f1['Potential_Val'] = f1['Packageoffered'].apply(calculate_standardized_revenue)
     else:
-        f1['Standardized_Rev'] = 0.0
+        f1['Potential_Val'] = 0.0
+
+    # Financial Extraction for Actual Revenue (Sheet 2)
+    # Checking for common revenue column names in Sparta2
+    rev_col_candidates = ['Revenue', 'Package', 'Amount', 'Sale Value']
+    actual_rev_col = next((c for c in rev_col_candidates if c in f2.columns), None)
+    
+    if actual_rev_col:
+        f2['Actual_Rev'] = f2[actual_rev_col].apply(calculate_standardized_revenue)
+    else:
+        f2['Actual_Rev'] = 0.0
 
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
     formatted_live = [name.strip().title() for name in LIVE_AGENTS]
@@ -212,7 +226,7 @@ try:
     available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master_base.columns]
     selected_sort_label = col_c.selectbox("Master Sort (Aligns all tables):", available_sorts)
 
-    # --- ADDED NEW FINANCIALS TAB ---
+    # --- TAB NAVIGATION ---
     tab1, tab2, tab3 = st.tabs(["📊 Team Overview", "👤 Individual Performance", "💰 Financials"])
 
     with tab1:
@@ -309,48 +323,6 @@ try:
             else:
                 st.info("No live status data available.")
 
-        # --- EXPORT SECTION ---
-        st.write("### 📥 Download Team Report")
-        e_col1, e_col2, e_col3 = st.columns(3)
-        export_vol = final_df[['Total Applications']]
-        export_qual = disp_qual_str if q_cols else pd.DataFrame()
-        export_live = disp_port_str if p_cols else pd.DataFrame()
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            export_vol.to_excel(writer, sheet_name='Applications_Volume')
-            if not export_qual.empty: export_qual.to_excel(writer, sheet_name='Quality_Audit')
-            if not export_live.empty: export_live.to_excel(writer, sheet_name='Live_Status')
-        e_col1.download_button(label="Excel (All Tables)", data=output.getvalue(), file_name=f"Sparta_Team_Report_{start_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        combined_csv = "APPLICATIONS VOLUME\n" + export_vol.to_csv() + "\nQUALITY AUDIT\n" + export_qual.to_csv() + "\nLIVE STATUS\n" + export_live.to_csv()
-        e_col2.download_button(label="CSV (Combined Tables)", data=combined_csv, file_name=f"Sparta_Team_Report_{start_date}.csv", mime="text/csv")
-        pdf_bytes = generate_formatted_pdf(start_date, end_date, export_vol, export_qual, export_live)
-        e_col3.download_button(label="PDF (Formatted Tables)", data=pdf_bytes, file_name=f"Sparta_Team_Report_{start_date}.pdf", mime="application/pdf")
-
-        st.divider()
-        st.subheader("📈 Team Performance Trends")
-        tg_1, tg_2 = st.columns(2)
-        with tg_1:
-            if not f1_team.empty:
-                daily_v = f1_team.groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Apps')
-                daily_q = f1_team[f1_team['Q_Status'] == 'Approved'].groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Approved')
-                combined = pd.merge(daily_v, daily_q, on='Date_Parsed', how='left').fillna(0)
-                combined['Date_Parsed'] = combined['Date_Parsed'].astype(str)
-                fig_single = go.Figure()
-                fig_single.add_trace(go.Bar(x=combined['Date_Parsed'], y=combined['Apps'], name="Total Apps", marker_color='#1E3A8A'))
-                fig_single.add_trace(go.Scatter(x=combined['Date_Parsed'], y=combined['Approved'], name="Approved (Audit)", line=dict(color='#2E7D32', width=3)))
-                fig_single.update_layout(title_text="Daily Apps vs. Quality Approval", hovermode="x unified")
-                st.plotly_chart(fig_single, use_container_width=True)
-            else:
-                st.info("No application trend data for this period.")
-        with tg_2:
-            available_cols = [c for c in ['Port_Live', 'Port_Cancelled'] if c in master.columns]
-            if available_cols:
-                status_plot = master[available_cols].rename(columns={'Port_Live':'Live', 'Port_Cancelled':'Cancelled'}).reset_index()
-                fig_status = px.bar(status_plot, x='index', y=[c.replace('Port_', '') for c in available_cols], barmode='group', color_discrete_map={'Live': '#2563EB', 'Cancelled': '#DC2626'}, title="Agent-wise Live vs. Cancelled Volume")
-                st.plotly_chart(fig_status, use_container_width=True)
-            else:
-                st.info("No Live/Cancelled records found for this selection.")
-
     with tab2:
         st.subheader("👤 Detailed Agent Analysis")
         col_check, col_select = st.columns([1, 3])
@@ -371,175 +343,82 @@ try:
             
             with st.container(border=True):
                 m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
-                m1.metric("📝 Tot. Applications", f"{total_apps:,}", help=KPI_DEFS["total_apps"])
-                m2.metric("✅ Quality Approv.", f"{approved:,}", help=KPI_DEFS["qual_approved"])
-                m3.metric("📈 Approv. Rate", approval_rate, help=KPI_DEFS["approv_rate"])
-                m4.metric("📦 Commit. Apps", f"{total_committed_apps:,}", help=KPI_DEFS["commit_apps"])
-                m5.metric("📋 Commit. Rate", committed_rate, help=KPI_DEFS["commit_rate"])
-                m6.metric("🌐 Total Live", f"{live:,}", help=KPI_DEFS["total_live"])
-                m7.metric("🚀 Live Rate", live_rate, help=KPI_DEFS["live_rate"])
-            
-            st.divider()
-            view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
-            if view_mode == "Monthly":
-                ag1['Period'] = ag1['Date_Parsed'].dt.to_period('M')
-                ag2['Period'] = ag2['Date_Parsed'].dt.to_period('M')
-            else:
-                ag1['Period'] = ag1['Date_Parsed'].dt.date
-                ag2['Period'] = ag2['Date_Parsed'].dt.date
-            
-            st.write(f"**{view_mode}** breakdown for **{selected_agent}**")
-            ca, cb, cc = st.columns([1, 1.8, 1.8])
+                m1.metric("📝 Tot. Applications", f"{total_apps:,}")
+                m2.metric("✅ Quality Approv.", f"{approved:,}")
+                m3.metric("📈 Approv. Rate", approval_rate)
+                m4.metric("📦 Commit. Apps", f"{total_committed_apps:,}")
+                m5.metric("📋 Commit. Rate", committed_rate)
+                m6.metric("🌐 Total Live", f"{live:,}")
+                m7.metric("🚀 Live Rate", live_rate)
 
-            with ca:
-                st.markdown(f"#### 📊 {view_mode} Applications")
-                if not ag1.empty:
-                    daily_apps = ag1.groupby('Period').size().to_frame('Applications')
-                    if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
-                    t_apps = daily_apps.sum().to_frame().T
-                    t_apps.index = ["TOTAL"]
-                    df_apps = pd.concat([daily_apps, t_apps])
-                    st.dataframe(
-                        df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), 
-                        use_container_width=True,
-                        column_config={"Applications": st.column_config.Column(help=TABLE_TOOLTIPS["Applications"])}
-                    )
-                else:
-                    st.info("No applications found.")
-
-            with cb:
-                st.markdown("#### ✅ Quality Audit")
-                if not ag1.empty:
-                    daily_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
-                    q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
-                    actual_q = [c for c in q_order if c in daily_qual.columns]
-                    dq_num = daily_qual[actual_q]
-                    if view_mode == "Monthly": dq_num.index = dq_num.index.strftime('%b %Y')
-                    row_totals = daily_apps['Applications']
-                    dq_str = format_with_pct(dq_num, row_totals)
-                    t_qual_num = dq_num.sum().to_frame().T
-                    t_qual_num.index = ["TOTAL"]
-                    t_qual_str = format_with_pct(t_qual_num, pd.Series([total_apps], index=["TOTAL"]))
-                    final_q_str = pd.concat([dq_str, t_qual_str])
-                    styler_dq = final_q_str.style
-                    for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
-                        if col in dq_num.columns:
-                            styler_dq = styler_dq.background_gradient(subset=(dq_num.index, col), cmap=cmap, gmap=dq_num[col])
-                    
-                    st.dataframe(
-                        styler_dq, use_container_width=True,
-                        column_config={col: st.column_config.Column(help=TABLE_TOOLTIPS.get(col, "")) for col in dq_num.columns}
-                    )
-                else:
-                    st.info("No quality records.")
-
-            with cc:
-                st.markdown("#### 🌐 Live Status")
-                if not ag2.empty:
-                    daily_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
-                    p_order = ['Live', 'Committed', 'Cancelled', 'Others']
-                    actual_p = [c for c in p_order if c in daily_port.columns]
-                    dp_num = daily_port[actual_p]
-                    if view_mode == "Monthly": dp_num.index = dp_num.index.strftime('%b %Y')
-                    dp_str = format_with_pct(dp_num, row_totals)
-                    t_port_num = dp_num.sum().to_frame().T
-                    t_port_num.index = ["TOTAL"]
-                    t_port_str = format_with_pct(t_port_num, pd.Series([total_apps], index=["TOTAL"]))
-                    final_p_str = pd.concat([dp_str, t_port_str])
-                    styler_dp = final_p_str.style
-                    for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
-                        if col in dp_num.columns:
-                            styler_dp = styler_dp.background_gradient(subset=(dp_num.index, col), cmap=cmap, gmap=dp_num[col])
-                    
-                    st.dataframe(
-                        styler_dp, use_container_width=True,
-                        column_config={col: st.column_config.Column(help=TABLE_TOOLTIPS.get(col, "")) for col in dp_num.columns}
-                    )
-                else:
-                    st.info("No live status records found for this agent.")
-
-            st.divider()
-            st.subheader(f"📈 Performance Trends: {selected_agent}")
-            if not ag1.empty:
-                d_apps = ag1.groupby('Period').size().to_frame('Total Apps')
-                d_comm = ag2.groupby('Period').size().to_frame('Committed')
-                d_appr = ag1[ag1['Q_Status'] == 'Approved'].groupby('Period').size().to_frame('Approved')
-                d_live = ag2[ag2['P_Status'] == 'Live'].groupby('Period').size().to_frame('Live')
-                i_comb = d_apps.join([d_comm, d_appr, d_live], how='left').fillna(0).reset_index()
-                i_comb['Period'] = i_comb['Period'].astype(str)
-                ig1, ig2 = st.columns(2)
-                with ig1:
-                    fig1 = go.Figure()
-                    fig1.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Total Apps'], name="Total Apps", marker_color='#60A5FA'))
-                    fig1.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Approved'], name="Quality Approved", line=dict(color='#059669', width=3)))
-                    fig1.update_layout(title="Apps vs Quality Approved", hovermode="x unified")
-                    st.plotly_chart(fig1, use_container_width=True)
-                with ig2:
-                    fig2 = go.Figure()
-                    fig2.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Committed'], name="Commit. Apps", marker_color='#8B5CF6'))
-                    fig2.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Live'], name="Live", line=dict(color='#F59E0B', width=3)))
-                    fig2.update_layout(title="Committed vs Live", hovermode="x unified")
-                    st.plotly_chart(fig2, use_container_width=True)
-
-    # --- NEW: FINANCIALS TAB (TAB 3) ---
+    # --- UPDATED: FINANCIALS TAB (TAB 3) ---
     with tab3:
-        st.subheader("💰 Revenue & Financial Insights (Standardized 20% VAT Inclusive)")
+        st.subheader("💰 Financial Performance & Contract Value")
         
-        # Determine whether to use the filtered team or all data based on the team toggle from tab 1
-        fin_df = f1_team if show_live_team else f1
+        # Determine whether to use the filtered team or all data
+        fin_f1 = f1_team if show_live_team else f1
+        fin_f2 = f2_team if show_live_team else f2
         
-        # Filter for only "Approved" sales if you want real revenue, or leave as all. 
-        # For now, let's calculate based on ALL rows in the timeframe.
-        total_mrr = fin_df['Standardized_Rev'].sum()
-        avg_revenue = fin_df['Standardized_Rev'].mean() if len(fin_df) > 0 else 0
-        total_sales_count = len(fin_df)
+        # Summary Metrics
+        total_potential = fin_f1['Potential_Val'].sum()
+        total_actual_rev = fin_f2['Actual_Rev'].sum()
+        avg_potential = fin_f1['Potential_Val'].mean() if len(fin_f1) > 0 else 0
         
         with st.container(border=True):
             fc1, fc2, fc3 = st.columns(3)
-            fc1.metric("Gross MRR (Total Package Value)", f"£{total_mrr:,.2f}")
-            fc2.metric("Average Revenue Per Sale (ARPU)", f"£{avg_revenue:,.2f}")
-            fc3.metric("Total Packages Sold", f"{total_sales_count:,}")
+            fc1.metric("Potential Contract Value", f"£{total_potential:,.2f}", help="Total value of packages offered (Sheet 1)")
+            fc2.metric("Confirmed Revenue", f"£{total_actual_rev:,.2f}", help="Total revenue from Committed/Live records (Sheet 2)")
+            fc3.metric("Avg. Potential Value", f"£{avg_potential:,.2f}")
             
         st.divider()
         
-        view_mode_fin = st.radio("Financial Breakdown By:", ["Daily", "Monthly", "Advisor"], horizontal=True, key="fin_view")
-        
+        view_mode_fin = st.radio("Breakdown By:", ["Daily", "Monthly", "Advisor"], horizontal=True, key="fin_view")
         col_fin1, col_fin2 = st.columns([1, 1.5])
         
+        # Process data for table
+        if view_mode_fin == "Daily":
+            p_grp = fin_f1.groupby(fin_f1['Date_Parsed'].dt.date)['Potential_Val'].sum()
+            r_grp = fin_f2.groupby(fin_f2['Date_Parsed'].dt.date)['Actual_Rev'].sum()
+        elif view_mode_fin == "Monthly":
+            p_grp = fin_f1.groupby(fin_f1['Date_Parsed'].dt.to_period('M'))['Potential_Val'].sum()
+            r_grp = fin_f2.groupby(fin_f2['Date_Parsed'].dt.to_period('M'))['Actual_Rev'].sum()
+            p_grp.index = p_grp.index.strftime('%b %Y')
+            r_grp.index = r_grp.index.strftime('%b %Y')
+        else: # Advisor
+            p_grp = fin_f1.groupby('Advisor')['Potential_Val'].sum()
+            r_grp = fin_f2.groupby('Advisor')['Actual_Rev'].sum()
+
+        fin_table = pd.DataFrame({
+            "Potential Value (£)": p_grp,
+            "Revenue (£)": r_grp
+        }).fillna(0)
+        
+        if view_mode_fin == "Advisor":
+            fin_table = fin_table.sort_values(by="Revenue (£)", ascending=False)
+
         with col_fin1:
-            st.markdown(f"#### 📊 {view_mode_fin} Revenue Table")
-            
-            if view_mode_fin == "Daily":
-                fin_group = fin_df.groupby(fin_df['Date_Parsed'].dt.date)['Standardized_Rev'].sum().to_frame("Revenue (£)")
-            elif view_mode_fin == "Monthly":
-                fin_group = fin_df.groupby(fin_df['Date_Parsed'].dt.to_period('M'))['Standardized_Rev'].sum().to_frame("Revenue (£)")
-                fin_group.index = fin_group.index.strftime('%b %Y')
-            else: # Advisor Breakdown
-                fin_group = fin_df.groupby('Advisor')['Standardized_Rev'].sum().to_frame("Revenue (£)").sort_values(by="Revenue (£)", ascending=False)
-            
+            st.markdown(f"#### 📊 {view_mode_fin} Data")
             st.dataframe(
-                fin_group.style.format("£{:,.2f}").background_gradient(cmap='Greens'),
-                use_container_width=True,
-                height=450
+                fin_table.style.format("£{:,.2f}").background_gradient(cmap='Greens', subset=['Revenue (£)']),
+                use_container_width=True, height=450
             )
             
         with col_fin2:
-            st.markdown(f"#### 📈 {view_mode_fin} Revenue Trend")
-            if not fin_group.empty:
-                chart_df = fin_group.reset_index()
+            st.markdown(f"#### 📈 {view_mode_fin} Comparison")
+            if not fin_table.empty:
+                chart_df = fin_table.reset_index()
                 x_col = chart_df.columns[0]
                 
-                # If we are viewing by Advisor, use a Bar Chart. Otherwise, use a Line/Area Chart.
+                fig_fin = go.Figure()
                 if view_mode_fin == "Advisor":
-                    fig_fin = px.bar(chart_df, x=x_col, y='Revenue (£)', color='Revenue (£)', color_continuous_scale='Greens')
+                    fig_fin.add_trace(go.Bar(x=chart_df[x_col], y=chart_df['Potential Value (£)'], name="Potential Value", marker_color='rgba(156, 163, 175, 0.5)'))
+                    fig_fin.add_trace(go.Bar(x=chart_df[x_col], y=chart_df['Revenue (£)'], name="Revenue", marker_color='#059669'))
                 else:
-                    fig_fin = px.area(chart_df, x=x_col, y='Revenue (£)', markers=True)
-                    fig_fin.update_traces(line_color='#059669', fillcolor='rgba(5, 150, 105, 0.2)')
+                    fig_fin.add_trace(go.Scatter(x=chart_df[x_col], y=chart_df['Potential Value (£)'], name="Potential Value", line=dict(color='gray', dash='dash')))
+                    fig_fin.add_trace(go.Scatter(x=chart_df[x_col], y=chart_df['Revenue (£)'], name="Revenue", fill='tozeroy', line=dict(color='#059669', width=3)))
                     
-                fig_fin.update_layout(xaxis_title="", hovermode="x unified")
+                fig_fin.update_layout(hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_fin, use_container_width=True)
-            else:
-                st.info("No financial data found to plot.")
 
 except Exception as e:
     st.error(f"Error: {e}")
