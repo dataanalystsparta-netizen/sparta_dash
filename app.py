@@ -8,6 +8,7 @@ import plotly.express as px
 import plotly.graph_objects as go 
 import io
 from fpdf import FPDF
+import re
 
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
@@ -24,7 +25,7 @@ st.markdown("""
    .block-container { max-width: 98%; padding-top: 5rem; }
     h3 { margin-bottom: 0.5rem !important; font-size: 1.2rem !important; color: #1E3A8A; }
    .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
-   [data-testid="stMetricValue"] { font-size: 1.6rem !important; }
+   [data-testid="stMetricValue"] { font-size: 1.6rem !important; color: #059669; }
    [data-testid="stMetricLabel"] { font-size: 0.85rem !important; white-space: nowrap; }
    </style>
    """, unsafe_allow_html=True)
@@ -78,6 +79,19 @@ def format_with_pct(val_df, total_series):
             for v, p in zip(val_df[col], pcts)
         ]
     return display_df
+
+# --- FINANCIAL EXTRACTION ENGINE ---
+def calculate_standardized_revenue(val):
+    s = str(val).lower()
+    # Find the pound sign and extract the numbers/decimals immediately following it
+    match = re.search(r'£\s*(\d+(?:\.\d+)?)', s)
+    if match:
+        amount = float(match.group(1))
+        # Check if inclusive of VAT. If not, add 20%
+        if 'inc' not in s: 
+            amount = amount * 1.20
+        return amount
+    return 0.0
 
 # --- PDF FORMATTING ENGINE ---
 def generate_formatted_pdf(start_date, end_date, df_vol, df_qual, df_live):
@@ -141,7 +155,6 @@ KPI_DEFS = {
    "live_rate": "Conversion rate from Committed applications to confirmed Live records."
 }
 
-# --- NEW: TOOLTIP DEFINITIONS FOR TABLES ---
 TABLE_TOOLTIPS = {
     "Total Applications": "Grand total of all applications logged by the advisor.",
     "Applications": "Number of applications logged for this specific period.",
@@ -173,6 +186,12 @@ try:
 
     f1['Q_Status'] = f1['Quality Status'].apply(map_quality)
     f2['P_Status'] = f2['Status'].apply(map_portal)
+    
+    # Process Financials cleanly if column exists
+    if 'Packageoffered' in f1.columns:
+        f1['Standardized_Rev'] = f1['Packageoffered'].apply(calculate_standardized_revenue)
+    else:
+        f1['Standardized_Rev'] = 0.0
 
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
     formatted_live = [name.strip().title() for name in LIVE_AGENTS]
@@ -193,7 +212,8 @@ try:
     available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master_base.columns]
     selected_sort_label = col_c.selectbox("Master Sort (Aligns all tables):", available_sorts)
 
-    tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
+    # --- ADDED NEW FINANCIALS TAB ---
+    tab1, tab2, tab3 = st.tabs(["📊 Team Overview", "👤 Individual Performance", "💰 Financials"])
 
     with tab1:
         show_live_team = st.checkbox("Show current roster only", value=False, key="team_roster_filter")
@@ -460,6 +480,66 @@ try:
                     fig2.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Live'], name="Live", line=dict(color='#F59E0B', width=3)))
                     fig2.update_layout(title="Committed vs Live", hovermode="x unified")
                     st.plotly_chart(fig2, use_container_width=True)
+
+    # --- NEW: FINANCIALS TAB (TAB 3) ---
+    with tab3:
+        st.subheader("💰 Revenue & Financial Insights (Standardized 20% VAT Inclusive)")
+        
+        # Determine whether to use the filtered team or all data based on the team toggle from tab 1
+        fin_df = f1_team if show_live_team else f1
+        
+        # Filter for only "Approved" sales if you want real revenue, or leave as all. 
+        # For now, let's calculate based on ALL rows in the timeframe.
+        total_mrr = fin_df['Standardized_Rev'].sum()
+        avg_revenue = fin_df['Standardized_Rev'].mean() if len(fin_df) > 0 else 0
+        total_sales_count = len(fin_df)
+        
+        with st.container(border=True):
+            fc1, fc2, fc3 = st.columns(3)
+            fc1.metric("Gross MRR (Total Package Value)", f"£{total_mrr:,.2f}")
+            fc2.metric("Average Revenue Per Sale (ARPU)", f"£{avg_revenue:,.2f}")
+            fc3.metric("Total Packages Sold", f"{total_sales_count:,}")
+            
+        st.divider()
+        
+        view_mode_fin = st.radio("Financial Breakdown By:", ["Daily", "Monthly", "Advisor"], horizontal=True, key="fin_view")
+        
+        col_fin1, col_fin2 = st.columns([1, 1.5])
+        
+        with col_fin1:
+            st.markdown(f"#### 📊 {view_mode_fin} Revenue Table")
+            
+            if view_mode_fin == "Daily":
+                fin_group = fin_df.groupby(fin_df['Date_Parsed'].dt.date)['Standardized_Rev'].sum().to_frame("Revenue (£)")
+            elif view_mode_fin == "Monthly":
+                fin_group = fin_df.groupby(fin_df['Date_Parsed'].dt.to_period('M'))['Standardized_Rev'].sum().to_frame("Revenue (£)")
+                fin_group.index = fin_group.index.strftime('%b %Y')
+            else: # Advisor Breakdown
+                fin_group = fin_df.groupby('Advisor')['Standardized_Rev'].sum().to_frame("Revenue (£)").sort_values(by="Revenue (£)", ascending=False)
+            
+            st.dataframe(
+                fin_group.style.format("£{:,.2f}").background_gradient(cmap='Greens'),
+                use_container_width=True,
+                height=450
+            )
+            
+        with col_fin2:
+            st.markdown(f"#### 📈 {view_mode_fin} Revenue Trend")
+            if not fin_group.empty:
+                chart_df = fin_group.reset_index()
+                x_col = chart_df.columns[0]
+                
+                # If we are viewing by Advisor, use a Bar Chart. Otherwise, use a Line/Area Chart.
+                if view_mode_fin == "Advisor":
+                    fig_fin = px.bar(chart_df, x=x_col, y='Revenue (£)', color='Revenue (£)', color_continuous_scale='Greens')
+                else:
+                    fig_fin = px.area(chart_df, x=x_col, y='Revenue (£)', markers=True)
+                    fig_fin.update_traces(line_color='#059669', fillcolor='rgba(5, 150, 105, 0.2)')
+                    
+                fig_fin.update_layout(xaxis_title="", hovermode="x unified")
+                st.plotly_chart(fig_fin, use_container_width=True)
+            else:
+                st.info("No financial data found to plot.")
 
 except Exception as e:
     st.error(f"Error: {e}")
