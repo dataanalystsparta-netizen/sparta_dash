@@ -95,44 +95,10 @@ try:
         
     col_time.markdown(f"<p class='last-updated'>Data Last Synced:<br><b>{last_sync}</b></p>", unsafe_allow_html=True)
 
-    # --- DYNAMIC DATE & MONTH FILTERING ---
-    # Determine the boundaries of the data to populate the month dropdown
-    min_date_val = min(df1['Date_Parsed'].dropna().min(), df2['Date_Parsed'].dropna().min())
-    max_date_val = max(df1['Date_Parsed'].dropna().max(), df2['Date_Parsed'].dropna().max())
-    
-    if pd.isna(min_date_val): min_date_val = pd.to_datetime(datetime.date.today().replace(day=1))
-    if pd.isna(max_date_val): max_date_val = pd.to_datetime(datetime.date.today())
+    col_a, col_b, col_c = st.columns([1, 1, 1.5])
+    start_date = col_a.date_input("Start Date", datetime.date.today().replace(day=1))
+    end_date = col_b.date_input("End Date", datetime.date.today())
 
-    # Generate descending list of months (e.g., "March 2026", "February 2026")
-    months_range = pd.date_range(start=min_date_val.replace(day=1), end=max_date_val, freq='MS')
-    month_options = [d.strftime("%B %Y") for d in reversed(months_range)]
-    month_options.insert(0, "All Time")
-
-    col_filter_mode, col_dates, col_sort = st.columns([1, 2, 1.5])
-    
-    with col_filter_mode:
-        filter_mode = st.radio("Date Selection Mode:", ["Quick Month", "Custom Range"], horizontal=True)
-        
-    with col_dates:
-        if filter_mode == "Quick Month":
-            selected_month = st.selectbox("Select Month:", month_options, label_visibility="collapsed")
-            if selected_month == "All Time":
-                start_date = min_date_val.date()
-                end_date = max_date_val.date()
-            else:
-                # Calculate start and end date for the selected month
-                sel_d = datetime.datetime.strptime(selected_month, "%B %Y").date()
-                start_date = sel_d
-                if sel_d.month == 12:
-                    end_date = sel_d.replace(year=sel_d.year+1, month=1, day=1) - datetime.timedelta(days=1)
-                else:
-                    end_date = sel_d.replace(month=sel_d.month+1, day=1) - datetime.timedelta(days=1)
-        else:
-            ca, cb = st.columns(2)
-            start_date = ca.date_input("Start Date", datetime.date.today().replace(day=1))
-            end_date = cb.date_input("End Date", datetime.date.today())
-
-    # Apply the seamlessly calculated dates to our global dataframes
     f1 = df1[(df1['Date_Parsed'].dt.date >= start_date) & (df1['Date_Parsed'].dt.date <= end_date)].copy()
     f2 = df2[(df2['Date_Parsed'].dt.date >= start_date) & (df2['Date_Parsed'].dt.date <= end_date)].copy()
 
@@ -156,7 +122,7 @@ try:
     master_base = pd.DataFrame(index=all_advisors).join([app_counts_base, qual_counts_base, port_counts_base]).fillna(0)
 
     available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master_base.columns]
-    selected_sort_label = col_sort.selectbox("Master Sort (Aligns all tables):", available_sorts)
+    selected_sort_label = col_c.selectbox("Master Sort (Aligns all tables):", available_sorts)
 
     tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
@@ -365,14 +331,17 @@ try:
                 else:
                     st.info("No live status records found for this agent.")
 
+            # --- UPDATED TREND GRAPHS: 2 SEPARATE CHARTS ---
             st.divider()
             st.subheader(f"📈 Performance Trends: {selected_agent}")
             if not ag1.empty:
+                # Prep Data
                 d_apps = ag1.groupby('Period').size().to_frame('Total Apps')
                 d_comm = ag2.groupby('Period').size().to_frame('Committed')
                 d_appr = ag1[ag1['Q_Status'] == 'Approved'].groupby('Period').size().to_frame('Approved')
                 d_live = ag2[ag2['P_Status'] == 'Live'].groupby('Period').size().to_frame('Live')
                 
+                # Merge all metrics for alignment
                 i_comb = d_apps.join([d_comm, d_appr, d_live], how='left').fillna(0).reset_index()
                 i_comb['Period'] = i_comb['Period'].astype(str)
                 
