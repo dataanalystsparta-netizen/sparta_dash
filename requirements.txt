@@ -7,3 +7,4 @@ matplotlib
 jinja2
 numpy
 plotly
+xlsxwriter
