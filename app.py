@@ -5,8 +5,9 @@ from google.oauth2.service_account import Credentials
 import datetime
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go 
+import plotly.graph_objects as go
 import io
+from fpdf import FPDF
 
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
@@ -216,7 +217,7 @@ try:
         export_qual = disp_qual_str if q_cols else pd.DataFrame()
         export_live = disp_port_str if p_cols else pd.DataFrame()
 
-        # Excel Export (Multiple Sheets)
+        # 1. Excel Export (Multiple Sheets)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             export_vol.to_excel(writer, sheet_name='Applications_Volume')
@@ -225,13 +226,29 @@ try:
         
         e_col1.download_button(label="Excel (All Tables)", data=output.getvalue(), file_name=f"Sparta_Team_Report_{start_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-        # CSV Export (Concatenated)
+        # 2. CSV Export (Concatenated)
         combined_csv = "APPLICATIONS VOLUME\n" + export_vol.to_csv() + "\nQUALITY AUDIT\n" + export_qual.to_csv() + "\nLIVE STATUS\n" + export_live.to_csv()
         e_col2.download_button(label="CSV (Combined Tables)", data=combined_csv, file_name=f"Sparta_Team_Report_{start_date}.csv", mime="text/csv")
 
-        # PDF (Text/Table Format)
-        pdf_content = f"Sparta Team Report: {start_date} to {end_date}\n\n" + combined_csv
-        e_col3.download_button(label="PDF (Text Format)", data=pdf_content, file_name=f"Sparta_Team_Report_{start_date}.pdf", mime="application/pdf")
+        # 3. PDF Export (True PDF Format using FPDF)
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=10)
+        
+        # Add a clear Title to the PDF
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(200, 10, txt=f"Sparta Team Report: {start_date} to {end_date}", ln=1, align='C')
+        pdf.ln(5)
+        
+        # Convert CSV string data into lines for the PDF
+        pdf.set_font("Courier", size=8) # Courier ensures tabular text lines up better
+        for line in combined_csv.split('\n'):
+            # Encoding protection for un-printable characters
+            safe_line = line.encode('latin-1', 'replace').decode('latin-1') 
+            pdf.cell(200, 5, txt=safe_line[:120], ln=1) # Limit width so it doesn't break the page
+
+        pdf_output = pdf.output(dest='S').encode('latin-1')
+        e_col3.download_button(label="PDF (Valid Format)", data=pdf_output, file_name=f"Sparta_Team_Report_{start_date}.pdf", mime="application/pdf")
 
         st.divider()
         st.subheader("📈 Team Performance Trends")
