@@ -72,85 +72,63 @@ def map_portal(val):
 def format_with_pct(val_df, total_series):
     display_df = val_df.copy()
     for col in val_df.columns:
-        # Calculate percentages
         pcts = (val_df[col] / total_series * 100).fillna(0)
-        
-        # Logic: If the raw value is 0, show "-", otherwise show "Value (Percentage)"
         display_df[col] = [
             f"{int(v):,} ({p:.1f}%)" if v > 0 else "-" 
             for v, p in zip(val_df[col], pcts)
         ]
     return display_df
 
-# --- NEW: PDF FORMATTING ENGINE ---
+# --- PDF FORMATTING ENGINE ---
 def generate_formatted_pdf(start_date, end_date, df_vol, df_qual, df_live):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
-    
-    # Report Title
     pdf.set_font("Arial", 'B', 16)
-    pdf.set_text_color(30, 58, 138) # Sparta Blue
+    pdf.set_text_color(30, 58, 138)
     pdf.cell(0, 10, f"Sparta Team Report: {start_date} to {end_date}", ln=True, align='C')
     pdf.ln(5)
     
     def draw_pdf_table(df, title):
         if df.empty: return
-        
-        # Table Title
         pdf.set_font("Arial", 'B', 12)
         pdf.set_text_color(30, 58, 138)
         pdf.cell(0, 10, title, ln=True)
-        
-        # Prepare Data
         df_reset = df.reset_index()
         if 'index' in df_reset.columns:
             df_reset.rename(columns={'index': 'Advisor'}, inplace=True)
         cols = df_reset.columns.tolist()
-        
-        # Math for Column Widths (Prevent Cutoffs)
         page_width = pdf.w - 2 * pdf.l_margin
-        col_width_advisor = 40 # Fixed width for names
+        col_width_advisor = 40
         rem_width = page_width - col_width_advisor
         col_width_other = rem_width / (len(cols) - 1) if len(cols) > 1 else 0
         row_height = 7
-        
-        # Draw Headers
         pdf.set_font("Arial", 'B', 9)
         pdf.set_text_color(0, 0, 0)
-        pdf.set_fill_color(220, 230, 245) # Light blue header background
-        
+        pdf.set_fill_color(220, 230, 245)
         for col in cols:
             w = col_width_advisor if col == cols[0] else col_width_other
             pdf.cell(w, row_height, str(col).replace('_', ' '), border=1, fill=True, align='C')
         pdf.ln(row_height)
-        
-        # Draw Data Rows
         pdf.set_font("Arial", '', 9)
         fill = False
         for _, row in df_reset.iterrows():
-            pdf.set_fill_color(248, 248, 248) # Very light gray for alternating rows
+            pdf.set_fill_color(248, 248, 248)
             for col in cols:
                 w = col_width_advisor if col == cols[0] else col_width_other
                 val = str(row[col])
-                # Names left aligned, numbers right aligned
                 align = 'L' if col == cols[0] else 'R'
-                
-                # Make "GRAND TOTAL" row bold
                 if str(row[cols[0]]) == "GRAND TOTAL":
                     pdf.set_font("Arial", 'B', 9)
                 else:
                     pdf.set_font("Arial", '', 9)
-                    
                 pdf.cell(w, row_height, val, border=1, fill=fill, align=align)
             pdf.ln(row_height)
-            fill = not fill # Toggle row background color
-        pdf.ln(10) # Space before next table
+            fill = not fill
+        pdf.ln(10)
 
-    # Draw all three tables sequentially
     draw_pdf_table(df_vol, "1. Applications Volume")
     draw_pdf_table(df_qual, "2. Quality Audit Status")
     draw_pdf_table(df_live, "3. Live Status Pipeline")
-    
     return pdf.output(dest='S').encode('latin-1')
 
 KPI_DEFS = {
@@ -161,6 +139,18 @@ KPI_DEFS = {
    "commit_rate": "Percentage of applications that got 'Committed'",
    "total_live": "Total applications that got 'Live'.",
    "live_rate": "Conversion rate from Committed applications to confirmed Live records."
+}
+
+# --- NEW: TOOLTIP DEFINITIONS FOR TABLES ---
+TABLE_TOOLTIPS = {
+    "Total Applications": "Grand total of all applications logged by the advisor.",
+    "Applications": "Number of applications logged for this specific period.",
+    "Approved": "Applications that have cleared the Quality Audit process.",
+    "Rework": "Applications requiring corrections or missing information.",
+    "Cancelled": "Applications that were rejected or did not proceed.",
+    "Others": "Applications in pending or miscellaneous statuses.",
+    "Live": "Applications successfully activated and confirmed.",
+    "Committed": "Applications processed and awaiting final activation."
 }
 
 # --- UI START ---
@@ -253,29 +243,32 @@ try:
         
         with c1:
             st.subheader("📊 Applications")
-            st.dataframe(final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), use_container_width=True, height=500)
+            st.dataframe(
+                final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), 
+                use_container_width=True, height=500,
+                column_config={"Total Applications": st.column_config.Column(help=TABLE_TOOLTIPS["Total Applications"])}
+            )
         
         with c2:
             st.subheader("✅ Quality Audit")
             q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
             if q_cols:
-                # Enforce the specific order: Approved, Rework, Cancelled, Others
                 q_order = ['Qual_Approved', 'Qual_Rework', 'Qual_Cancelled', 'Qual_Others']
-                # Filter to only include columns that actually exist in the data
                 actual_q_order = [c for c in q_order if c in q_cols]
-                
                 disp_qual_num = final_df[actual_q_order].rename(columns=lambda x: x.replace('Qual_', ''))
                 disp_qual_str = format_with_pct(disp_qual_num, final_df['Total Applications'])
-                
                 styler_q = disp_qual_str.style
-                # Maintain the color gradients linked to the original values
                 for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
                     if col in disp_qual_num.columns:
                         styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_qual_num[col])
                 
-                st.dataframe(styler_q, use_container_width=True, height=500)
+                st.dataframe(
+                    styler_q, use_container_width=True, height=500,
+                    column_config={col: st.column_config.Column(help=TABLE_TOOLTIPS.get(col, "")) for col in disp_qual_num.columns}
+                )
             else:
                 st.info("No quality data available.")
+            
         with c3:
             st.subheader("🌐 Live Status")
             p_cols = [c for c in final_df.columns if c.startswith('Port_')]
@@ -288,39 +281,34 @@ try:
                 for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
                     if col in disp_port_num.columns:
                         styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_port_num[col])
-                st.dataframe(styler_p, use_container_width=True, height=500)
+                
+                st.dataframe(
+                    styler_p, use_container_width=True, height=500,
+                    column_config={col: st.column_config.Column(help=TABLE_TOOLTIPS.get(col, "")) for col in disp_port_num.columns}
+                )
             else:
                 st.info("No live status data available.")
 
         # --- EXPORT SECTION ---
         st.write("### 📥 Download Team Report")
         e_col1, e_col2, e_col3 = st.columns(3)
-        
-        # Prep Data for Exports
         export_vol = final_df[['Total Applications']]
         export_qual = disp_qual_str if q_cols else pd.DataFrame()
         export_live = disp_port_str if p_cols else pd.DataFrame()
-
-        # 1. Excel Export
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             export_vol.to_excel(writer, sheet_name='Applications_Volume')
             if not export_qual.empty: export_qual.to_excel(writer, sheet_name='Quality_Audit')
             if not export_live.empty: export_live.to_excel(writer, sheet_name='Live_Status')
         e_col1.download_button(label="Excel (All Tables)", data=output.getvalue(), file_name=f"Sparta_Team_Report_{start_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-        # 2. CSV Export
         combined_csv = "APPLICATIONS VOLUME\n" + export_vol.to_csv() + "\nQUALITY AUDIT\n" + export_qual.to_csv() + "\nLIVE STATUS\n" + export_live.to_csv()
         e_col2.download_button(label="CSV (Combined Tables)", data=combined_csv, file_name=f"Sparta_Team_Report_{start_date}.csv", mime="text/csv")
-
-        # 3. Formatted PDF Export
         pdf_bytes = generate_formatted_pdf(start_date, end_date, export_vol, export_qual, export_live)
         e_col3.download_button(label="PDF (Formatted Tables)", data=pdf_bytes, file_name=f"Sparta_Team_Report_{start_date}.pdf", mime="application/pdf")
 
         st.divider()
         st.subheader("📈 Team Performance Trends")
         tg_1, tg_2 = st.columns(2)
-        
         with tg_1:
             if not f1_team.empty:
                 daily_v = f1_team.groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Apps')
@@ -334,7 +322,6 @@ try:
                 st.plotly_chart(fig_single, use_container_width=True)
             else:
                 st.info("No application trend data for this period.")
-            
         with tg_2:
             available_cols = [c for c in ['Port_Live', 'Port_Cancelled'] if c in master.columns]
             if available_cols:
@@ -392,7 +379,11 @@ try:
                     t_apps = daily_apps.sum().to_frame().T
                     t_apps.index = ["TOTAL"]
                     df_apps = pd.concat([daily_apps, t_apps])
-                    st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), use_container_width=True)
+                    st.dataframe(
+                        df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), 
+                        use_container_width=True,
+                        column_config={"Applications": st.column_config.Column(help=TABLE_TOOLTIPS["Applications"])}
+                    )
                 else:
                     st.info("No applications found.")
 
@@ -414,7 +405,11 @@ try:
                     for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
                         if col in dq_num.columns:
                             styler_dq = styler_dq.background_gradient(subset=(dq_num.index, col), cmap=cmap, gmap=dq_num[col])
-                    st.dataframe(styler_dq, use_container_width=True)
+                    
+                    st.dataframe(
+                        styler_dq, use_container_width=True,
+                        column_config={col: st.column_config.Column(help=TABLE_TOOLTIPS.get(col, "")) for col in dq_num.columns}
+                    )
                 else:
                     st.info("No quality records.")
 
@@ -435,7 +430,11 @@ try:
                     for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
                         if col in dp_num.columns:
                             styler_dp = styler_dp.background_gradient(subset=(dp_num.index, col), cmap=cmap, gmap=dp_num[col])
-                    st.dataframe(styler_dp, use_container_width=True)
+                    
+                    st.dataframe(
+                        styler_dp, use_container_width=True,
+                        column_config={col: st.column_config.Column(help=TABLE_TOOLTIPS.get(col, "")) for col in dp_num.columns}
+                    )
                 else:
                     st.info("No live status records found for this agent.")
 
