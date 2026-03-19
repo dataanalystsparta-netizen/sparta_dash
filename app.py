@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import datetime
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
+import plotly.graph_objects as go 
 import io
 from fpdf import FPDF
 
@@ -75,6 +75,77 @@ def format_with_pct(val_df, total_series):
         pcts = (val_df[col] / total_series * 100).fillna(0)
         display_df[col] = val_df[col].apply(lambda x: f"{int(x):,}") + " (" + pcts.map("{:.1f}%".format) + ")"
     return display_df
+
+# --- NEW: PDF FORMATTING ENGINE ---
+def generate_formatted_pdf(start_date, end_date, df_vol, df_qual, df_live):
+    pdf = FPDF(orientation='P', unit='mm', format='A4')
+    pdf.add_page()
+    
+    # Report Title
+    pdf.set_font("Arial", 'B', 16)
+    pdf.set_text_color(30, 58, 138) # Sparta Blue
+    pdf.cell(0, 10, f"Sparta Team Report: {start_date} to {end_date}", ln=True, align='C')
+    pdf.ln(5)
+    
+    def draw_pdf_table(df, title):
+        if df.empty: return
+        
+        # Table Title
+        pdf.set_font("Arial", 'B', 12)
+        pdf.set_text_color(30, 58, 138)
+        pdf.cell(0, 10, title, ln=True)
+        
+        # Prepare Data
+        df_reset = df.reset_index()
+        if 'index' in df_reset.columns:
+            df_reset.rename(columns={'index': 'Advisor'}, inplace=True)
+        cols = df_reset.columns.tolist()
+        
+        # Math for Column Widths (Prevent Cutoffs)
+        page_width = pdf.w - 2 * pdf.l_margin
+        col_width_advisor = 40 # Fixed width for names
+        rem_width = page_width - col_width_advisor
+        col_width_other = rem_width / (len(cols) - 1) if len(cols) > 1 else 0
+        row_height = 7
+        
+        # Draw Headers
+        pdf.set_font("Arial", 'B', 9)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_fill_color(220, 230, 245) # Light blue header background
+        
+        for col in cols:
+            w = col_width_advisor if col == cols[0] else col_width_other
+            pdf.cell(w, row_height, str(col).replace('_', ' '), border=1, fill=True, align='C')
+        pdf.ln(row_height)
+        
+        # Draw Data Rows
+        pdf.set_font("Arial", '', 9)
+        fill = False
+        for _, row in df_reset.iterrows():
+            pdf.set_fill_color(248, 248, 248) # Very light gray for alternating rows
+            for col in cols:
+                w = col_width_advisor if col == cols[0] else col_width_other
+                val = str(row[col])
+                # Names left aligned, numbers right aligned
+                align = 'L' if col == cols[0] else 'R'
+                
+                # Make "GRAND TOTAL" row bold
+                if str(row[cols[0]]) == "GRAND TOTAL":
+                    pdf.set_font("Arial", 'B', 9)
+                else:
+                    pdf.set_font("Arial", '', 9)
+                    
+                pdf.cell(w, row_height, val, border=1, fill=fill, align=align)
+            pdf.ln(row_height)
+            fill = not fill # Toggle row background color
+        pdf.ln(10) # Space before next table
+
+    # Draw all three tables sequentially
+    draw_pdf_table(df_vol, "1. Applications Volume")
+    draw_pdf_table(df_qual, "2. Quality Audit Status")
+    draw_pdf_table(df_live, "3. Live Status Pipeline")
+    
+    return pdf.output(dest='S').encode('latin-1')
 
 KPI_DEFS = {
    "total_apps": "Total Applications.",
@@ -212,43 +283,26 @@ try:
         st.write("### 📥 Download Team Report")
         e_col1, e_col2, e_col3 = st.columns(3)
         
-        # Prep Data for Excel/CSV
+        # Prep Data for Exports
         export_vol = final_df[['Total Applications']]
         export_qual = disp_qual_str if q_cols else pd.DataFrame()
         export_live = disp_port_str if p_cols else pd.DataFrame()
 
-        # 1. Excel Export (Multiple Sheets)
+        # 1. Excel Export
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             export_vol.to_excel(writer, sheet_name='Applications_Volume')
             if not export_qual.empty: export_qual.to_excel(writer, sheet_name='Quality_Audit')
             if not export_live.empty: export_live.to_excel(writer, sheet_name='Live_Status')
-        
         e_col1.download_button(label="Excel (All Tables)", data=output.getvalue(), file_name=f"Sparta_Team_Report_{start_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-        # 2. CSV Export (Concatenated)
+        # 2. CSV Export
         combined_csv = "APPLICATIONS VOLUME\n" + export_vol.to_csv() + "\nQUALITY AUDIT\n" + export_qual.to_csv() + "\nLIVE STATUS\n" + export_live.to_csv()
         e_col2.download_button(label="CSV (Combined Tables)", data=combined_csv, file_name=f"Sparta_Team_Report_{start_date}.csv", mime="text/csv")
 
-        # 3. PDF Export (True PDF Format using FPDF)
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=10)
-        
-        # Add a clear Title to the PDF
-        pdf.set_font("Arial", 'B', 14)
-        pdf.cell(200, 10, txt=f"Sparta Team Report: {start_date} to {end_date}", ln=1, align='C')
-        pdf.ln(5)
-        
-        # Convert CSV string data into lines for the PDF
-        pdf.set_font("Courier", size=8) # Courier ensures tabular text lines up better
-        for line in combined_csv.split('\n'):
-            # Encoding protection for un-printable characters
-            safe_line = line.encode('latin-1', 'replace').decode('latin-1') 
-            pdf.cell(200, 5, txt=safe_line[:120], ln=1) # Limit width so it doesn't break the page
-
-        pdf_output = pdf.output(dest='S').encode('latin-1')
-        e_col3.download_button(label="PDF (Valid Format)", data=pdf_output, file_name=f"Sparta_Team_Report_{start_date}.pdf", mime="application/pdf")
+        # 3. Formatted PDF Export
+        pdf_bytes = generate_formatted_pdf(start_date, end_date, export_vol, export_qual, export_live)
+        e_col3.download_button(label="PDF (Formatted Tables)", data=pdf_bytes, file_name=f"Sparta_Team_Report_{start_date}.pdf", mime="application/pdf")
 
         st.divider()
         st.subheader("📈 Team Performance Trends")
