@@ -259,16 +259,23 @@ try:
             st.subheader("✅ Quality Audit")
             q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
             if q_cols:
-                disp_qual_num = final_df[q_cols].rename(columns=lambda x: x.replace('Qual_', ''))
+                # Enforce the specific order: Approved, Rework, Cancelled, Others
+                q_order = ['Qual_Approved', 'Qual_Rework', 'Qual_Cancelled', 'Qual_Others']
+                # Filter to only include columns that actually exist in the data
+                actual_q_order = [c for c in q_order if c in q_cols]
+                
+                disp_qual_num = final_df[actual_q_order].rename(columns=lambda x: x.replace('Qual_', ''))
                 disp_qual_str = format_with_pct(disp_qual_num, final_df['Total Applications'])
+                
                 styler_q = disp_qual_str.style
+                # Maintain the color gradients linked to the original values
                 for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
                     if col in disp_qual_num.columns:
                         styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_qual_num[col])
+                
                 st.dataframe(styler_q, use_container_width=True, height=500)
             else:
                 st.info("No quality data available.")
-            
         with c3:
             st.subheader("🌐 Live Status")
             p_cols = [c for c in final_df.columns if c.startswith('Port_')]
