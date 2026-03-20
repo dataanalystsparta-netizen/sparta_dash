@@ -83,8 +83,8 @@ def format_with_pct(val_df, total_series):
 # --- FINANCIAL EXTRACTION ENGINE ---
 def calculate_standardized_revenue(val):
     s = str(val).lower()
-    # Find the pound sign and extract the numbers/decimals immediately following it
-    match = re.search(r'£\s*(\d+(?:\.\d+)?)', s)
+    # Updated Regex: Find the first number even if the £ sign is missing
+    match = re.search(r'£?\s*(\d+(?:\.\d+)?)', s)
     if match:
         amount = float(match.group(1))
         # Check if inclusive of VAT. If not, add 20%
@@ -193,6 +193,11 @@ try:
     else:
         f1['Standardized_Rev'] = 0.0
 
+    if 'PlanTariff' in f2.columns:
+        f2['Standardized_Rev'] = f2['PlanTariff'].apply(calculate_standardized_revenue)
+    else:
+        f2['Standardized_Rev'] = 0.0
+
     all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
     formatted_live = [name.strip().title() for name in LIVE_AGENTS]
 
@@ -212,7 +217,7 @@ try:
     available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master_base.columns]
     selected_sort_label = col_c.selectbox("Master Sort (Aligns all tables):", available_sorts)
 
-    # --- ADDED NEW FINANCIALS TAB ---
+    # --- TABS ---
     tab1, tab2, tab3 = st.tabs(["📊 Team Overview", "👤 Individual Performance", "💰 Financials"])
 
     with tab1:
@@ -485,20 +490,21 @@ try:
     with tab3:
         st.subheader("💰 Revenue & Financial Insights (Standardized 20% VAT Inclusive)")
         
-        # Determine whether to use the filtered team or all data based on the team toggle from tab 1
-        fin_df = f1_team if show_live_team else f1
+        # Pull data strictly from f2 (Sparta2). Determine whether to use the filtered team or all data.
+        fin_df = f2_team if show_live_team else f2
         
-        # Filter for only "Approved" sales if you want real revenue, or leave as all. 
-        # For now, let's calculate based on ALL rows in the timeframe.
-        total_mrr = fin_df['Standardized_Rev'].sum()
-        avg_revenue = fin_df['Standardized_Rev'].mean() if len(fin_df) > 0 else 0
-        total_sales_count = len(fin_df)
+        # Filter for actual LIVE revenue
+        live_df = fin_df[fin_df['P_Status'] == 'Live']
+        
+        total_committed_mrr = fin_df['Standardized_Rev'].sum()
+        total_live_mrr = live_df['Standardized_Rev'].sum()
+        total_committed_sales = len(fin_df)
         
         with st.container(border=True):
             fc1, fc2, fc3 = st.columns(3)
-            fc1.metric("Gross MRR (Total Package Value)", f"£{total_mrr:,.2f}")
-            fc2.metric("Average Revenue Per Sale (ARPU)", f"£{avg_revenue:,.2f}")
-            fc3.metric("Total Packages Sold", f"{total_sales_count:,}")
+            fc1.metric("Gross Committed MRR (Total Value)", f"£{total_committed_mrr:,.2f}")
+            fc2.metric("Actual Live MRR (Confirmed Live)", f"£{total_live_mrr:,.2f}")
+            fc3.metric("Total Committed Packages", f"{total_committed_sales:,}")
             
         st.divider()
         
@@ -510,15 +516,29 @@ try:
             st.markdown(f"#### 📊 {view_mode_fin} Revenue Table")
             
             if view_mode_fin == "Daily":
-                fin_group = fin_df.groupby(fin_df['Date_Parsed'].dt.date)['Standardized_Rev'].sum().to_frame("Revenue (£)")
+                group_col = fin_df['Date_Parsed'].dt.date
+                group_col_live = live_df['Date_Parsed'].dt.date
             elif view_mode_fin == "Monthly":
-                fin_group = fin_df.groupby(fin_df['Date_Parsed'].dt.to_period('M'))['Standardized_Rev'].sum().to_frame("Revenue (£)")
-                fin_group.index = fin_group.index.strftime('%b %Y')
+                group_col = fin_df['Date_Parsed'].dt.to_period('M')
+                group_col_live = live_df['Date_Parsed'].dt.to_period('M')
             else: # Advisor Breakdown
-                fin_group = fin_df.groupby('Advisor')['Standardized_Rev'].sum().to_frame("Revenue (£)").sort_values(by="Revenue (£)", ascending=False)
+                group_col = fin_df['Advisor']
+                group_col_live = live_df['Advisor']
             
+            comm_group = fin_df.groupby(group_col)['Standardized_Rev'].sum().to_frame("Committed Revenue (£)")
+            live_group = live_df.groupby(group_col_live)['Standardized_Rev'].sum().to_frame("Live Revenue (£)")
+            
+            # Join the two groups together
+            fin_group = comm_group.join(live_group, how='outer').fillna(0)
+            
+            if view_mode_fin == "Monthly":
+                fin_group.index = fin_group.index.strftime('%b %Y')
+            elif view_mode_fin == "Advisor":
+                fin_group = fin_group.sort_values(by="Committed Revenue (£)", ascending=False)
+            
+            # Apply styling to highlight both columns appropriately
             st.dataframe(
-                fin_group.style.format("£{:,.2f}").background_gradient(cmap='Greens'),
+                fin_group.style.format("£{:,.2f}").background_gradient(cmap='Greens', subset=['Committed Revenue (£)']).background_gradient(cmap='YlOrBr', subset=['Live Revenue (£)']),
                 use_container_width=True,
                 height=450
             )
@@ -529,14 +549,18 @@ try:
                 chart_df = fin_group.reset_index()
                 x_col = chart_df.columns[0]
                 
-                # If we are viewing by Advisor, use a Bar Chart. Otherwise, use a Line/Area Chart.
+                fig_fin = go.Figure()
+                
+                # If we are viewing by Advisor, use a Bar Chart for Committed. Otherwise, use an Area Chart.
                 if view_mode_fin == "Advisor":
-                    fig_fin = px.bar(chart_df, x=x_col, y='Revenue (£)', color='Revenue (£)', color_continuous_scale='Greens')
+                    fig_fin.add_trace(go.Bar(x=chart_df[x_col], y=chart_df['Committed Revenue (£)'], name="Committed Revenue", marker_color='#059669'))
                 else:
-                    fig_fin = px.area(chart_df, x=x_col, y='Revenue (£)', markers=True)
-                    fig_fin.update_traces(line_color='#059669', fillcolor='rgba(5, 150, 105, 0.2)')
-                    
-                fig_fin.update_layout(xaxis_title="", hovermode="x unified")
+                    fig_fin.add_trace(go.Scatter(x=chart_df[x_col], y=chart_df['Committed Revenue (£)'], name="Committed Revenue", fill='tozeroy', line=dict(color='#059669'), fillcolor='rgba(5, 150, 105, 0.2)'))
+                
+                # Overlay the Live Revenue as a bold line across all view types
+                fig_fin.add_trace(go.Scatter(x=chart_df[x_col], y=chart_df['Live Revenue (£)'], name="Live Revenue", line=dict(color='#D97706', width=3), mode='lines+markers'))
+                
+                fig_fin.update_layout(xaxis_title="", hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_fin, use_container_width=True)
             else:
                 st.info("No financial data found to plot.")
