@@ -490,8 +490,10 @@ try:
     with tab3:
         st.subheader("💰 Revenue & Financial Insights (Standardized 20% VAT Inclusive)")
         
+        show_live_fin = st.checkbox("Show current roster only", value=False, key="fin_roster_filter")
+        
         # Pull data strictly from f2 (Sparta2). Determine whether to use the filtered team or all data.
-        fin_df = f2_team if show_live_team else f2
+        fin_df = f2[f2['Advisor'].isin(formatted_live)].copy() if show_live_fin else f2.copy()
         
         # Filter for actual LIVE revenue
         live_df = fin_df[fin_df['P_Status'] == 'Live']
