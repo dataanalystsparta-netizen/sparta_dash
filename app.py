@@ -459,7 +459,7 @@ try:
                     # Column config adds the (Hover) helper
                     col_cfg_local = {"Applications": st.column_config.Column(help=TABLE_TOOLTIPS["Applications"])}
                     if 'Remarks' in df_apps.columns:
-                        col_cfg_local["Remarks"] = st.column_config.TextColumn("🔎 Remarks (Hover)", help="Hover over cell to see Quality & Welcome call remarks.")
+                        col_cfg_local["Remarks"] = st.column_config.TextColumn("🔎 Remarks (Double Click)", help="Double click cell to see Quality & Welcome call remarks.")
                     
                     st.dataframe(
                         df_apps.style.format({"Applications": "{:,.0f}"}).background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), 
