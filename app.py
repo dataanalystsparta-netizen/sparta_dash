@@ -343,6 +343,7 @@ try:
                 st.dataframe(styler_p, use_container_width=True, height=500, column_config={col: st.column_config.Column(help=TABLE_TOOLTIPS.get(col, "")) for col in disp_port_num.columns})
             else:
                 st.info("No live status data available.")
+        
         st.write("### 📥 Download Team Report")
         e_col1, e_col2, e_col3 = st.columns(3)
         export_vol = final_df[['Total Applications']]
@@ -353,11 +354,21 @@ try:
             export_vol.to_excel(writer, sheet_name='Applications_Volume')
             if not export_qual.empty: export_qual.to_excel(writer, sheet_name='Quality_Audit')
             if not export_live.empty: export_live.to_excel(writer, sheet_name='Live_Status')
-        e_col1.download_button(label="Excel (All Tables)", data=output.getvalue(), file_name=f"Sparta_Team_Report_{start_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        combined_csv = "APPLICATIONS VOLUME\n" + export_vol.to_csv() + "\nQUALITY AUDIT\n" + export_qual.to_csv() + "\nLIVE STATUS\n" + export_live.to_csv()
-        e_col2.download_button(label="CSV (Combined Tables)", data=combined_csv, file_name=f"Sparta_Team_Report_{start_date}.csv", mime="text/csv")
-        pdf_bytes = generate_formatted_pdf(start_date, end_date, export_vol, export_qual, export_live)
-        e_col3.download_button(label="PDF (Formatted Tables)", data=pdf_bytes, file_name=f"Sparta_Team_Report_{start_date}.pdf", mime="application/pdf")
+        
+        with e_col1:
+            st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/exccel%20logo.jpg", width=35)
+            st.download_button(label="Excel (All Tables)", data=output.getvalue(), file_name=f"Sparta_Team_Report_{start_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        
+        with e_col2:
+            st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/cssv.png", width=35)
+            combined_csv = "APPLICATIONS VOLUME\n" + export_vol.to_csv() + "\nQUALITY AUDIT\n" + export_qual.to_csv() + "\nLIVE STATUS\n" + export_live.to_csv()
+            st.download_button(label="CSV (Combined Tables)", data=combined_csv, file_name=f"Sparta_Team_Report_{start_date}.csv", mime="text/csv")
+        
+        with e_col3:
+            st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/pdf.png", width=35)
+            pdf_bytes = generate_formatted_pdf(start_date, end_date, export_vol, export_qual, export_live)
+            st.download_button(label="PDF (Formatted Tables)", data=pdf_bytes, file_name=f"Sparta_Team_Report_{start_date}.pdf", mime="application/pdf")
+        
         st.divider()
         st.subheader("📈 Team Performance Trends")
         tg_1, tg_2 = st.columns(2)
@@ -538,7 +549,7 @@ try:
             else:
                 st.info("No financial data found to plot.")
 
-    # --- NEW: LOCATIONS TAB (TAB 4) ---
+    # --- LOCATIONS TAB ---
     with tab4:
         st.subheader("📍 Geographical Locations & Demographics")
         if 'Address' in f2.columns:
@@ -562,11 +573,9 @@ try:
             
             st.divider()
             
-            # --- MAP INTEGRATION ---
             st.write("#### 🗺️ Campaign Map (Live vs Cancelled)")
             map_data = geo_df[geo_df['Postcode'] != "Unknown"].copy()
             if not map_data.empty:
-                # Add Lat/Lon to unique postcodes to speed up loading
                 unique_pcs = map_data['Postcode'].unique()
                 coords_map = {pc: get_lat_lon(pc) for pc in unique_pcs}
                 map_data['lat'] = map_data['Postcode'].map(lambda x: coords_map[x][0])
@@ -617,10 +626,10 @@ try:
                         Live_Apps=('P_Status', lambda x: (x == 'Live').sum()),
                         Live_Revenue=('Standardized_Rev', lambda x: x[geo_df['P_Status'] == 'Live'].sum())
                     ).sort_values('Total_Apps', ascending=False).reset_index()
-                    st.dataframe(pc_group.style.format({'Live_Revenue': '£{:,.2f}'}).background_gradient(cmap='Greens'), use_container_width=True)
+                    st.dataframe(pc_group.style.format({'Live_Revenue': '£{:,.2f}'}).background_gradient(cmap='Greens', subset=['Total_Apps']), use_container_width=True)
                 else: st.info("No data for current selection.")
         else:
-            st.warning("No 'Address' column found in the Sparta2 dataset. Please ensure the column is named 'Address'.")
+            st.warning("No 'Address' column found in the Sparta2 dataset.")
 
 except Exception as e:
     st.error(f"Error: {e}")
