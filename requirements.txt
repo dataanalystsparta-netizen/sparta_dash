@@ -9,3 +9,5 @@ numpy
 plotly
 xlsxwriter
 fpdf
+folium
+streamlit_folium
