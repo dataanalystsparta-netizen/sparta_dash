@@ -357,17 +357,17 @@ try:
         
         with e_col1:
             st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/exccel%20logo.jpg", width=35)
-            st.download_button(label="Excel (All Tables)", data=output.getvalue(), file_name=f"Sparta_Team_Report_{start_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button(label="Download Excel Report", data=output.getvalue(), file_name=f"Sparta_Team_Report_{start_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         
         with e_col2:
             st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/cssv.png", width=35)
             combined_csv = "APPLICATIONS VOLUME\n" + export_vol.to_csv() + "\nQUALITY AUDIT\n" + export_qual.to_csv() + "\nLIVE STATUS\n" + export_live.to_csv()
-            st.download_button(label="CSV (Combined Tables)", data=combined_csv, file_name=f"Sparta_Team_Report_{start_date}.csv", mime="text/csv")
+            st.download_button(label="Download CSV Report", data=combined_csv, file_name=f"Sparta_Team_Report_{start_date}.csv", mime="text/csv")
         
         with e_col3:
             st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/pdf.png", width=35)
             pdf_bytes = generate_formatted_pdf(start_date, end_date, export_vol, export_qual, export_live)
-            st.download_button(label="PDF (Formatted Tables)", data=pdf_bytes, file_name=f"Sparta_Team_Report_{start_date}.pdf", mime="application/pdf")
+            st.download_button(label="Download PDF Report", data=pdf_bytes, file_name=f"Sparta_Team_Report_{start_date}.pdf", mime="application/pdf")
         
         st.divider()
         st.subheader("📈 Team Performance Trends")
