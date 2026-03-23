@@ -440,7 +440,7 @@ try:
                             for _, row in group.iterrows():
                                 qr = str(row.get('Quality Remarks', 'No Quality Remark')).strip() or "No Quality Remark"
                                 wr = str(row.get('Welcome call Remarks', 'No WC Remark')).strip() or "No WC Remark"
-                                lines.append(f"• Quality Remarks: {qr} ===||=== Welcome Call Remarks: {wr}")
+                                lines.append(f"• Quality Remarks: {qr} ===>>> Welcome Call Remarks: {wr}")
                             return "\n".join(lines)
 
                         daily_counts = ag1.groupby('Period').size().to_frame('Applications')
