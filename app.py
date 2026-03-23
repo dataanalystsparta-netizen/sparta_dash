@@ -93,6 +93,59 @@ def calculate_standardized_revenue(val):
         return amount
     return 0.0
 
+# --- ADDRESS PARSING ENGINE ---
+def parse_address(val):
+    s = str(val)
+    # Strip "Address" prefix
+    s = re.sub(r'^Address', '', s, flags=re.IGNORECASE).strip()
+    
+    # Extract UK Postcode
+    pc_match = re.search(r'([A-Z]{1,2}[0-9][A-Z0-9]?\s?[0-9][A-Z]{2})', s, re.IGNORECASE)
+    postcode = pc_match.group(1).upper() if pc_match else "Unknown"
+    
+    # Standardize Postcode Spacing (e.g. GU216NY -> GU21 6NY)
+    if postcode != "Unknown" and " " not in postcode:
+        postcode = postcode[:-3] + " " + postcode[-3:]
+        
+    country = "England"
+    pc_area = ""
+    if postcode != "Unknown":
+        pc_area_match = re.match(r'^([A-Z]{1,2})', postcode)
+        if pc_area_match:
+            pc_area = pc_area_match.group(1)
+            scotland = ['AB','DD','DG','EH','FK','G','HS','IV','KA','KW','KY','ML','PA','PH','TD','ZE']
+            wales = ['CF','LL','NP','SA']
+            if pc_area in scotland: country = "Scotland"
+            elif pc_area in wales: country = "Wales"
+            elif pc_area == 'BT': country = "Northern Ireland"
+            
+    city = "Unknown"
+    county = "Unknown"
+    
+    # Clean up string to find city/county
+    clean_s = s
+    if pc_match:
+        clean_s = s[:pc_match.start()].strip()
+        
+    # Strip trailing commas or sticky numbers
+    clean_s = re.sub(r'[0-9,\s]+$', '', clean_s)
+    
+    if ',' in clean_s:
+        parts = [p.strip() for p in clean_s.split(',') if p.strip()]
+        if len(parts) >= 2:
+            county = parts[-1].title()
+            city = parts[-2].title()
+        elif len(parts) == 1:
+            city = parts[0].title()
+    else:
+        words = clean_s.split()
+        if len(words) >= 1:
+            city = words[-1].title()
+        if len(words) >= 2:
+            county = words[-2].title()
+            
+    return pd.Series([country, county, city, postcode])
+
 # --- PDF FORMATTING ENGINE ---
 def generate_formatted_pdf(start_date, end_date, df_vol, df_qual, df_live):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
@@ -218,7 +271,7 @@ try:
     selected_sort_label = col_c.selectbox("Master Sort (Aligns all tables):", available_sorts)
 
     # --- TABS ---
-    tab1, tab2, tab3 = st.tabs(["📊 Team Overview", "👤 Individual Performance", "💰 Financials"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Team Overview", "👤 Individual Performance", "💰 Financials", "📍 Locations"])
 
     with tab1:
         show_live_team = st.checkbox("Show current roster only", value=False, key="team_roster_filter")
@@ -486,16 +539,13 @@ try:
                     fig2.update_layout(title="Committed vs Live", hovermode="x unified")
                     st.plotly_chart(fig2, use_container_width=True)
 
-    # --- NEW: FINANCIALS TAB (TAB 3) ---
     with tab3:
         st.subheader("💰 Revenue & Financial Insights (Standardized 20% VAT Inclusive)")
         
         show_live_fin = st.checkbox("Show current roster only", value=False, key="fin_roster_filter")
         
-        # Pull data strictly from f2 (Sparta2). Determine whether to use the filtered team or all data.
         fin_df = f2[f2['Advisor'].isin(formatted_live)].copy() if show_live_fin else f2.copy()
         
-        # Filter for actual LIVE revenue
         live_df = fin_df[fin_df['P_Status'] == 'Live']
         
         total_committed_mrr = fin_df['Standardized_Rev'].sum()
@@ -523,14 +573,13 @@ try:
             elif view_mode_fin == "Monthly":
                 group_col = fin_df['Date_Parsed'].dt.to_period('M')
                 group_col_live = live_df['Date_Parsed'].dt.to_period('M')
-            else: # Advisor Breakdown
+            else:
                 group_col = fin_df['Advisor']
                 group_col_live = live_df['Advisor']
             
             comm_group = fin_df.groupby(group_col)['Standardized_Rev'].sum().to_frame("Committed Revenue (£)")
             live_group = live_df.groupby(group_col_live)['Standardized_Rev'].sum().to_frame("Live Revenue (£)")
             
-            # Join the two groups together
             fin_group = comm_group.join(live_group, how='outer').fillna(0)
             
             if view_mode_fin == "Monthly":
@@ -538,7 +587,6 @@ try:
             elif view_mode_fin == "Advisor":
                 fin_group = fin_group.sort_values(by="Committed Revenue (£)", ascending=False)
             
-            # Apply styling to highlight both columns appropriately
             st.dataframe(
                 fin_group.style.format("£{:,.2f}").background_gradient(cmap='Greens', subset=['Committed Revenue (£)']).background_gradient(cmap='YlOrBr', subset=['Live Revenue (£)']),
                 use_container_width=True,
@@ -553,19 +601,89 @@ try:
                 
                 fig_fin = go.Figure()
                 
-                # If we are viewing by Advisor, use a Bar Chart for Committed. Otherwise, use an Area Chart.
                 if view_mode_fin == "Advisor":
                     fig_fin.add_trace(go.Bar(x=chart_df[x_col], y=chart_df['Committed Revenue (£)'], name="Committed Revenue", marker_color='#059669'))
                 else:
                     fig_fin.add_trace(go.Scatter(x=chart_df[x_col], y=chart_df['Committed Revenue (£)'], name="Committed Revenue", fill='tozeroy', line=dict(color='#059669'), fillcolor='rgba(5, 150, 105, 0.2)'))
                 
-                # Overlay the Live Revenue as a bold line across all view types
                 fig_fin.add_trace(go.Scatter(x=chart_df[x_col], y=chart_df['Live Revenue (£)'], name="Live Revenue", line=dict(color='#D97706', width=3), mode='lines+markers'))
                 
                 fig_fin.update_layout(xaxis_title="", hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_fin, use_container_width=True)
             else:
                 st.info("No financial data found to plot.")
+
+    # --- NEW: LOCATIONS TAB (TAB 4) ---
+    with tab4:
+        st.subheader("📍 Geographical Locations & Demographics")
+        
+        if 'Address' in f2.columns:
+            # Parse address strings dynamically
+            if 'Postcode' not in f2.columns:
+                f2[['Country', 'County', 'City', 'Postcode']] = f2['Address'].apply(parse_address)
+            
+            geo_df = f2.copy()
+            
+            # --- HIERARCHICAL FILTERS ---
+            st.write("### Filter Demographics")
+            fc1, fc2, fc3, fc4 = st.columns(4)
+            
+            countries = sorted(geo_df['Country'].unique().tolist())
+            selected_country = fc1.multiselect("Country", countries, default=countries)
+            if selected_country: 
+                geo_df = geo_df[geo_df['Country'].isin(selected_country)]
+            
+            counties = sorted(geo_df['County'].unique().tolist())
+            selected_county = fc2.multiselect("County", counties)
+            if selected_county: 
+                geo_df = geo_df[geo_df['County'].isin(selected_county)]
+            
+            cities = sorted(geo_df['City'].unique().tolist())
+            selected_city = fc3.multiselect("City", cities)
+            if selected_city: 
+                geo_df = geo_df[geo_df['City'].isin(selected_city)]
+            
+            postcodes = sorted(geo_df['Postcode'].unique().tolist())
+            selected_pc = fc4.multiselect("Postcode", postcodes)
+            if selected_pc: 
+                geo_df = geo_df[geo_df['Postcode'].isin(selected_pc)]
+            
+            # --- METRICS ---
+            st.divider()
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("Total Applications in Region", f"{len(geo_df):,}")
+            mc2.metric("Regional Live Revenue", f"£{geo_df[geo_df['P_Status']=='Live']['Standardized_Rev'].sum():,.2f}")
+            top_city = geo_df['City'].mode()[0] if not geo_df.empty else "N/A"
+            mc3.metric("Top City by Volume", top_city)
+            
+            # --- TABLES ---
+            vc1, vc2 = st.columns(2)
+            
+            with vc1:
+                st.write("#### 🏙️ Top Cities Pipeline")
+                if not geo_df.empty:
+                    city_group = geo_df.groupby('City').agg(
+                        Total_Apps=('Advisor', 'count'),
+                        Live_Apps=('P_Status', lambda x: (x == 'Live').sum()),
+                        Live_Revenue=('Standardized_Rev', lambda x: x[geo_df['P_Status'] == 'Live'].sum())
+                    ).sort_values('Total_Apps', ascending=False).reset_index()
+                    st.dataframe(city_group.style.format({'Live_Revenue': '£{:,.2f}'}).background_gradient(cmap='Blues'), use_container_width=True)
+                else:
+                    st.info("No data for current selection.")
+                
+            with vc2:
+                st.write("#### 📮 Postcode Breakdown")
+                if not geo_df.empty:
+                    pc_group = geo_df.groupby('Postcode').agg(
+                        Total_Apps=('Advisor', 'count'),
+                        Live_Apps=('P_Status', lambda x: (x == 'Live').sum()),
+                        Live_Revenue=('Standardized_Rev', lambda x: x[geo_df['P_Status'] == 'Live'].sum())
+                    ).sort_values('Total_Apps', ascending=False).reset_index()
+                    st.dataframe(pc_group.style.format({'Live_Revenue': '£{:,.2f}'}).background_gradient(cmap='Greens'), use_container_width=True)
+                else:
+                    st.info("No data for current selection.")
+        else:
+            st.warning("No 'Address' column found in the Sparta2 dataset. Please ensure the column is named 'Address'.")
 
 except Exception as e:
     st.error(f"Error: {e}")
