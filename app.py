@@ -287,11 +287,11 @@ try:
         team_live_rate = f"{(team_live / team_committed * 100):.1f}%" if team_committed > 0 else "0.0%"
         with st.container(border=True):
             tm1, tm2, tm3, tm4, tm5, tm6, tm7 = st.columns(7)
-            tm1.metric("📝 Tot. Applications", f"{team_apps:,}", help=KPI_DEFS["total_apps"])
-            tm2.metric("✅ Quality Approv.", f"{team_approved:,}", help=KPI_DEFS["qual_approved"])
-            tm3.metric("📈 Approv. Rate", team_approv_rate, help=KPI_DEFS["approv_rate"])
-            tm4.metric("📦 Commit. Apps", f"{team_committed:,}", help=KPI_DEFS["commit_apps"])
-            tm5.metric("📋 Commit. Rate", team_commit_rate, help=KPI_DEFS["commit_rate"])
+            tm1.metric("📝 Total Applications", f"{team_apps:,}", help=KPI_DEFS["total_apps"])
+            tm2.metric("✅ Quality Approved", f"{team_approved:,}", help=KPI_DEFS["qual_approved"])
+            tm3.metric("📈 Approval Rate", team_approv_rate, help=KPI_DEFS["approv_rate"])
+            tm4.metric("📦 Committed Applications", f"{team_committed:,}", help=KPI_DEFS["commit_apps"])
+            tm5.metric("📋 Commited Rate", team_commit_rate, help=KPI_DEFS["commit_rate"])
             tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
             tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
         app_counts = f1_team.groupby('Advisor').size().to_frame('Total Applications')
