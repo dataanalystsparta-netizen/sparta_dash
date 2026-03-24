@@ -11,4 +11,3 @@ xlsxwriter
 fpdf
 folium
 streamlit_folium
-folium.streamlit
