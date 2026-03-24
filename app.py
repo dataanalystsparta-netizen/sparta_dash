@@ -439,7 +439,7 @@ try:
                             lines = []
                             for _, row in group.iterrows():
                                 qr = str(row.get('Quality Remarks', 'No Quality Remark')).strip() or "No Quality Remark"
-                                wr = str(row.get('Welcome Call Remarks', 'No WC Remark')).strip() or "No WC Remark"
+                                wr = str(row.get('Welcome call Remarks', 'No WC Remark')).strip() or "No WC Remark"
                                 lines.append(f"• Q: {qr} | WC: {wr}")
                             return "\n".join(lines)
 
@@ -459,7 +459,7 @@ try:
                     # Column config adds the (Hover) helper
                     col_cfg_local = {"Applications": st.column_config.Column(help=TABLE_TOOLTIPS["Applications"])}
                     if 'Remarks' in df_apps.columns:
-                        col_cfg_local["Remarks"] = st.column_config.TextColumn("🔎 Remarks (Hover)", help="Hover over cell to see Quality & Welcome Call remarks.")
+                        col_cfg_local["Remarks"] = st.column_config.TextColumn("🔎 Remarks (Hover)", help="Hover over cell to see Quality & Welcome call remarks.")
                     
                     st.dataframe(
                         df_apps.style.format({"Applications": "{:,.0f}"}).background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), 
