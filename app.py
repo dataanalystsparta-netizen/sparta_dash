@@ -432,12 +432,40 @@ try:
             with ca:
                 st.markdown(f"#### 📊 {view_mode} Applications")
                 if not ag1.empty:
-                    daily_apps = ag1.groupby('Period').size().to_frame('Applications')
+                    # Logic for "Daily" hover functionality
+                    if view_mode == "Daily":
+                        # Helper to format multi-line remarks for Streamlit's truncation hover
+                        def format_remarks(group):
+                            lines = []
+                            for _, row in group.iterrows():
+                                qr = str(row.get('Quality Remarks', 'No Quality Remark')).strip() or "No Quality Remark"
+                                wr = str(row.get('Welcome call Remarks', 'No WC Remark')).strip() or "No WC Remark"
+                                lines.append(f"• Q: {qr} | WC: {wr}")
+                            return "\n".join(lines)
+
+                        daily_counts = ag1.groupby('Period').size().to_frame('Applications')
+                        daily_rems = ag1.groupby('Period').apply(format_remarks).to_frame('Remarks')
+                        daily_apps = daily_counts.join(daily_rems)
+                    else:
+                        daily_apps = ag1.groupby('Period').size().to_frame('Applications')
+
                     if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
-                    t_apps = daily_apps.sum().to_frame().T
-                    t_apps.index = ["TOTAL"]
-                    df_apps = pd.concat([daily_apps, t_apps])
-                    st.dataframe(df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), use_container_width=True, column_config={"Applications": st.column_config.Column(help=TABLE_TOOLTIPS["Applications"])})
+                    
+                    # Ensure total row doesn't sum up the text remarks
+                    t_apps_num = daily_apps[['Applications']].sum().to_frame().T
+                    t_apps_num.index = ["TOTAL"]
+                    df_apps = pd.concat([daily_apps, t_apps_num]).fillna("")
+                    
+                    # Column config adds the (Hover) helper
+                    col_cfg_local = {"Applications": st.column_config.Column(help=TABLE_TOOLTIPS["Applications"])}
+                    if 'Remarks' in df_apps.columns:
+                        col_cfg_local["Remarks"] = st.column_config.TextColumn("🔎 Remarks (Hover)", help="Hover over cell to see Quality & Welcome Call remarks.")
+                    
+                    st.dataframe(
+                        df_apps.style.format({"Applications": "{:,.0f}"}).background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), 
+                        use_container_width=True, 
+                        column_config=col_cfg_local
+                    )
                 else:
                     st.info("No applications found.")
             with cb:
@@ -549,7 +577,6 @@ try:
             else:
                 st.info("No financial data found to plot.")
 
-    # --- LOCATIONS TAB ---
     with tab4:
         st.subheader("📍 Geographical Locations & Demographics")
         if 'Address' in f2.columns:
@@ -609,7 +636,7 @@ try:
             mc3.metric("Top City by Volume", top_city)
             vc1, vc2 = st.columns(2)
             with vc1:
-                st.write("#### 🏙️ Top Cities Pipeline")
+                st.write("####  City Pipeline")
                 if not geo_df.empty:
                     city_group = geo_df.groupby('City').agg(
                         Total_Apps=('Advisor', 'count'),
@@ -619,7 +646,7 @@ try:
                     st.dataframe(city_group.style.format({'Live_Revenue': '£{:,.2f}'}).background_gradient(cmap='Blues'), use_container_width=True)
                 else: st.info("No data for current selection.")
             with vc2:
-                st.write("#### 📮 Postcode Breakdown")
+                st.write("#### Postcode Breakdown")
                 if not geo_df.empty:
                     pc_group = geo_df.groupby('Postcode').agg(
                         Total_Apps=('Advisor', 'count'),
