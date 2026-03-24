@@ -13,7 +13,6 @@ import folium
 from streamlit_folium import st_folium
 from folium.plugins import MarkerCluster
 import requests
-import folium.streamlit
 
 # --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
