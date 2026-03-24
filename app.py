@@ -502,6 +502,11 @@ try:
                     fig2.update_layout(title="Committed vs Live", hovermode="x unified")
                     st.plotly_chart(fig2, use_container_width=True)
 
+
+
+'''
+
+   
     with tab3:
         st.subheader("💰 Revenue & Financial Insights (Standardized 20% VAT Inclusive)")
         show_live_fin = st.checkbox("Show current roster only", value=False, key="fin_roster_filter")
@@ -630,6 +635,12 @@ try:
                 else: st.info("No data for current selection.")
         else:
             st.warning("No 'Address' column found in the Sparta2 dataset.")
+
+
+
+'''
+
+
 
 except Exception as e:
     st.error(f"Error: {e}")
