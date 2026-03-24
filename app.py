@@ -434,14 +434,18 @@ try:
                 if not ag1.empty:
                     # Logic for "Daily" hover functionality
                     if view_mode == "Daily":
-                        # Helper to format multi-line remarks for Streamlit's truncation hover
+                        # Updated Helper to handle exact column names and Pandas empty cell quirks
                         def format_remarks(group):
                             lines = []
                             for _, row in group.iterrows():
-                                qr = str(row.get('Quality Remarks', 'No Quality Remark')).strip() or "No Quality Remark"
-                                wr = str(row.get('Welcome call Remarks', 'No WC Remark')).strip() or "No WC Remark"
+                                qr_val = row.get('Quality Remarks', '')
+                                wc_val = row.get('Welcome call Remarks', row.get('Welcome Call Remarks', ''))
+
+                                qr = str(qr_val).strip() if pd.notna(qr_val) and str(qr_val).strip() else "N/A"
+                                wr = str(wc_val).strip() if pd.notna(wc_val) and str(wc_val).strip() else "N/A"
+
                                 lines.append(f"• Q: {qr} | WC: {wr}")
-                            return "\n".join(lines)
+                            return "\n\n".join(lines)
 
                         daily_counts = ag1.groupby('Period').size().to_frame('Applications')
                         daily_rems = ag1.groupby('Period').apply(format_remarks).to_frame('Remarks')
@@ -451,15 +455,18 @@ try:
 
                     if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
                     
-                    # Ensure total row doesn't sum up the text remarks
+                    # Fix applied here: ensure total row merges safely without breaking TextColumn
                     t_apps_num = daily_apps[['Applications']].sum().to_frame().T
                     t_apps_num.index = ["TOTAL"]
-                    df_apps = pd.concat([daily_apps, t_apps_num]).fillna("")
+                    df_apps = pd.concat([daily_apps, t_apps_num])
                     
-                    # Column config adds the (Hover) helper
+                    if 'Remarks' in df_apps.columns:
+                        df_apps['Remarks'] = df_apps['Remarks'].fillna("-") # explicitly fill the TOTAL row gap
+                    df_apps = df_apps.fillna("")
+                    
                     col_cfg_local = {"Applications": st.column_config.Column(help=TABLE_TOOLTIPS["Applications"])}
                     if 'Remarks' in df_apps.columns:
-                        col_cfg_local["Remarks"] = st.column_config.TextColumn("🔎 Remarks (Hover)", help="Hover over cell to see Quality & Welcome call remarks.")
+                        col_cfg_local["Remarks"] = st.column_config.TextColumn("🔎 Remarks (Hover)", help="Hover over cell to see Quality & Welcome Call remarks.")
                     
                     st.dataframe(
                         df_apps.style.format({"Applications": "{:,.0f}"}).background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), 
@@ -531,6 +538,7 @@ try:
                     st.plotly_chart(fig2, use_container_width=True)
 
     with tab3:
+        """
         st.subheader("💰 Revenue & Financial Insights (Standardized 20% VAT Inclusive)")
         show_live_fin = st.checkbox("Show current roster only", value=False, key="fin_roster_filter")
         fin_df = f2[f2['Advisor'].isin(formatted_live)].copy() if show_live_fin else f2.copy()
@@ -576,8 +584,10 @@ try:
                 st.plotly_chart(fig_fin, use_container_width=True)
             else:
                 st.info("No financial data found to plot.")
+        """
 
     with tab4:
+        """
         st.subheader("📍 Geographical Locations & Demographics")
         if 'Address' in f2.columns:
             if 'Postcode' not in f2.columns:
@@ -657,6 +667,7 @@ try:
                 else: st.info("No data for current selection.")
         else:
             st.warning("No 'Address' column found in the Sparta2 dataset.")
+        """
 
 except Exception as e:
     st.error(f"Error: {e}")
