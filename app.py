@@ -432,14 +432,14 @@ try:
             with ca:
                 st.markdown(f"#### 📊 {view_mode} Applications")
                 if not ag1.empty:
-                    # UPDATED: Targetting the exact column "Welcome call Remarks"
+                    # Logic for "Daily" hover functionality
                     if view_mode == "Daily":
+                        # Helper to format multi-line remarks for Streamlit's truncation hover
                         def format_remarks(group):
                             lines = []
                             for _, row in group.iterrows():
-                                # Check both common casings just to be safe
-                                qr = str(row.get('Quality Remarks') or row.get('Quality remarks') or "No Quality Remark").strip()
-                                wr = str(row.get('Welcome call Remarks') or row.get('Welcome call Remarks') or "No WC Remark").strip()
+                                qr = str(row.get('Quality Remarks', 'No Quality Remark')).strip() or "No Quality Remark"
+                                wr = str(row.get('Welcome Call Remarks', 'No WC Remark')).strip() or "No WC Remark"
                                 lines.append(f"• Q: {qr} | WC: {wr}")
                             return "\n".join(lines)
 
@@ -451,13 +451,15 @@ try:
 
                     if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
                     
+                    # Ensure total row doesn't sum up the text remarks
                     t_apps_num = daily_apps[['Applications']].sum().to_frame().T
                     t_apps_num.index = ["TOTAL"]
                     df_apps = pd.concat([daily_apps, t_apps_num]).fillna("")
                     
+                    # Column config adds the (Hover) helper
                     col_cfg_local = {"Applications": st.column_config.Column(help=TABLE_TOOLTIPS["Applications"])}
                     if 'Remarks' in df_apps.columns:
-                        col_cfg_local["Remarks"] = st.column_config.TextColumn("🔎 Remarks (Hover)", help="Hover over cell to see Quality & Welcome call remarks.")
+                        col_cfg_local["Remarks"] = st.column_config.TextColumn("🔎 Remarks (Hover)", help="Hover over cell to see Quality & Welcome Call remarks.")
                     
                     st.dataframe(
                         df_apps.style.format({"Applications": "{:,.0f}"}).background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), 
@@ -634,7 +636,7 @@ try:
             mc3.metric("Top City by Volume", top_city)
             vc1, vc2 = st.columns(2)
             with vc1:
-                st.write("#### City Pipeline")
+                st.write("####  City Pipeline")
                 if not geo_df.empty:
                     city_group = geo_df.groupby('City').agg(
                         Total_Apps=('Advisor', 'count'),
