@@ -501,20 +501,7 @@ try:
                     fig2.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Live'], name="Live", line=dict(color='#F59E0B', width=3)))
                     fig2.update_layout(title="Committed vs Live", hovermode="x unified")
                     st.plotly_chart(fig2, use_container_width=True)
-
-
-
-except Exception as e:
-    st.error(f"Error: {e}")
-
-
-
-
-
-'''
-
-   
-    with tab3:
+                 with tab3:
         st.subheader("💰 Revenue & Financial Insights (Standardized 20% VAT Inclusive)")
         show_live_fin = st.checkbox("Show current roster only", value=False, key="fin_roster_filter")
         fin_df = f2[f2['Advisor'].isin(formatted_live)].copy() if show_live_fin else f2.copy()
@@ -642,4 +629,15 @@ except Exception as e:
                 else: st.info("No data for current selection.")
         else:
             st.warning("No 'Address' column found in the Sparta2 dataset.")
-'''
+
+
+
+
+
+
+except Exception as e:
+    st.error(f"Error: {e}")
+
+
+
+
