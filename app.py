@@ -148,7 +148,7 @@ TABLE_TOOLTIPS = {
     "Approved": "Applications that have cleared the Quality Audit process.",
     "Rework": "Applications requiring corrections or missing information.",
     "Cancelled": "Applications that were rejected or did not proceed.",
-    "Others": "Applications in pending or miscellaneous statuses.",
+    "Others": "Applications that are pending, hold or other miscellaneous statuses.",
     "Live": "Applications successfully activated and confirmed.",
     "Committed": "Applications processed and awaiting final activation."
 }
