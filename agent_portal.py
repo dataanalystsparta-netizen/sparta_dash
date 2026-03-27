@@ -19,15 +19,25 @@ st.markdown("""
    </style>
    """, unsafe_allow_html=True)
 
-# --- AGENT ACCESS KEYS ---
-# Dictionary mapping keys to exact Advisor names. 
-# (You can expand this for the whole roster)
+# --- AGENT ACCESS KEYS ---Dictionary mapping keys to exact Advisor names. 
+
 ACCESS_KEYS = {
-    "AMAN2026": "Aman",
-    "ANJALI2026": "Anjali",
-    "ANSHU2026": "Anshu",
-    "FROGH2026": "Frogh",
-    "GAURAV2026": "Gaurav"
+    "19167912": "Aman", #1
+    "97631367": "Anjali",#2
+    "19847913": "Anshu",#3
+    "12695485": "Frogh",#4
+    "17929264": "Gaurav",#5
+    "19819343":"Animesh",#6
+    "91981624":"Guru",#7
+    "26819496":"Krrish",#8
+    "76138936":"Kunal",#9
+    "18638924":"Niki",#10
+    "97491653":"Rani",#11
+    "81986125":"Shaheen",#12
+    "98168174":"Tokivi",#13
+    "49836935":"Manmeet",#14
+    "19843675":"Gungun",#15
+    "86313569":"Prerna"
 }
 
 # --- DATA FETCHING (Same as Master, Cached for speed) ---
