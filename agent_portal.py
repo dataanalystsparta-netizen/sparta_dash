@@ -86,8 +86,8 @@ def map_portal(val):
 def map_wc(val):
     s = str(val).lower().strip()
     if any(x in s for x in ['done', 'pass', 'comp']): return 'Done'
-    if any(x in s for x in ['can', 'rej']): return 'Cancelled'
-    if any(x in s for x in ['can', 'rej']): return 'Cancelled'
+    if any(x in s for x in ['pend', 'pnd']): return 'Pending'
+    if any(x in s for x in ['paper', 'ppw']): return 'Paperwork'
     if any(x in s for x in ['can', 'rej']): return 'Cancelled'
     return 'Others'
 
@@ -198,9 +198,13 @@ else:
         with cd:
             wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
             if wc_col and not ag1.empty:
-                # APPLY CLEANING HERE
                 ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
                 period_wc = ag1.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
+                
+                # REORDERING LOGIC
+                wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
+                period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
+                
                 st.dataframe(period_wc.style.background_gradient(cmap='Oranges'), use_container_width=True)
             else:
                 st.info("No Welcome Call data.")
@@ -224,7 +228,7 @@ else:
         # Audit Log
         st.subheader("🔍 Recent Quality Audit Log")
         if not ag1.empty:
-            display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
+            display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Welcome call Status', 'Welcome call Remarks']
             recent_log = ag1.sort_values(by='Date_Parsed', ascending=False).head(20)
             actual_cols = [c for c in display_cols if c in ag1.columns]
             st.dataframe(recent_log[actual_cols], use_container_width=True, hide_index=True)
