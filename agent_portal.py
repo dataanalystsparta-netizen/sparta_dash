@@ -196,15 +196,18 @@ else:
                 period_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
                 qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
                 period_qual = period_qual.reindex(columns=qual_order, fill_value=0)
-                vmax_qual = max(period_qual.max().max(), 1.1)
                 
-                styled_qual = period_qual.style.format(lambda x: "-" if x == 0 else x) \
-                    .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])], vmin=1, vmax=vmax_qual) \
-                    .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Rework'])], vmin=1, vmax=vmax_qual) \
-                    .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Cancelled', 'Rejected'])], vmin=1, vmax=vmax_qual) \
-                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
+                # Filter out columns that are all zeros
+                period_qual = period_qual.loc[:, (period_qual != 0).any(axis=0)]
                 
-                st.dataframe(styled_qual, use_container_width=True)
+                if not period_qual.empty:
+                    vmax_qual = max(period_qual.max().max(), 1.1)
+                    styled_qual = period_qual.style.format(lambda x: "-" if x == 0 else x) \
+                        .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])], vmin=1, vmax=vmax_qual) \
+                        .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Rework'])], vmin=1, vmax=vmax_qual) \
+                        .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Cancelled', 'Rejected'])], vmin=1, vmax=vmax_qual) \
+                        .map(lambda x: 'background-color: transparent' if x == 0 else '')
+                    st.dataframe(styled_qual, use_container_width=True)
 
         with cc:
             st.markdown("##### Welcome Call Status")
@@ -214,15 +217,18 @@ else:
                 period_wc = ag1.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
                 wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
                 period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
-                vmax_wc = max(period_wc.max().max(), 1.1)
                 
-                styled_wc = period_wc.style.format(lambda x: "-" if x == 0 else x) \
-                    .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Done'])], vmin=1, vmax=vmax_wc) \
-                    .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Pending', 'Paperwork'])], vmin=1, vmax=vmax_wc) \
-                    .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_wc) \
-                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
+                # Filter out columns that are all zeros
+                period_wc = period_wc.loc[:, (period_wc != 0).any(axis=0)]
                 
-                st.dataframe(styled_wc, use_container_width=True)
+                if not period_wc.empty:
+                    vmax_wc = max(period_wc.max().max(), 1.1)
+                    styled_wc = period_wc.style.format(lambda x: "-" if x == 0 else x) \
+                        .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Done'])], vmin=1, vmax=vmax_wc) \
+                        .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Pending', 'Paperwork'])], vmin=1, vmax=vmax_wc) \
+                        .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_wc) \
+                        .map(lambda x: 'background-color: transparent' if x == 0 else '')
+                    st.dataframe(styled_wc, use_container_width=True)
             else:
                 st.info("No Welcome Call data.")
                 
@@ -232,15 +238,18 @@ else:
                 period_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
                 port_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 period_port = period_port.reindex(columns=port_order, fill_value=0)
-                vmax_port = max(period_port.max().max(), 1.1)
                 
-                styled_port = period_port.style.format(lambda x: "-" if x == 0 else x) \
-                    .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1, vmax=vmax_port) \
-                    .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])], vmin=1, vmax=vmax_port) \
-                    .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_port) \
-                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
+                # Filter out columns that are all zeros
+                period_port = period_port.loc[:, (period_port != 0).any(axis=0)]
                 
-                st.dataframe(styled_port, use_container_width=True)
+                if not period_port.empty:
+                    vmax_port = max(period_port.max().max(), 1.1)
+                    styled_port = period_port.style.format(lambda x: "-" if x == 0 else x) \
+                        .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1, vmax=vmax_port) \
+                        .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])], vmin=1, vmax=vmax_port) \
+                        .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_port) \
+                        .map(lambda x: 'background-color: transparent' if x == 0 else '')
+                    st.dataframe(styled_port, use_container_width=True)
 
         # Charts
         st.subheader("📈 My Trend")
