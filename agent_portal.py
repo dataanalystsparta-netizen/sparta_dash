@@ -183,35 +183,49 @@ else:
         with ca:
             if not ag1.empty:
                 period_apps = ag1.groupby('Period').size().to_frame('Total Apps')
-                st.dataframe(period_apps.style.background_gradient(cmap='Blues'), use_container_width=True)
+                # Total Apps -> Green
+                st.dataframe(period_apps.style.background_gradient(cmap='Greens'), use_container_width=True)
 
         with cb:
             if not ag1.empty:
                 period_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
-                # REORDERING LOGIC: Quality
                 qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
                 period_qual = period_qual.reindex(columns=qual_order, fill_value=0)
-                st.dataframe(period_qual.style.background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])]), use_container_width=True)
+                
+                # Colors: Approved(Green), Rework(Yellow), Cancelled/Rejected(Red)
+                styled_qual = period_qual.style.background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])]) \
+                    .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Rework'])]) \
+                    .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Cancelled', 'Rejected'])])
+                
+                st.dataframe(styled_qual, use_container_width=True)
                 
         with cc:
             if not ag2.empty:
                 period_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
-                # REORDERING LOGIC: Live Status
                 port_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 period_port = period_port.reindex(columns=port_order, fill_value=0)
-                st.dataframe(period_port.style.background_gradient(cmap='Purples', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live', 'Committed'])]), use_container_width=True)
+                
+                # Colors: Live(Green), Committed(Yellow), Cancelled(Red)
+                styled_port = period_port.style.background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])]) \
+                    .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])]) \
+                    .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])])
+                
+                st.dataframe(styled_port, use_container_width=True)
 
         with cd:
             wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
             if wc_col and not ag1.empty:
                 ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
                 period_wc = ag1.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
-                
-                # REORDERING LOGIC: Welcome Call
                 wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
                 period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
                 
-                st.dataframe(period_wc.style.background_gradient(cmap='Oranges'), use_container_width=True)
+                # Colors: Done(Green), Pending/Paperwork(Yellow), Cancelled(Red)
+                styled_wc = period_wc.style.background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Done'])]) \
+                    .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Pending', 'Paperwork'])]) \
+                    .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Cancelled'])])
+                
+                st.dataframe(styled_wc, use_container_width=True)
             else:
                 st.info("No Welcome Call data.")
 
@@ -234,7 +248,7 @@ else:
         # Audit Log
         st.subheader("🔍 Recent Quality Audit Log")
         if not ag1.empty:
-            display_cols = ['Sale Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
+            display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
             recent_log = ag1.sort_values(by='Date_Parsed', ascending=False).head(20)
             actual_cols = [c for c in display_cols if c in ag1.columns]
             st.dataframe(recent_log[actual_cols], use_container_width=True, hide_index=True)
