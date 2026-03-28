@@ -22,22 +22,22 @@ st.markdown("""
 # --- AGENT ACCESS KEYS ---Dictionary mapping keys to exact Advisor names. 
 
 ACCESS_KEYS = {
-    "19167912": "Aman", #1
-    "97631367": "Anjali",#2
-    "19847913": "Anshu",#3
-    "12695485": "Frogh",#4
-    "17929264": "Gaurav",#5
-    "19819343":"Animesh",#6
-    "91981624":"Guru",#7
-    "26819496":"Krrish",#8
-    "76138936":"Kunal",#9
-    "18638924":"Niki",#10
-    "97491653":"Rani",#11
-    "81986125":"Shaheen",#12
-    "98168174":"Tokivi",#13
-    "49836935":"Manmeet",#14
-    "19843675":"Gungun",#15
-    "86313569":"Prerna"
+    "X9R2M4V7": "Aman",      #1
+    "B5K8W1N3": "Anjali",    #2
+    "T7P4L9Q2": "Anshu",     #3
+    "D1H6C8F5": "Frogh",     #4
+    "G3N7V2M8": "Gaurav",    #5
+    "K4R9T1X6": "Animesh",   #6
+    "J8L2B5W3": "Guru",      #7
+    "M6Q7N1H4": "Krrish",    #8
+    "P2V9C5F8": "Kunal",     #9
+    "R4X7K1T3": "Niki",      #10
+    "W5B8L2J6": "Rani",      #11
+    "F1D6H8C3": "Shaheen",   #12
+    "N9M2G4V7": "Tokivi",    #13
+    "L7T4P9Q1": "Manmeet",   #14
+    "V3K8W1B5": "Gungun",    #15
+    "C6F9D2H8": "Prerna"     #16
 }
 
 # --- DATA FETCHING (Same as Master, Cached for speed) ---
