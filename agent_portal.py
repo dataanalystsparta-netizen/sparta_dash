@@ -74,7 +74,8 @@ def map_quality(val):
     s = str(val).lower()
     if any(x in s for x in ['appr', 'pass']): return 'Approved'
     if any(x in s for x in ['rew', 'repro']): return 'Rework'
-    if any(x in s for x in ['can', 'rej']): return 'Cancelled'
+    if any(x in s for x in ['can']): return 'Cancelled'
+    if any(x in s for x in ['rej']): return 'Rejected'
     return 'Others'
 
 def map_portal(val):
