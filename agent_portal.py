@@ -188,11 +188,17 @@ else:
         with cb:
             if not ag1.empty:
                 period_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
+                # REORDERING LOGIC: Quality
+                qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
+                period_qual = period_qual.reindex(columns=qual_order, fill_value=0)
                 st.dataframe(period_qual.style.background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])]), use_container_width=True)
                 
         with cc:
             if not ag2.empty:
                 period_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
+                # REORDERING LOGIC: Live Status
+                port_order = ['Live', 'Committed', 'Cancelled', 'Others']
+                period_port = period_port.reindex(columns=port_order, fill_value=0)
                 st.dataframe(period_port.style.background_gradient(cmap='Purples', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live', 'Committed'])]), use_container_width=True)
 
         with cd:
@@ -201,7 +207,7 @@ else:
                 ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
                 period_wc = ag1.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
                 
-                # REORDERING LOGIC
+                # REORDERING LOGIC: Welcome Call
                 wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
                 period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
                 
