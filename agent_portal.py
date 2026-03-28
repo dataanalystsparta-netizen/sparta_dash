@@ -170,7 +170,7 @@ else:
         ag1['Date'] = ag1['Date_Parsed'].dt.date
         ag2['Date'] = ag2['Date_Parsed'].dt.date
         
-        ca, cb, cc = st.columns(3)
+        ca, cb, cc, cd = st.columns(4)
         with ca:
             if not ag1.empty:
                 daily_apps = ag1.groupby('Date').size().to_frame('Total Apps')
@@ -192,6 +192,16 @@ else:
             else:
                 st.info("No portal data.")
 
+        with cd:
+            # Checks for 'Status' primarily, or falls back to 'Welcome call Status'
+            wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
+            if wc_col and not ag1.empty:
+                daily_wc = ag1.groupby(['Date', wc_col]).size().unstack(fill_value=0)
+                daily_wc.columns.name = "Status"
+                st.dataframe(daily_wc.style.background_gradient(cmap='Oranges'), use_container_width=True)
+            else:
+                st.info("No Welcome Call data.")
+
         # 6. Performance Trends (Charts)
         st.subheader("📈 My Trend")
         if not ag1.empty:
@@ -212,11 +222,14 @@ else:
         st.subheader("🔍 Recent Quality Audit Log")
         st.write("Review recent statuses to see if any accounts need rework.")
         if not ag1.empty:
-            # Displaying standard columns - adjust names based on your actual sheet headers
-            display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status']
-            # If you have a specific "Remarks" column, add it to this list:
-            if 'Remarks' in ag1.columns: display_cols.append('Remarks')
-            if 'Welcome Call Remarks' in ag1.columns: display_cols.append('Welcome Call Remarks')
+            display_cols = [
+                'Standardized_Date', 
+                'Customer Name', 
+                'Quality Status',
+                'Quality Call Remarks',
+                'Welcome call Status',
+                'Welcome call Remarks'
+            ]
             
             recent_log = ag1.sort_values(by='Date_Parsed', ascending=False).head(20)
             
