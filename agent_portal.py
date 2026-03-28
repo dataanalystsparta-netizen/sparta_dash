@@ -181,6 +181,7 @@ else:
         
         ca, cb, cc, cd = st.columns(4)
         with ca:
+            st.markdown("##### Applications")
             if not ag1.empty:
                 period_apps = ag1.groupby('Period').size().to_frame('Total Apps')
                 vmax_apps = max(period_apps.max().max(), 1.1)
@@ -190,6 +191,7 @@ else:
                 st.dataframe(styled_apps, use_container_width=True)
 
         with cb:
+            st.markdown("##### Quality Audit Result")
             if not ag1.empty:
                 period_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
                 qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
@@ -205,6 +207,7 @@ else:
                 st.dataframe(styled_qual, use_container_width=True)
                 
         with cc:
+            st.markdown("##### Live Status")
             if not ag2.empty:
                 period_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
                 port_order = ['Live', 'Committed', 'Cancelled', 'Others']
@@ -220,6 +223,7 @@ else:
                 st.dataframe(styled_port, use_container_width=True)
 
         with cd:
+            st.markdown("##### Welcome Call Status")
             wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
             if wc_col and not ag1.empty:
                 ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
