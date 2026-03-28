@@ -175,9 +175,11 @@ else:
         if view_mode == "Daily":
             ag1['Period'] = ag1['Date_Parsed'].dt.date
             ag2['Period'] = ag2['Date_Parsed'].dt.date
+            chart_group_col = 'Date'
         else:
             ag1['Period'] = ag1['Date_Parsed'].dt.strftime('%Y-%m')
             ag2['Period'] = ag2['Date_Parsed'].dt.strftime('%Y-%m')
+            chart_group_col = 'Period'
         
         ca, cb, cc, cd = st.columns(4)
         with ca:
@@ -196,8 +198,6 @@ else:
                 period_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
                 qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
                 period_qual = period_qual.reindex(columns=qual_order, fill_value=0)
-                
-                # Filter out columns that are all zeros
                 period_qual = period_qual.loc[:, (period_qual != 0).any(axis=0)]
                 
                 if not period_qual.empty:
@@ -217,8 +217,6 @@ else:
                 period_wc = ag1.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
                 wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
                 period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
-                
-                # Filter out columns that are all zeros
                 period_wc = period_wc.loc[:, (period_wc != 0).any(axis=0)]
                 
                 if not period_wc.empty:
@@ -238,8 +236,6 @@ else:
                 period_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
                 port_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 period_port = period_port.reindex(columns=port_order, fill_value=0)
-                
-                # Filter out columns that are all zeros
                 period_port = period_port.loc[:, (period_port != 0).any(axis=0)]
                 
                 if not period_port.empty:
@@ -254,17 +250,17 @@ else:
         # Charts
         st.subheader("📈 My Trend")
         if not ag1.empty:
-            d_apps = ag1.groupby('Date').size().to_frame('Total Apps')
-            d_appr = ag1[ag1['Q_Status'] == 'Approved'].groupby('Date').size().to_frame('Approved')
-            d_live = ag2[ag2['P_Status'] == 'Live'].groupby('Date').size().to_frame('Live')
+            d_apps = ag1.groupby(chart_group_col).size().to_frame('Total Apps')
+            d_appr = ag1[ag1['Q_Status'] == 'Approved'].groupby(chart_group_col).size().to_frame('Approved')
+            d_live = ag2[ag2['P_Status'] == 'Live'].groupby(chart_group_col).size().to_frame('Live')
             i_comb = d_apps.join([d_appr, d_live], how='left').fillna(0).reset_index()
-            i_comb['Date'] = i_comb['Date'].astype(str)
+            i_comb[chart_group_col] = i_comb[chart_group_col].astype(str)
             
             fig = go.Figure()
-            fig.add_trace(go.Bar(x=i_comb['Date'], y=i_comb['Total Apps'], name="Total Apps", marker_color='#60A5FA'))
-            fig.add_trace(go.Scatter(x=i_comb['Date'], y=i_comb['Approved'], name="Quality Approved", line=dict(color='#059669', width=3)))
-            fig.add_trace(go.Scatter(x=i_comb['Date'], y=i_comb['Live'], name="Live Accounts", line=dict(color='#F59E0B', width=3)))
-            fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0))
+            fig.add_trace(go.Bar(x=i_comb[chart_group_col], y=i_comb['Total Apps'], name="Total Apps", marker_color='#60A5FA'))
+            fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Approved'], name="Quality Approved", line=dict(color='#059669', width=3)))
+            fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Live'], name="Live Accounts", line=dict(color='#F59E0B', width=3)))
+            fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0), xaxis_title="Date" if view_mode=="Daily" else "Month")
             st.plotly_chart(fig, use_container_width=True)
 
         # Audit Log
