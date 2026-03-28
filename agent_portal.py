@@ -19,9 +19,7 @@ st.markdown("""
    </style>
    """, unsafe_allow_html=True)
 
-# --- AGENT ACCESS KEYS ---Dictionary mapping keys to exact Advisor names. 
-
-# This pulls the keys directly from the 'Hidden Vault' in Streamlit Cloud
+# --- AGENT ACCESS KEYS ---
 ACCESS_KEYS = st.secrets["agent_keys"]
 
 def check_login():
@@ -32,7 +30,6 @@ def check_login():
         st.title("Sparta Agent Portal")
         user_key = st.text_input("Enter your Access Key", type="password")
         if st.button("Login"):
-            # Check if the entered key exists in our hidden Secrets
             if user_key in ACCESS_KEYS:
                 st.session_state.authenticated = True
                 st.session_state.agent_name = ACCESS_KEYS[user_key]
@@ -43,7 +40,7 @@ def check_login():
     
     return st.session_state.agent_name
 
-# --- DATA FETCHING (Same as Master, Cached for speed) ---
+# --- DATA FETCHING ---
 @st.cache_data(ttl=300)
 def fetch_data():
     info = st.secrets["gcp_service_account"]
@@ -70,6 +67,7 @@ def fetch_data():
     
     return df1, df2, last_sync
 
+# --- MAPPING FUNCTIONS (CLEANING) ---
 def map_quality(val):
     s = str(val).lower()
     if any(x in s for x in ['appr', 'pass']): return 'Approved'
@@ -85,7 +83,13 @@ def map_portal(val):
     if any(x in s for x in ['can', 'rej']): return 'Cancelled'
     return 'Others'
 
-# --- SESSION STATE INITIALIZATION ---
+def map_wc(val):
+    s = str(val).lower().strip()
+    if any(x in s for x in ['done', 'pass', 'comp']): return 'Done'
+    if any(x in s for x in ['can', 'rej']): return 'Cancelled'
+    return 'Others'
+
+# --- SESSION STATE ---
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.agent_name = ""
@@ -111,10 +115,8 @@ if not st.session_state.authenticated:
 else:
     agent = st.session_state.agent_name
     
-    # Sidebar Profile & Logout
     with st.sidebar:
         st.subheader(f"👤 {agent}")
-        st.write("Logged in successfully.")
         st.divider()
         if st.button("Logout", use_container_width=True):
             st.session_state.authenticated = False
@@ -122,19 +124,15 @@ else:
             st.rerun()
 
     try:
-        # 1. Fetch and IMMEDIATELY filter data for privacy
         df1, df2, last_sync = fetch_data()
-        
         ag1 = df1[df1['Advisor'] == agent].copy()
         ag2 = df2[df2['Advisor'] == agent].copy()
         
-        # 2. Header
         col_title, col_time = st.columns([3, 1])
         with col_title:
             st.title(f"My Performance Dashboard")
         col_time.markdown(f"<p class='last-updated'>Data Last Synced:<br><b>{last_sync}</b></p>", unsafe_allow_html=True)
 
-        # 3. Date Filters
         st.write("---")
         col_a, col_b, _ = st.columns([1, 1, 3])
         start_date = col_a.date_input("Start Date", datetime.date.today().replace(day=1))
@@ -146,7 +144,7 @@ else:
         ag1['Q_Status'] = ag1['Quality Status'].apply(map_quality)
         ag2['P_Status'] = ag2['Status'].apply(map_portal)
 
-        # 4. Top KPIs
+        # KPIs
         total_apps = len(ag1)
         approved = len(ag1[ag1['Q_Status'] == 'Approved'])
         approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
@@ -165,10 +163,8 @@ else:
             m6.metric("🌐 Live", f"{live:,}")
             m7.metric("🚀 Live Rate", live_rate)
 
-        # 5. Breakdown Table
+        # Breakdown Tables
         st.subheader("📅 Data Breakdown")
-        
-        # Maintain 'Date' for the Section 6 Chart
         ag1['Date'] = ag1['Date_Parsed'].dt.date
         ag2['Date'] = ag2['Date_Parsed'].dt.date
         
@@ -186,34 +182,28 @@ else:
             if not ag1.empty:
                 period_apps = ag1.groupby('Period').size().to_frame('Total Apps')
                 st.dataframe(period_apps.style.background_gradient(cmap='Blues'), use_container_width=True)
-            else:
-                st.info("No applications.")
 
         with cb:
             if not ag1.empty:
                 period_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
                 st.dataframe(period_qual.style.background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])]), use_container_width=True)
-            else:
-                st.info("No quality data.")
                 
         with cc:
             if not ag2.empty:
                 period_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
                 st.dataframe(period_port.style.background_gradient(cmap='Purples', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live', 'Committed'])]), use_container_width=True)
-            else:
-                st.info("No portal data.")
 
         with cd:
-            # Checks for 'Status' primarily, or falls back to 'Welcome call Status'
             wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
             if wc_col and not ag1.empty:
-                period_wc = ag1.groupby(['Period', wc_col]).size().unstack(fill_value=0)
-                period_wc.columns.name = "Status"
+                # APPLY CLEANING HERE
+                ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
+                period_wc = ag1.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
                 st.dataframe(period_wc.style.background_gradient(cmap='Oranges'), use_container_width=True)
             else:
                 st.info("No Welcome Call data.")
 
-        # 6. Performance Trends (Charts)
+        # Charts
         st.subheader("📈 My Trend")
         if not ag1.empty:
             d_apps = ag1.groupby('Date').size().to_frame('Total Apps')
@@ -229,25 +219,13 @@ else:
             fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0))
             st.plotly_chart(fig, use_container_width=True)
 
-        # 7. Quality Remarks Log (New for Agents)
+        # Audit Log
         st.subheader("🔍 Recent Quality Audit Log")
-        st.write("Review recent statuses to see if any accounts need rework.")
         if not ag1.empty:
-            display_cols = [
-                'Standardized_Date', 
-                'Customer Name', 
-                'Quality Status',
-                'Quality Remarks',
-                'Quality Call Remarks',
-                'Welcome call Status',
-                'Welcome call Remarks'
-            ]
-            
+            display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Welcome call Status', 'Welcome call Remarks']
             recent_log = ag1.sort_values(by='Date_Parsed', ascending=False).head(20)
-            
-            # Show only the columns that actually exist in the dataframe to prevent KeyError
             actual_cols = [c for c in display_cols if c in ag1.columns]
             st.dataframe(recent_log[actual_cols], use_container_width=True, hide_index=True)
 
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        st.error(f"Error: {e}")
