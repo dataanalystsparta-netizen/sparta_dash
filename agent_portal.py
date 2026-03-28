@@ -87,8 +87,6 @@ def map_wc(val):
     s = str(val).lower().strip()
     if any(x in s for x in ['done', 'pass', 'comp']): return 'Done'
     if any(x in s for x in ['can', 'rej']): return 'Cancelled'
-    if any(x in s for x in ['pap']): return 'Paperwork'
-    if any(x in s for x in ['pen']): return 'Pending'
     return 'Others'
 
 # --- SESSION STATE ---
