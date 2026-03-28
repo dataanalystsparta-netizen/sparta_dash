@@ -264,7 +264,7 @@ else:
             st.plotly_chart(fig, use_container_width=True)
 
         # Audit Log
-        st.subheader("🔍 Recent Quality Audit Log")
+        st.subheader("🔍 Recent Applications Log")
         if not ag1.empty:
             display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
             recent_log = ag1.sort_values(by='Date_Parsed', ascending=False).head(20)
