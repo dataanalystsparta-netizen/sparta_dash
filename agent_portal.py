@@ -165,30 +165,41 @@ else:
             m6.metric("🌐 Live", f"{live:,}")
             m7.metric("🚀 Live Rate", live_rate)
 
-        # 5. Daily Breakdown Table
-        st.subheader("📅 Daily Breakdown")
+        # 5. Breakdown Table
+        st.subheader("📅 Data Breakdown")
+        
+        # Maintain 'Date' for the Section 6 Chart
         ag1['Date'] = ag1['Date_Parsed'].dt.date
         ag2['Date'] = ag2['Date_Parsed'].dt.date
+        
+        view_mode = st.radio("View tables by:", ["Daily", "Monthly"], horizontal=True)
+        
+        if view_mode == "Daily":
+            ag1['Period'] = ag1['Date_Parsed'].dt.date
+            ag2['Period'] = ag2['Date_Parsed'].dt.date
+        else:
+            ag1['Period'] = ag1['Date_Parsed'].dt.strftime('%Y-%m')
+            ag2['Period'] = ag2['Date_Parsed'].dt.strftime('%Y-%m')
         
         ca, cb, cc, cd = st.columns(4)
         with ca:
             if not ag1.empty:
-                daily_apps = ag1.groupby('Date').size().to_frame('Total Apps')
-                st.dataframe(daily_apps.style.background_gradient(cmap='Blues'), use_container_width=True)
+                period_apps = ag1.groupby('Period').size().to_frame('Total Apps')
+                st.dataframe(period_apps.style.background_gradient(cmap='Blues'), use_container_width=True)
             else:
                 st.info("No applications.")
 
         with cb:
             if not ag1.empty:
-                daily_qual = ag1.groupby(['Date', 'Q_Status']).size().unstack(fill_value=0)
-                st.dataframe(daily_qual.style.background_gradient(cmap='Greens', subset=pd.IndexSlice[:, daily_qual.columns.intersection(['Approved'])]), use_container_width=True)
+                period_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
+                st.dataframe(period_qual.style.background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])]), use_container_width=True)
             else:
                 st.info("No quality data.")
                 
         with cc:
             if not ag2.empty:
-                daily_port = ag2.groupby(['Date', 'P_Status']).size().unstack(fill_value=0)
-                st.dataframe(daily_port.style.background_gradient(cmap='Purples', subset=pd.IndexSlice[:, daily_port.columns.intersection(['Live', 'Committed'])]), use_container_width=True)
+                period_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
+                st.dataframe(period_port.style.background_gradient(cmap='Purples', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live', 'Committed'])]), use_container_width=True)
             else:
                 st.info("No portal data.")
 
@@ -196,9 +207,9 @@ else:
             # Checks for 'Status' primarily, or falls back to 'Welcome call Status'
             wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
             if wc_col and not ag1.empty:
-                daily_wc = ag1.groupby(['Date', wc_col]).size().unstack(fill_value=0)
-                daily_wc.columns.name = "Status"
-                st.dataframe(daily_wc.style.background_gradient(cmap='Oranges'), use_container_width=True)
+                period_wc = ag1.groupby(['Period', wc_col]).size().unstack(fill_value=0)
+                period_wc.columns.name = "Status"
+                st.dataframe(period_wc.style.background_gradient(cmap='Oranges'), use_container_width=True)
             else:
                 st.info("No Welcome Call data.")
 
@@ -226,6 +237,7 @@ else:
                 'Standardized_Date', 
                 'Customer Name', 
                 'Quality Status',
+                'Quality Remarks',
                 'Quality Call Remarks',
                 'Welcome call Status',
                 'Welcome call Remarks'
