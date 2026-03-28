@@ -205,24 +205,8 @@ else:
                     .map(lambda x: 'background-color: transparent' if x == 0 else '')
                 
                 st.dataframe(styled_qual, use_container_width=True)
-                
-        with cc:
-            st.markdown("##### Live Status")
-            if not ag2.empty:
-                period_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
-                port_order = ['Live', 'Committed', 'Cancelled', 'Others']
-                period_port = period_port.reindex(columns=port_order, fill_value=0)
-                vmax_port = max(period_port.max().max(), 1.1)
-                
-                styled_port = period_port.style.format(lambda x: "-" if x == 0 else x) \
-                    .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1, vmax=vmax_port) \
-                    .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])], vmin=1, vmax=vmax_port) \
-                    .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_port) \
-                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
-                
-                st.dataframe(styled_port, use_container_width=True)
 
-        with cd:
+        with cc:
             st.markdown("##### Welcome Call Status")
             wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
             if wc_col and not ag1.empty:
@@ -241,6 +225,22 @@ else:
                 st.dataframe(styled_wc, use_container_width=True)
             else:
                 st.info("No Welcome Call data.")
+                
+        with cd:
+            st.markdown("##### Live Status")
+            if not ag2.empty:
+                period_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
+                port_order = ['Live', 'Committed', 'Cancelled', 'Others']
+                period_port = period_port.reindex(columns=port_order, fill_value=0)
+                vmax_port = max(period_port.max().max(), 1.1)
+                
+                styled_port = period_port.style.format(lambda x: "-" if x == 0 else x) \
+                    .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1, vmax=vmax_port) \
+                    .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])], vmin=1, vmax=vmax_port) \
+                    .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_port) \
+                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
+                
+                st.dataframe(styled_port, use_container_width=True)
 
         # Charts
         st.subheader("📈 My Trend")
