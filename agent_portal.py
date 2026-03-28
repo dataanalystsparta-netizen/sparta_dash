@@ -228,7 +228,7 @@ else:
         # Audit Log
         st.subheader("🔍 Recent Quality Audit Log")
         if not ag1.empty:
-            display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Welcome call Status', 'Welcome call Remarks']
+            display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
             recent_log = ag1.sort_values(by='Date_Parsed', ascending=False).head(20)
             actual_cols = [c for c in display_cols if c in ag1.columns]
             st.dataframe(recent_log[actual_cols], use_container_width=True, hide_index=True)
