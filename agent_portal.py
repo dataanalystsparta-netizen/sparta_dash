@@ -179,17 +179,14 @@ else:
             ag1['Period'] = ag1['Date_Parsed'].dt.strftime('%Y-%m')
             ag2['Period'] = ag2['Date_Parsed'].dt.strftime('%Y-%m')
         
-        # Helper function to remove color from 0/None cells
-        def no_color_zero(val):
-            return 'background-color: transparent' if val == 0 or val == "-" else ''
-
         ca, cb, cc, cd = st.columns(4)
         with ca:
             if not ag1.empty:
                 period_apps = ag1.groupby('Period').size().to_frame('Total Apps')
-                styled_apps = period_apps.style.background_gradient(cmap='Greens', vmin=1) \
-                    .format(lambda x: "-" if x == 0 else x) \
-                    .applymap(no_color_zero)
+                # Styling: 0 as "-", No color for 0, Green for 1+
+                styled_apps = period_apps.style.format(lambda x: "-" if x == 0 else x) \
+                    .background_gradient(cmap='Greens', vmin=1) \
+                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
                 st.dataframe(styled_apps, use_container_width=True)
 
         with cb:
@@ -198,11 +195,12 @@ else:
                 qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
                 period_qual = period_qual.reindex(columns=qual_order, fill_value=0)
                 
-                styled_qual = period_qual.style.background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])], vmin=1) \
+                # Styling: 0 as "-", Gradient logic for Quality
+                styled_qual = period_qual.style.format(lambda x: "-" if x == 0 else x) \
+                    .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])], vmin=1) \
                     .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Rework'])], vmin=1) \
                     .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Cancelled', 'Rejected'])], vmin=1) \
-                    .format(lambda x: "-" if x == 0 else x) \
-                    .applymap(no_color_zero)
+                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
                 
                 st.dataframe(styled_qual, use_container_width=True)
                 
@@ -212,11 +210,12 @@ else:
                 port_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 period_port = period_port.reindex(columns=port_order, fill_value=0)
                 
-                styled_port = period_port.style.background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1) \
+                # Styling: 0 as "-", Gradient logic for Live Status
+                styled_port = period_port.style.format(lambda x: "-" if x == 0 else x) \
+                    .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1) \
                     .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])], vmin=1) \
                     .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])], vmin=1) \
-                    .format(lambda x: "-" if x == 0 else x) \
-                    .applymap(no_color_zero)
+                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
                 
                 st.dataframe(styled_port, use_container_width=True)
 
@@ -228,11 +227,12 @@ else:
                 wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
                 period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
                 
-                styled_wc = period_wc.style.background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Done'])], vmin=1) \
+                # Styling: 0 as "-", Gradient logic for Welcome Call
+                styled_wc = period_wc.style.format(lambda x: "-" if x == 0 else x) \
+                    .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Done'])], vmin=1) \
                     .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Pending', 'Paperwork'])], vmin=1) \
                     .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Cancelled'])], vmin=1) \
-                    .format(lambda x: "-" if x == 0 else x) \
-                    .applymap(no_color_zero)
+                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
                 
                 st.dataframe(styled_wc, use_container_width=True)
             else:
