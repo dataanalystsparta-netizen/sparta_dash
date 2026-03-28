@@ -21,24 +21,27 @@ st.markdown("""
 
 # --- AGENT ACCESS KEYS ---Dictionary mapping keys to exact Advisor names. 
 
-ACCESS_KEYS = {
-    "X9R2M4V7": "Aman",      #1
-    "B5K8W1N3": "Anjali",    #2
-    "T7P4L9Q2": "Anshu",     #3
-    "D1H6C8F5": "Frogh",     #4
-    "G3N7V2M8": "Gaurav",    #5
-    "K4R9T1X6": "Animesh",   #6
-    "J8L2B5W3": "Guru",      #7
-    "M6Q7N1H4": "Krrish",    #8
-    "P2V9C5F8": "Kunal",     #9
-    "R4X7K1T3": "Niki",      #10
-    "W5B8L2J6": "Rani",      #11
-    "F1D6H8C3": "Shaheen",   #12
-    "N9M2G4V7": "Tokivi",    #13
-    "L7T4P9Q1": "Manmeet",   #14
-    "V3K8W1B5": "Gungun",    #15
-    "C6F9D2H8": "Prerna"     #16
-}
+# This pulls the keys directly from the 'Hidden Vault' in Streamlit Cloud
+ACCESS_KEYS = st.secrets["agent_keys"]
+
+def check_login():
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    if not st.session_state.authenticated:
+        st.title("Sparta Agent Portal")
+        user_key = st.text_input("Enter your Access Key", type="password")
+        if st.button("Login"):
+            # Check if the entered key exists in our hidden Secrets
+            if user_key in ACCESS_KEYS:
+                st.session_state.authenticated = True
+                st.session_state.agent_name = ACCESS_KEYS[user_key]
+                st.rerun()
+            else:
+                st.error("Invalid Key. Please contact Aditya.")
+        return None
+    
+    return st.session_state.agent_name
 
 # --- DATA FETCHING (Same as Master, Cached for speed) ---
 @st.cache_data(ttl=300)
