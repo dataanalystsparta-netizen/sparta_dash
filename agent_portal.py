@@ -111,7 +111,7 @@ if not st.session_state.authenticated:
                 st.session_state.agent_name = ACCESS_KEYS[user_key.upper()]
                 st.rerun()
             else:
-                st.error("Invalid Key. Please contact your manager.")
+                st.error("Invalid Access Key. Try again!")
 
 # --- MAIN AGENT DASHBOARD ---
 else:
