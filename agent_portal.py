@@ -6,7 +6,6 @@ import datetime
 import plotly.express as px
 import plotly.graph_objects as go 
 
-# --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
 
 st.markdown("""
@@ -19,7 +18,7 @@ st.markdown("""
    </style>
    """, unsafe_allow_html=True)
 
-# --- AGENT ACCESS KEYS ---
+
 ACCESS_KEYS = st.secrets["agent_keys"]
 
 def check_login():
@@ -40,7 +39,6 @@ def check_login():
     
     return st.session_state.agent_name
 
-# --- DATA FETCHING ---
 @st.cache_data(ttl=300)
 def fetch_data():
     info = st.secrets["gcp_service_account"]
@@ -67,7 +65,6 @@ def fetch_data():
     
     return df1, df2, last_sync
 
-# --- MAPPING FUNCTIONS (CLEANING) ---
 def map_quality(val):
     s = str(val).lower()
     if any(x in s for x in ['appr', 'pass']): return 'Approved'
@@ -90,13 +87,11 @@ def map_wc(val):
     if any(x in s for x in ['paper', 'ppw']): return 'Paperwork'
     if any(x in s for x in ['can', 'rej']): return 'Cancelled'
     return 'Others'
-
-# --- SESSION STATE ---
+   
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.agent_name = ""
 
-# --- LOGIN SCREEN ---
 if not st.session_state.authenticated:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -112,8 +107,6 @@ if not st.session_state.authenticated:
                 st.rerun()
             else:
                 st.error("Invalid Access Key. Try again!")
-
-# --- MAIN AGENT DASHBOARD ---
 else:
     agent = st.session_state.agent_name
     
@@ -146,7 +139,6 @@ else:
         ag1['Q_Status'] = ag1['Quality Status'].apply(map_quality)
         ag2['P_Status'] = ag2['Status'].apply(map_portal)
 
-        # KPIs
         total_apps = len(ag1)
         approved = len(ag1[ag1['Q_Status'] == 'Approved'])
         approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
@@ -165,7 +157,6 @@ else:
             m6.metric("🌐 Live", f"{live:,}")
             m7.metric("🚀 Live Rate", live_rate)
 
-        # Breakdown Tables
         st.subheader("📅 Data Breakdown")
         ag1['Date'] = ag1['Date_Parsed'].dt.date
         ag2['Date'] = ag2['Date_Parsed'].dt.date
@@ -247,7 +238,6 @@ else:
                         .map(lambda x: 'background-color: transparent' if x == 0 else '')
                     st.dataframe(styled_port, use_container_width=True)
 
-        # Charts
         st.subheader("📈 My Trend")
         if not ag1.empty:
             d_apps = ag1.groupby(chart_group_col).size().to_frame('Total Apps')
@@ -263,7 +253,6 @@ else:
             fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0), xaxis_title="Date" if view_mode=="Daily" else "Month")
             st.plotly_chart(fig, use_container_width=True)
 
-        # Audit Log
         st.subheader("🔍 Recent Applications Log")
         if not ag1.empty:
             display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
