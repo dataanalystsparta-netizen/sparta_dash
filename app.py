@@ -15,8 +15,9 @@ st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 # --- MASTER AGENT LIST ---
 LIVE_AGENTS = [
    "Anshu","Anjali", "Aman", "Frogh", "Gaurav", "Guru", 
-   "Naveen", "Krrish", "Niki", "Manmeet","Sangeeta","Gungun",
-   "Animesh","Ajay","Shaheen"
+   "Naveen", "Krrish", "Niki", "Manmeet","Gungun","Manmeet",
+   "Animesh","Ajay","Shaheen","Deepali","Kunal","Rani",
+   "Archana","Manshay","Prerna","Tokivi"
 ]
 
 st.markdown("""
