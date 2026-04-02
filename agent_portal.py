@@ -21,6 +21,29 @@ st.markdown("""
 
 ACCESS_KEYS = st.secrets["agent_keys"]
 
+# --- ADDED: Background Logging Function ---
+def log_agent_login(agent_name):
+    try:
+        info = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(info, scopes=[
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ])
+        client = gspread.authorize(creds)
+        ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
+        
+        # Try to access the 'Logs' sheet, create if it doesn't exist
+        try:
+            log_sheet = ss.worksheet('Logs')
+        except gspread.WorksheetNotFound:
+            log_sheet = ss.add_worksheet(title="Logs", rows="1000", cols="3")
+            log_sheet.append_row(["Timestamp", "Agent Name", "Action"])
+            
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_sheet.append_row([timestamp, agent_name, "Login"])
+    except:
+        pass # Fail silently so the agent can still log in even if tracking fails
+
 def check_login():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
@@ -32,6 +55,7 @@ def check_login():
             if user_key in ACCESS_KEYS:
                 st.session_state.authenticated = True
                 st.session_state.agent_name = ACCESS_KEYS[user_key]
+                log_agent_login(ACCESS_KEYS[user_key]) # ADDED: Trigger log
                 st.rerun()
             else:
                 st.error("Invalid Key. Please contact Aditya.")
@@ -104,6 +128,7 @@ if not st.session_state.authenticated:
             if user_key.upper() in ACCESS_KEYS:
                 st.session_state.authenticated = True
                 st.session_state.agent_name = ACCESS_KEYS[user_key.upper()]
+                log_agent_login(ACCESS_KEYS[user_key.upper()]) # ADDED: Trigger log
                 st.rerun()
             else:
                 st.error("Invalid Access Key. Try again!")
