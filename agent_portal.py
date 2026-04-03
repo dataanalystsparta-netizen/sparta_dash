@@ -73,12 +73,30 @@ def fetch_data():
     client = gspread.authorize(creds)
     ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
     
+    # --- Processing Sheet 1 (Sparta) ---
     df1 = pd.DataFrame(ss.worksheet('Sparta').get_all_records())
+    # Standardize parsing for df1
     df1['Date_Parsed'] = pd.to_datetime(df1['Standardized_Date'], errors='coerce')
     df1['Advisor'] = df1['Advisor'].astype(str).str.strip().str.title()
     
+    # --- Processing Sheet 2 (Sparta2) ---
     df2 = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
-    df2['Date_Parsed'] = pd.to_datetime(df2['Sale Date'], format='mixed', dayfirst=True, errors='coerce')
+    
+    # Robust Date Parsing Logic for Mixed Formats:
+    # 1. We identify rows that look like UK format (containing '/')
+    # 2. We parse the rest as standard ISO (YYYY-MM-DD)
+    def robust_date_parser(date_str):
+        date_str = str(date_str).strip()
+        try:
+            if '/' in date_str:
+                return pd.to_datetime(date_str, dayfirst=True)
+            return pd.to_datetime(date_str)
+        except:
+            return pd.NaT
+
+    df2['Date_Parsed'] = df2['Sale Date'].apply(robust_date_parser)
+    
+    # Standardize Advisor names for mapping
     df2['Advisor'] = df2['Agent'].astype(str).str.strip().str.title()
 
     try:
