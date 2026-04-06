@@ -296,12 +296,43 @@ else:
             fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0), xaxis_title="Date" if view_mode=="Daily" else "Month")
             st.plotly_chart(fig, use_container_width=True)
 
-        st.subheader("🔍 Recent Applications Log")
-        if not ag1.empty:
-            display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
-            recent_log = ag1.sort_values(by='Date_Parsed', ascending=False).head(20)
-            actual_cols = [c for c in display_cols if c in ag1.columns]
-            st.dataframe(recent_log[actual_cols], use_container_width=True, hide_index=True)
+         st.subheader("🔍 Recent Applications Log")
+                 if not ag1.empty:
+                     display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
+                     recent_log = ag1.sort_values(by='Date_Parsed', ascending=False).head(20)
+                     actual_cols = [c for c in display_cols if c in ag1.columns]
+                     
+                     # --- ADDED: Row Styling Function ---
+                     def style_log_row(row):
+                         styles = [''] * len(row)
+                         
+                         # 1. Determine Color for Quality Section (First 5 columns)
+                         q_color = ''
+                         q_val = str(row.get('Quality Status', '')).lower()
+                         if any(x in q_val for x in ['appr', 'pass']): q_color = 'background-color: rgba(167, 243, 208, 0.3)' # Soft Green
+                         elif any(x in q_val for x in ['rew', 'repro']): q_color = 'background-color: rgba(253, 230, 138, 0.3)' # Soft Yellow
+                         elif any(x in q_val for x in ['can', 'rej']): q_color = 'background-color: rgba(254, 202, 202, 0.3)' # Soft Red
+         
+                         # 2. Determine Color for Status/WC Section (Last 2 columns)
+                         wc_color = ''
+                         wc_val = str(row.get('Status', '')).lower()
+                         if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']): wc_color = 'background-color: rgba(167, 243, 208, 0.3)'
+                         elif any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']): wc_color = 'background-color: rgba(253, 230, 138, 0.3)'
+                         elif any(x in wc_val for x in ['can', 'rej']): wc_color = 'background-color: rgba(254, 202, 202, 0.3)'
+         
+                         # 3. Apply colors to the respective columns
+                         quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks']
+                         for i, col in enumerate(row.index):
+                             if col in quality_cols:
+                                 styles[i] = q_color
+                             else:
+                                 styles[i] = wc_color
+                                 
+                         return styles
+                     
+                     # Apply styling and display
+                     styled_log = recent_log[actual_cols].style.apply(style_log_row, axis=1)
+                     st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
     except Exception as e:
         st.error(f"Error: {e}")
