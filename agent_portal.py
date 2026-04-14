@@ -47,6 +47,16 @@ st.markdown("""
    .kpi-label { font-size: 0.6rem; color: #475569; font-weight: 700; margin-bottom: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
    .kpi-value { font-size: 1rem; color: #1E3A8A; font-weight: 700; margin: 0; line-height: 1; }
    .kpi-pc { font-size: 0.65rem; color: #0F172A; font-weight: 600; margin-top: 1px; }
+   
+   /* Streak Card */
+   .streak-card {
+       background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
+       color: white;
+       padding: 15px;
+       border-radius: 8px;
+       text-align: center;
+       margin-bottom: 10px;
+   }
    </style>
    """, unsafe_allow_html=True)
 
@@ -196,7 +206,6 @@ else:
         wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
         if wc_col: ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
 
-        # ---------------- CATEGORISED KPI BOXES ----------------
         total_apps = len(ag1)
         total_ag2 = len(ag2)
         
@@ -337,8 +346,8 @@ else:
 
         st.write("---")
         
-        # ---------------- TRENDS & RECYCLING ANALYSIS ----------------
-        col_trend, col_segment = st.columns([3, 2])
+        # ---------------- TRENDS & SALES STREAK ----------------
+        col_trend, col_streak = st.columns([3, 2])
         
         with col_trend:
             st.subheader("📈 My Trend")
@@ -355,46 +364,45 @@ else:
                 fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0), xaxis_title="Date" if view_mode=="Daily" else "Month")
                 st.plotly_chart(fig, use_container_width=True)
 
-        with col_segment:
-            st.subheader("♻️ Success by Lead Category")
-            segment_col = None
-            # The script will automatically search for your Talk Time buckets or Campaign column
-            for col in ['Talk Time Bucket', 'Lead Segment', 'Campaign', 'Lead Type', 'Source']:
-                if col in ag1.columns:
-                    segment_col = col
-                    break
-            
-            if segment_col and not ag1.empty:
-                seg_data = ag1.groupby(segment_col).agg(
-                    Total=('Q_Status', 'count'),
-                    Approved=('Q_Status', lambda x: (x == 'Approved').sum())
-                ).reset_index()
+        with col_streak:
+            st.subheader("🔥 Sales Streak & Activity")
+            if not ag1.empty:
+                # 1. Calculate Streak based on consecutive days with at least one sale
+                daily_sales = ag1.groupby('Date').size().reindex(
+                    pd.date_range(ag1['Date'].min(), datetime.date.today()), fill_value=0
+                ).sort_index(ascending=False)
                 
-                # Filter out segments with zero apps to keep it clean
-                seg_data = seg_data[seg_data['Total'] > 0]
-                seg_data['Approval Rate'] = (seg_data['Approved'] / seg_data['Total'] * 100).round(1)
-                seg_data = seg_data.sort_values('Approval Rate', ascending=True) 
+                streak = 0
+                for count in daily_sales:
+                    if count > 0: streak += 1
+                    else: break
                 
-                fig_recycle = go.Figure()
-                fig_recycle.add_trace(go.Bar(
-                    y=seg_data[segment_col].astype(str), 
-                    x=seg_data['Approval Rate'], 
-                    orientation='h',
-                    marker=dict(color='#10B981'),
-                    text=seg_data['Approval Rate'].astype(str) + '%',
-                    textposition='auto',
-                    hovertemplate="<b>%{y}</b><br>Approval Rate: %{x}%<br>Approved: %{customdata[0]} / %{customdata[1]}<extra></extra>",
-                    customdata=seg_data[['Approved', 'Total']]
-                ))
-                fig_recycle.update_layout(
-                    margin=dict(l=0, r=20, t=30, b=0),
-                    xaxis_title="Approval Rate (%)",
-                    yaxis_title=None,
-                    hovermode="y unified"
+                st.markdown(f"""
+                    <div class="streak-card">
+                        <p style="margin:0; font-size: 0.9rem; font-weight: 600; opacity: 0.9;">CURRENT WIN STREAK</p>
+                        <p style="margin:0; font-size: 2.5rem; font-weight: 800;">{streak} Days</p>
+                        <p style="margin:0; font-size: 0.8rem; opacity: 0.8;">Consecutive days with activity</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                # 2. Activity Heatmap (Last 30 Days)
+                st.markdown("##### Daily Activity (Last 30 Days)")
+                heatmap_data = daily_sales.head(30).reset_index()
+                heatmap_data.columns = ['Date', 'Sales']
+                heatmap_data['Day'] = heatmap_data['Date'].dt.day_name().str[:3]
+                heatmap_data['Week'] = heatmap_data['Date'].dt.isocalendar().week
+                
+                fig_heat = px.density_heatmap(
+                    heatmap_data, 
+                    x='Date', 
+                    y=[1]*len(heatmap_data), 
+                    z='Sales',
+                    color_continuous_scale="Viridis",
+                    labels={'z': 'Apps'},
+                    height=150
                 )
-                st.plotly_chart(fig_recycle, use_container_width=True)
-            else:
-                st.info("💡 To view Recycling Analysis, ensure your Google Sheet has a column named 'Talk Time Bucket', 'Lead Segment', or 'Campaign' to track engagement levels.")
+                fig_heat.update_layout(coloraxis_showscale=False, yaxis_visible=False, margin=dict(l=0,r=0,t=0,b=0))
+                st.plotly_chart(fig_heat, use_container_width=True)
 
         st.write("---")
 
