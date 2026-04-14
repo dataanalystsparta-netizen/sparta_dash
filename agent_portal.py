@@ -207,7 +207,7 @@ else:
         group_3 = []
         if wc_col:
             group_3 = [
-                ("WC Done", len(ag1[ag1['WC_Clean'] == 'Done']), total_apps),
+                ("WC Done (Committed)", len(ag1[ag1['WC_Clean'] == 'Done']), total_apps),
                 ("WC Pending", len(ag1[ag1['WC_Clean'] == 'Pending']), total_apps),
                 ("WC Paperwork", len(ag1[ag1['WC_Clean'] == 'Paperwork']), total_apps),
                 ("WC Cancelled", len(ag1[ag1['WC_Clean'] == 'Cancelled']), total_apps),
