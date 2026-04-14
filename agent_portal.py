@@ -39,6 +39,10 @@ st.markdown("""
        border-top: 3px solid #1E3A8A;
        text-align: center;
        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+       min-height: 75px;
+       display: flex;
+       flex-direction: column;
+       justify-content: center;
    }
    .kpi-label { font-size: 0.6rem; color: #475569; font-weight: 700; margin-bottom: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
    .kpi-value { font-size: 1rem; color: #1E3A8A; font-weight: 700; margin: 0; line-height: 1; }
@@ -122,7 +126,6 @@ def map_wc(val):
     return 'Others'
 
 def render_kpi(label, value, total):
-    # Color Mapping Logic
     lbl = label.lower()
     bg = "#F1F5F9" # Default Gray
     if "total" in lbl: bg = "#E0F2FE" # Light Blue
@@ -131,11 +134,14 @@ def render_kpi(label, value, total):
     elif "can" in lbl or "rej" in lbl: bg = "#FEE2E2" # Light Red
     
     percent = (value / total * 100) if total > 0 else 0
+    # Logic to hide percentage if it is the "Total Apps" card
+    pc_html = f'<p class="kpi-pc">{percent:.1f}%</p>' if "total apps" not in lbl else ""
+    
     st.markdown(f"""
         <div class="kpi-card" style="background-color: {bg};">
             <p class="kpi-label">{label}</p>
             <p class="kpi-value">{value:,}</p>
-            <p class="kpi-pc">{percent:.1f}%</p>
+            {pc_html}
         </div>
     """, unsafe_allow_html=True)
 
@@ -146,7 +152,7 @@ if "authenticated" not in st.session_state:
 if not st.session_state.authenticated:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d5ac6c503.png", width=250)
+        st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d503.png", width=250)
         st.title("Agent Portal")
         st.info("Please enter your access key to view your performance data.")
         user_key = st.text_input("Access Key", type="password")
@@ -195,7 +201,6 @@ else:
         total_apps = len(ag1)
         total_ag2 = len(ag2)
         
-        # Define Groups
         group_1 = [("Total Apps", total_apps, total_apps)]
         group_2 = [
             ("Approved", len(ag1[ag1['Q_Status'] == 'Approved']), total_apps),
@@ -220,15 +225,14 @@ else:
             ("Others", len(ag2[ag2['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
         ]
 
-        # Render Layout
         b1, b2, b3, b4 = st.columns([1.2, 2.5, 2.5, 2.2])
         
-        with b1: # Box 1: Total Apps
+        with b1: 
             st.markdown('<div class="kpi-box"><p class="box-label">Total Apps</p>', unsafe_allow_html=True)
             render_kpi(group_1[0][0], group_1[0][1], group_1[0][2])
             st.markdown('</div>', unsafe_allow_html=True)
 
-        with b2: # Box 2: Quality Cards
+        with b2: 
             active_g2 = [k for k in group_2 if k[1] > 0]
             if active_g2:
                 st.markdown('<div class="kpi-box"><p class="box-label">Quality Status</p>', unsafe_allow_html=True)
@@ -237,7 +241,7 @@ else:
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        with b3: # Box 3: Welcome Call Cards
+        with b3: 
             active_g3 = [k for k in group_3 if k[1] > 0]
             if active_g3:
                 st.markdown('<div class="kpi-box"><p class="box-label">Welcome Call Status</p>', unsafe_allow_html=True)
@@ -246,7 +250,7 @@ else:
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        with b4: # Box 4: Live Status Cards
+        with b4: 
             active_g4 = [k for k in group_4 if k[1] > 0]
             if active_g4:
                 st.markdown('<div class="kpi-box"><p class="box-label">Live Status</p>', unsafe_allow_html=True)
@@ -257,7 +261,6 @@ else:
 
         st.write("---")
 
-        # ---------------- DASHBOARD CONTENT ----------------
         st.subheader("📅 Data Breakdown")
         ag1['Date'] = ag1['Date_Parsed'].dt.date
         ag2['Date'] = ag2['Date_Parsed'].dt.date
