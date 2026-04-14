@@ -175,6 +175,8 @@ if not st.session_state.authenticated:
                 st.error("Invalid Access Key. Try again!")
 else:
     agent = st.session_state.agent_name
+    today_date = datetime.date.today()
+    
     with st.sidebar:
         st.subheader(f"👤 {agent}")
         st.divider()
@@ -186,10 +188,6 @@ else:
     try:
         df1, df2, last_sync = fetch_data()
         
-        # Calculate Reference Date (last day any sale occurred globally)
-        all_sales_dates = pd.concat([df1['Date_Parsed'], df2['Date_Parsed']]).dropna()
-        ref_date = all_sales_dates.max().date() if not all_sales_dates.empty else datetime.date.today()
-
         ag1 = df1[df1['Advisor'] == agent].copy()
         ag2 = df2[df2['Advisor'] == agent].copy()
         
@@ -200,8 +198,8 @@ else:
 
         st.write("---")
         col_a, col_b, _ = st.columns([1, 1, 3])
-        start_date = col_a.date_input("Start Date", datetime.date.today().replace(day=1))
-        end_date = col_b.date_input("End Date", datetime.date.today())
+        start_date = col_a.date_input("Start Date", today_date.replace(day=1))
+        end_date = col_b.date_input("End Date", today_date)
 
         ag1_filtered = ag1[(ag1['Date_Parsed'].dt.date >= start_date) & (ag1['Date_Parsed'].dt.date <= end_date)]
         ag2_filtered = ag2[(ag2['Date_Parsed'].dt.date >= start_date) & (ag2['Date_Parsed'].dt.date <= end_date)]
@@ -214,6 +212,7 @@ else:
         total_apps = len(ag1_filtered)
         total_ag2 = len(ag2_filtered)
         
+        # KPI groups remain unchanged...
         group_1 = [("Total Apps", total_apps, total_apps)]
         group_2 = [
             ("Approved", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved']), total_apps),
@@ -238,13 +237,12 @@ else:
             ("Others", len(ag2_filtered[ag2_filtered['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
         ]
 
+        # UI Layout remain unchanged...
         b1, b2, b3, b4 = st.columns([1.2, 2.5, 2.5, 2.2])
-        
         with b1: 
             st.markdown('<div class="kpi-box"><p class="box-label">Total Apps</p>', unsafe_allow_html=True)
             render_kpi(group_1[0][0], group_1[0][1], group_1[0][2])
             st.markdown('</div>', unsafe_allow_html=True)
-
         with b2: 
             active_g2 = [k for k in group_2 if k[1] > 0]
             if active_g2:
@@ -253,7 +251,6 @@ else:
                 for i, kpi in enumerate(active_g2):
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
                 st.markdown('</div>', unsafe_allow_html=True)
-
         with b3: 
             active_g3 = [k for k in group_3 if k[1] > 0]
             if active_g3:
@@ -262,7 +259,6 @@ else:
                 for i, kpi in enumerate(active_g3):
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
                 st.markdown('</div>', unsafe_allow_html=True)
-
         with b4: 
             active_g4 = [k for k in group_4 if k[1] > 0]
             if active_g4:
@@ -274,6 +270,7 @@ else:
 
         st.write("---")
 
+        # Table Breakdown remain unchanged...
         st.subheader("📅 Data Breakdown")
         ag1_filtered['Date'] = ag1_filtered['Date_Parsed'].dt.date
         ag2_filtered['Date'] = ag2_filtered['Date_Parsed'].dt.date
@@ -294,11 +291,8 @@ else:
             if not ag1_filtered.empty:
                 period_apps = ag1_filtered.groupby('Period').size().to_frame('Total Apps')
                 vmax_apps = max(period_apps.max().max(), 1.1)
-                styled_apps = period_apps.style.format(lambda x: "-" if x == 0 else x) \
-                    .background_gradient(cmap='Greens', vmin=1, vmax=vmax_apps) \
-                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
+                styled_apps = period_apps.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', vmin=1, vmax=vmax_apps).map(lambda x: 'background-color: transparent' if x == 0 else '')
                 st.dataframe(styled_apps, use_container_width=True)
-
         with cb:
             st.markdown("##### Quality Audit Result")
             if not ag1_filtered.empty:
@@ -308,13 +302,8 @@ else:
                 period_qual = period_qual.loc[:, (period_qual != 0).any(axis=0)]
                 if not period_qual.empty:
                     vmax_qual = max(period_qual.max().max(), 1.1)
-                    styled_qual = period_qual.style.format(lambda x: "-" if x == 0 else x) \
-                        .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])], vmin=1, vmax=vmax_qual) \
-                        .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Rework'])], vmin=1, vmax=vmax_qual) \
-                        .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Cancelled', 'Rejected'])], vmin=1, vmax=vmax_qual) \
-                        .map(lambda x: 'background-color: transparent' if x == 0 else '')
+                    styled_qual = period_qual.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])], vmin=1, vmax=vmax_qual).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Rework'])], vmin=1, vmax=vmax_qual).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Cancelled', 'Rejected'])], vmin=1, vmax=vmax_qual).map(lambda x: 'background-color: transparent' if x == 0 else '')
                     st.dataframe(styled_qual, use_container_width=True)
-
         with cc:
             st.markdown("##### Welcome Call Status")
             if wc_col and not ag1_filtered.empty:
@@ -324,15 +313,9 @@ else:
                 period_wc = period_wc.loc[:, (period_wc != 0).any(axis=0)]
                 if not period_wc.empty:
                     vmax_wc = max(period_wc.max().max(), 1.1)
-                    styled_wc = period_wc.style.format(lambda x: "-" if x == 0 else x) \
-                        .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Done'])], vmin=1, vmax=vmax_wc) \
-                        .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Pending', 'Paperwork'])], vmin=1, vmax=vmax_wc) \
-                        .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_wc) \
-                        .map(lambda x: 'background-color: transparent' if x == 0 else '')
+                    styled_wc = period_wc.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Done'])], vmin=1, vmax=vmax_wc).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Pending', 'Paperwork'])], vmin=1, vmax=vmax_wc).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_wc).map(lambda x: 'background-color: transparent' if x == 0 else '')
                     st.dataframe(styled_wc, use_container_width=True)
-            else:
-                st.info("No Welcome Call data.")
-                
+            else: st.info("No Welcome Call data.")
         with cd:
             st.markdown("##### Live Status")
             if not ag2_filtered.empty:
@@ -342,18 +325,13 @@ else:
                 period_port = period_port.loc[:, (period_port != 0).any(axis=0)]
                 if not period_port.empty:
                     vmax_port = max(period_port.max().max(), 1.1)
-                    styled_port = period_port.style.format(lambda x: "-" if x == 0 else x) \
-                        .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1, vmax=vmax_port) \
-                        .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])], vmin=1, vmax=vmax_port) \
-                        .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_port) \
-                        .map(lambda x: 'background-color: transparent' if x == 0 else '')
+                    styled_port = period_port.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1, vmax=vmax_port).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])], vmin=1, vmax=vmax_port).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_port).map(lambda x: 'background-color: transparent' if x == 0 else '')
                     st.dataframe(styled_port, use_container_width=True)
 
         st.write("---")
         
-        # ---------------- TRENDS & SALES STREAK ----------------
+        # ---------------- TRENDS & UPDATED SALES STREAK ----------------
         col_trend, col_streak = st.columns([3, 2])
-        
         with col_trend:
             st.subheader("📈 My Trend")
             if not ag1_filtered.empty:
@@ -372,7 +350,6 @@ else:
         with col_streak:
             st.subheader("🔥 Sales Streak & Activity")
             if not ag1.empty:
-                # Working Day Logic: Mon-Fri + 1st, 3rd, 5th Saturday
                 def is_working_day(dt):
                     wd = dt.weekday() # 0=Mon, 6=Sun
                     if wd < 5: return True # Mon-Fri
@@ -382,51 +359,45 @@ else:
                         return week_num in [1, 3, 5]
                     return False
 
-                # Calculate Streak using working days, starting from ref_date (last global sale)
                 agent_sales_dates = set(ag1['Date_Parsed'].dt.date)
                 streak = 0
-                check_date = ref_date
+                check_date = today_date
                 
-                # Check backwards for 90 days max to calculate streak
+                # If today is NOT a working day, backtrack to the last valid working day to check streak status
+                while not is_working_day(check_date):
+                    check_date -= datetime.timedelta(days=1)
+                
+                # Count consecutive working days with activity
                 for i in range(90):
                     if is_working_day(check_date):
                         if check_date in agent_sales_dates:
                             streak += 1
                         else:
-                            # If it's a work day and agent has no sales, the streak breaks
+                            # Only break if today (or the last valid work day) is missed
                             break
-                    # If it's not a work day (Sunday or 2nd/4th Sat), just skip back without breaking streak
                     check_date -= datetime.timedelta(days=1)
                 
                 st.markdown(f"""
                     <div class="streak-card">
                         <p style="margin:0; font-size: 0.9rem; font-weight: 600; opacity: 0.9;">CURRENT WIN STREAK</p>
                         <p style="margin:0; font-size: 2.5rem; font-weight: 800;">{streak} Days</p>
-                        <p style="margin:0; font-size: 0.8rem; opacity: 0.8;">Working days with activity (Reference: {ref_date})</p>
+                        <p style="margin:0; font-size: 0.8rem; opacity: 0.8;">Working days with activity (Reference: Today)</p>
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # Activity Heatmap (Last 30 Days)
                 st.markdown("##### Daily Activity (Last 30 Days)")
-                heatmap_range = pd.date_range(end=ref_date, periods=30)
+                heatmap_range = pd.date_range(end=today_date, periods=30)
                 daily_counts = ag1.groupby(ag1['Date_Parsed'].dt.date).size()
                 heatmap_data = pd.DataFrame({'Date': heatmap_range.date})
                 heatmap_data['Sales'] = heatmap_data['Date'].map(daily_counts).fillna(0)
                 
-                fig_heat = px.density_heatmap(
-                    heatmap_data, 
-                    x='Date', 
-                    y=[1]*len(heatmap_data), 
-                    z='Sales',
-                    color_continuous_scale="Viridis",
-                    labels={'z': 'Apps'},
-                    height=150
-                )
+                fig_heat = px.density_heatmap(heatmap_data, x='Date', y=[1]*len(heatmap_data), z='Sales', color_continuous_scale="Viridis", labels={'z': 'Apps'}, height=150)
                 fig_heat.update_layout(coloraxis_showscale=False, yaxis_visible=False, margin=dict(l=0,r=0,t=0,b=0))
                 st.plotly_chart(fig_heat, use_container_width=True)
 
         st.write("---")
 
+        # Log Section remain unchanged...
         st.subheader("🔍 Recent Applications Log")
         if not ag1_filtered.empty:
             display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
@@ -435,26 +406,15 @@ else:
             
             def style_log_row(row):
                 styles = [''] * len(row)
-                q_color = ''
                 q_val = str(row.get('Quality Status', '')).lower()
-                if any(x in q_val for x in ['appr', 'pass']): q_color = 'background-color: rgba(167, 243, 208, 0.3)'
-                elif any(x in q_val for x in ['rew', 'repro']): q_color = 'background-color: rgba(253, 230, 138, 0.3)'
-                elif any(x in q_val for x in ['can', 'rej']): q_color = 'background-color: rgba(254, 202, 202, 0.3)'
-
-                wc_color = ''
+                q_color = 'background-color: rgba(167, 243, 208, 0.3)' if any(x in q_val for x in ['appr', 'pass']) else 'background-color: rgba(253, 230, 138, 0.3)' if any(x in q_val for x in ['rew', 'repro']) else 'background-color: rgba(254, 202, 202, 0.3)' if any(x in q_val for x in ['can', 'rej']) else ''
                 wc_val = str(row.get('Status', '')).lower()
-                if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']): wc_color = 'background-color: rgba(167, 243, 208, 0.3)'
-                elif any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']): wc_color = 'background-color: rgba(253, 230, 138, 0.3)'
-                elif any(x in wc_val for x in ['can', 'rej']): wc_color = 'background-color: rgba(254, 202, 202, 0.3)'
-
+                wc_color = 'background-color: rgba(167, 243, 208, 0.3)' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.3)' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.3)' if any(x in wc_val for x in ['can', 'rej']) else ''
                 quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks']
-                for i, col in enumerate(row.index):
-                    if col in quality_cols: styles[i] = q_color
-                    else: styles[i] = wc_color
+                for i, col in enumerate(row.index): styles[i] = q_color if col in quality_cols else wc_color
                 return styles
             
             styled_log = recent_log[actual_cols].style.apply(style_log_row, axis=1)
             st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
-    except Exception as e:
-        st.error(f"Error: {e}")
+    except Exception as e: st.error(f"Error: {e}")
