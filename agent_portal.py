@@ -364,20 +364,32 @@ else:
                 'Type': ['Holiday' if is_holiday(d) else 'Working' for d in dates]
             })
 
+            # Define custom hover text
+            cal_df['HoverText'] = cal_df.apply(lambda r: "Holiday" if r['Type'] == 'Holiday' else f"{r['Sales']}", axis=1)
+
             fig_cal = go.Figure()
+            # Heatmap for Working Days
+            working_days = cal_df[cal_df['Type'] == 'Working']
             fig_cal.add_trace(go.Heatmap(
-                x=cal_df['Weekday'], y=cal_df['WeekNum'], z=cal_df['Sales'],
-                text=cal_df['Day'], texttemplate="%{text}", hoverinfo="text+z",
+                x=working_days['Weekday'], y=working_days['WeekNum'], z=working_days['Sales'],
+                text=working_days['Day'], 
+                customdata=working_days['HoverText'],
+                hovertemplate="%{customdata}<extra></extra>",
+                texttemplate="%{text}",
                 colorscale=[[0, 'white'], [0.1, '#d1fae5'], [1, '#047857']],
                 showscale=False, xgap=3, ygap=3
             ))
 
+            # Heatmap for Holidays
             holidays = cal_df[cal_df['Type'] == 'Holiday']
             fig_cal.add_trace(go.Scatter(
                 x=holidays['Weekday'], y=holidays['WeekNum'], mode='markers+text',
                 marker=dict(symbol='square', size=35, color='#E2E8F0'),
-                text=holidays['Day'], textfont=dict(color='#94A3B8'),
-                hoverinfo='skip', showlegend=False
+                text=holidays['Day'], 
+                customdata=holidays['HoverText'],
+                hovertemplate="%{customdata}<extra></extra>",
+                textfont=dict(color='#94A3B8'),
+                showlegend=False
             ))
 
             fig_cal.update_layout(
