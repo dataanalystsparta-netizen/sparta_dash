@@ -154,17 +154,6 @@ def render_kpi(label, value, total):
         </div>
     """, unsafe_allow_html=True)
 
-def is_working_day(dt):
-    # Monday=0, Sunday=6
-    weekday = dt.weekday()
-    if weekday < 5: return True # Mon-Fri
-    if weekday == 5: # Saturday
-        day_num = dt.day
-        # Logic to find which Saturday of the month it is
-        nth_sat = (day_num - 1) // 7 + 1
-        if nth_sat in [1, 3, 5]: return True
-    return False
-
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.agent_name = ""
@@ -378,40 +367,54 @@ else:
         with col_streak:
             st.subheader("🔥 Sales Streak & Activity")
             if not ag1.empty:
-                # 1. Calculate Streak based on Working Days (Mon-Fri + 1st, 3rd, 5th Sat)
-                all_days = pd.date_range(ag1['Date'].min(), datetime.date.today()).sort_values(ascending=False)
-                sales_by_day = ag1.groupby('Date').size().to_dict()
+                # 1. Logic for Working Days Streak (Mon-Fri + 1st, 3rd, 5th Sat)
+                def is_working_day(d):
+                    if d.weekday() < 5: return True # Mon-Fri
+                    if d.weekday() == 5: # Saturday
+                        day_num = d.day
+                        week_num = (day_num - 1) // 7 + 1
+                        return week_num in [1, 3, 5]
+                    return False # Sunday
+
+                # Data Lag: Ignore today and yesterday
+                eval_end_date = datetime.date.today() - datetime.timedelta(days=2)
                 
+                # Check consecutive working days backwards
                 streak = 0
-                for day in all_days:
-                    # Skip non-working days (don't break streak, just move to previous day)
-                    if not is_working_day(day):
-                        continue
-                    
-                    # If it was a working day and had sales, increment streak
-                    if sales_by_day.get(day.date(), 0) > 0:
-                        streak += 1
-                    else:
-                        # If working day had zero sales, streak is broken
-                        break
+                check_date = eval_end_date
                 
+                # We sort existing sales to check activity
+                agent_active_dates = set(ag1['Date'].tolist())
+                
+                while True:
+                    if is_working_day(check_date):
+                        if check_date in agent_active_dates:
+                            streak += 1
+                        else:
+                            break # Streak broken on a working day
+                    check_date -= datetime.timedelta(days=1)
+                    if check_date < ag1['Date'].min(): break
+
                 st.markdown(f"""
                     <div class="streak-card">
                         <p style="margin:0; font-size: 0.9rem; font-weight: 600; opacity: 0.9;">CURRENT WIN STREAK</p>
                         <p style="margin:0; font-size: 2.5rem; font-weight: 800;">{streak} Days</p>
-                        <p style="margin:0; font-size: 0.8rem; opacity: 0.8;">Working days only</p>
+                        <p style="margin:0; font-size: 0.8rem; opacity: 0.8;">Working days streak (ends {eval_end_date})</p>
                     </div>
                 """, unsafe_allow_html=True)
                 
                 # 2. Activity Heatmap (Last 30 Days)
                 st.markdown("##### Daily Activity (Last 30 Days)")
-                daily_counts = ag1.groupby('Date').size().reindex(pd.date_range(end_date - datetime.timedelta(days=29), end_date), fill_value=0).reset_index()
-                daily_counts.columns = ['Date', 'Sales']
+                daily_sales = ag1.groupby('Date').size().reindex(
+                    pd.date_range(ag1['Date'].min(), datetime.date.today()), fill_value=0
+                ).sort_index(ascending=False)
                 
+                heatmap_data = daily_sales.head(30).reset_index()
+                heatmap_data.columns = ['Date', 'Sales']
                 fig_heat = px.density_heatmap(
-                    daily_counts, 
+                    heatmap_data, 
                     x='Date', 
-                    y=[1]*len(daily_counts), 
+                    y=[1]*len(heatmap_data), 
                     z='Sales',
                     color_continuous_scale="Viridis",
                     labels={'z': 'Apps'},
