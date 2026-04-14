@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go 
 
 st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
-#
+
 st.markdown("""
    <style>
    .block-container { max-width: 95%; padding-top: 3rem; }
@@ -15,13 +15,24 @@ st.markdown("""
    .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
    [data-testid="stMetricValue"] { font-size: 1.6rem !important; color: #1E3A8A; }
    [data-testid="stMetricLabel"] { font-size: 0.85rem !important; white-space: nowrap; }
+   
+   /* Custom KPI Styling */
+   .kpi-card {
+       background-color: #F8FAFC;
+       padding: 15px;
+       border-radius: 10px;
+       border-left: 5px solid #1E3A8A;
+       text-align: center;
+       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+   }
+   .kpi-label { font-size: 0.8rem; color: #64748B; font-weight: 600; margin-bottom: 5px; text-transform: uppercase; }
+   .kpi-value { font-size: 1.5rem; color: #1E3A8A; font-weight: 700; margin: 0; }
+   .kpi-pc { font-size: 0.85rem; color: #10B981; font-weight: 500; }
    </style>
    """, unsafe_allow_html=True)
 
-
 ACCESS_KEYS = st.secrets["agent_keys"]
 
-# --- ADDED: Background Logging Function ---
 def log_agent_login(agent_name):
     try:
         info = st.secrets["gcp_service_account"]
@@ -31,37 +42,15 @@ def log_agent_login(agent_name):
         ])
         client = gspread.authorize(creds)
         ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
-        
-        # Try to access the 'Logs' sheet, create if it doesn't exist
         try:
             log_sheet = ss.worksheet('Logs')
         except gspread.WorksheetNotFound:
             log_sheet = ss.add_worksheet(title="Logs", rows="1000", cols="3")
             log_sheet.append_row(["Timestamp", "Agent Name", "Action"])
-            
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_sheet.append_row([timestamp, agent_name, "Login"])
     except:
-        pass # Fail silently so the agent can still log in even if tracking fails
-
-def check_login():
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-
-    if not st.session_state.authenticated:
-        st.title("Sparta Agent Portal")
-        user_key = st.text_input("Enter your Access Key", type="password")
-        if st.button("Login"):
-            if user_key in ACCESS_KEYS:
-                st.session_state.authenticated = True
-                st.session_state.agent_name = ACCESS_KEYS[user_key]
-                log_agent_login(ACCESS_KEYS[user_key]) # ADDED: Trigger log
-                st.rerun()
-            else:
-                st.error("Invalid Key. Please contact Aditya.")
-        return None
-    
-    return st.session_state.agent_name
+        pass
 
 @st.cache_data(ttl=300)
 def fetch_data():
@@ -73,30 +62,18 @@ def fetch_data():
     client = gspread.authorize(creds)
     ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
     
-    # --- Processing Sheet 1 (Sparta) ---
     df1 = pd.DataFrame(ss.worksheet('Sparta').get_all_records())
-    # Standardize parsing for df1
     df1['Date_Parsed'] = pd.to_datetime(df1['Standardized_Date'], errors='coerce')
     df1['Advisor'] = df1['Advisor'].astype(str).str.strip().str.title()
     
-    # --- Processing Sheet 2 (Sparta2) ---
     df2 = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
-    
-    # Robust Date Parsing Logic for Mixed Formats:
-    # 1. We identify rows that look like UK format (containing '/')
-    # 2. We parse the rest as standard ISO (YYYY-MM-DD)
     def robust_date_parser(date_str):
         date_str = str(date_str).strip()
         try:
-            if '/' in date_str:
-                return pd.to_datetime(date_str, dayfirst=True)
+            if '/' in date_str: return pd.to_datetime(date_str, dayfirst=True)
             return pd.to_datetime(date_str)
-        except:
-            return pd.NaT
-
+        except: return pd.NaT
     df2['Date_Parsed'] = df2['Sale Date'].apply(robust_date_parser)
-    
-    # Standardize Advisor names for mapping
     df2['Advisor'] = df2['Agent'].astype(str).str.strip().str.title()
 
     try:
@@ -104,7 +81,6 @@ def fetch_data():
         last_sync = meta[0][1]
     except:
         last_sync = "Unknown"
-    
     return df1, df2, last_sync
 
 def map_quality(val):
@@ -129,7 +105,17 @@ def map_wc(val):
     if any(x in s for x in ['paper', 'ppw']): return 'Paperwork'
     if any(x in s for x in ['can', 'rej']): return 'Cancelled'
     return 'Others'
-   
+
+def render_kpi(label, value, total, prefix=""):
+    percent = (value / total * 100) if total > 0 else 0
+    st.markdown(f"""
+        <div class="kpi-card">
+            <p class="kpi-label">{label}</p>
+            <p class="kpi-value">{value:,}</p>
+            <p class="kpi-pc">{prefix}{percent:.1f}%</p>
+        </div>
+    """, unsafe_allow_html=True)
+
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.agent_name = ""
@@ -140,19 +126,17 @@ if not st.session_state.authenticated:
         st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d5ac6c503.png", width=250)
         st.title("Agent Portal")
         st.info("Please enter your access key to view your performance data.")
-        
         user_key = st.text_input("Access Key", type="password")
         if st.button("Login", use_container_width=True):
             if user_key.upper() in ACCESS_KEYS:
                 st.session_state.authenticated = True
                 st.session_state.agent_name = ACCESS_KEYS[user_key.upper()]
-                log_agent_login(ACCESS_KEYS[user_key.upper()]) # ADDED: Trigger log
+                log_agent_login(ACCESS_KEYS[user_key.upper()])
                 st.rerun()
             else:
                 st.error("Invalid Access Key. Try again!")
 else:
     agent = st.session_state.agent_name
-    
     with st.sidebar:
         st.subheader(f"👤 {agent}")
         st.divider()
@@ -179,31 +163,52 @@ else:
         ag1 = ag1[(ag1['Date_Parsed'].dt.date >= start_date) & (ag1['Date_Parsed'].dt.date <= end_date)]
         ag2 = ag2[(ag2['Date_Parsed'].dt.date >= start_date) & (ag2['Date_Parsed'].dt.date <= end_date)]
         
+        # Clean Mappings
         ag1['Q_Status'] = ag1['Quality Status'].apply(map_quality)
         ag2['P_Status'] = ag2['Status'].apply(map_portal)
+        wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
+        if wc_col: ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
 
+        # ---------------- KPI SECTION ----------------
         total_apps = len(ag1)
-        approved = len(ag1[ag1['Q_Status'] == 'Approved'])
-        approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
-        total_committed_apps = len(ag2) 
-        committed_rate = f"{(total_committed_apps / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
-        live = len(ag2[ag2['P_Status'] == 'Live'])
-        live_rate = f"{(live / total_committed_apps * 100):.1f}%" if total_committed_apps > 0 else "0.0%"
         
-        with st.container(border=True):
-            m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
-            m1.metric("📝 Tot. Apps", f"{total_apps:,}")
-            m2.metric("✅ Approved", f"{approved:,}")
-            m3.metric("📈 Approv. Rate", approval_rate)
-            m4.metric("📦 Committed", f"{total_committed_apps:,}")
-            m5.metric("📋 Commit. Rate", committed_rate)
-            m6.metric("🌐 Live", f"{live:,}")
-            m7.metric("🚀 Live Rate", live_rate)
+        st.subheader("📊 Key Performance Indicators")
+        
+        # Row 1: Quality Status
+        st.markdown("### Quality Breakdown")
+        q1, q2, q3, q4, q5, q6 = st.columns(6)
+        with q1: render_kpi("Total Apps", total_apps, total_apps)
+        with q2: render_kpi("Approved", len(ag1[ag1['Q_Status'] == 'Approved']), total_apps)
+        with q3: render_kpi("Rework", len(ag1[ag1['Q_Status'] == 'Rework']), total_apps)
+        with q4: render_kpi("Cancelled", len(ag1[ag1['Q_Status'] == 'Cancelled']), total_apps)
+        with q5: render_kpi("Rejected", len(ag1[ag1['Q_Status'] == 'Rejected']), total_apps)
+        with q6: render_kpi("Others", len(ag1[ag1['Q_Status'] == 'Others']), total_apps)
 
+        # Row 2: Welcome Call Status
+        st.markdown("### Welcome Call Status")
+        if wc_col:
+            w1, w2, w3, w4, w5 = st.columns(5)
+            with w1: render_kpi("WC Done", len(ag1[ag1['WC_Clean'] == 'Done']), total_apps)
+            with w2: render_kpi("WC Pending", len(ag1[ag1['WC_Clean'] == 'Pending']), total_apps)
+            with w3: render_kpi("WC Paperwork", len(ag1[ag1['WC_Clean'] == 'Paperwork']), total_apps)
+            with w4: render_kpi("WC Cancelled", len(ag1[ag1['WC_Clean'] == 'Cancelled']), total_apps)
+            with w5: render_kpi("WC Others", len(ag1[ag1['WC_Clean'] == 'Others']), total_apps)
+
+        # Row 3: Live Status (ag2)
+        st.markdown("### Portal & Live Status")
+        l1, l2, l3, l4 = st.columns(4)
+        total_ag2 = len(ag2)
+        with l1: render_kpi("Live", len(ag2[ag2['P_Status'] == 'Live']), total_ag2 if total_ag2 > 0 else total_apps)
+        with l2: render_kpi("Committed", len(ag2[ag2['P_Status'] == 'Committed']), total_ag2 if total_ag2 > 0 else total_apps)
+        with l3: render_kpi("Portal Cancelled", len(ag2[ag2['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps)
+        with l4: render_kpi("Portal Others", len(ag2[ag2['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
+
+        st.write("---")
+
+        # ---------------- REMAINING DASHBOARD ----------------
         st.subheader("📅 Data Breakdown")
         ag1['Date'] = ag1['Date_Parsed'].dt.date
         ag2['Date'] = ag2['Date_Parsed'].dt.date
-        
         view_mode = st.radio("View tables by:", ["Daily", "Monthly"], horizontal=True)
         
         if view_mode == "Daily":
@@ -233,7 +238,6 @@ else:
                 qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
                 period_qual = period_qual.reindex(columns=qual_order, fill_value=0)
                 period_qual = period_qual.loc[:, (period_qual != 0).any(axis=0)]
-                
                 if not period_qual.empty:
                     vmax_qual = max(period_qual.max().max(), 1.1)
                     styled_qual = period_qual.style.format(lambda x: "-" if x == 0 else x) \
@@ -245,14 +249,11 @@ else:
 
         with cc:
             st.markdown("##### Welcome Call Status")
-            wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
             if wc_col and not ag1.empty:
-                ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
                 period_wc = ag1.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
                 wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
                 period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
                 period_wc = period_wc.loc[:, (period_wc != 0).any(axis=0)]
-                
                 if not period_wc.empty:
                     vmax_wc = max(period_wc.max().max(), 1.1)
                     styled_wc = period_wc.style.format(lambda x: "-" if x == 0 else x) \
@@ -271,7 +272,6 @@ else:
                 port_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 period_port = period_port.reindex(columns=port_order, fill_value=0)
                 period_port = period_port.loc[:, (period_port != 0).any(axis=0)]
-                
                 if not period_port.empty:
                     vmax_port = max(period_port.max().max(), 1.1)
                     styled_port = period_port.style.format(lambda x: "-" if x == 0 else x) \
@@ -288,7 +288,6 @@ else:
             d_live = ag2[ag2['P_Status'] == 'Live'].groupby(chart_group_col).size().to_frame('Live')
             i_comb = d_apps.join([d_appr, d_live], how='left').fillna(0).reset_index()
             i_comb[chart_group_col] = i_comb[chart_group_col].astype(str)
-            
             fig = go.Figure()
             fig.add_trace(go.Bar(x=i_comb[chart_group_col], y=i_comb['Total Apps'], name="Total Applications", marker_color='#60A5FA'))
             fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Approved'], name="Quality Approved Applications", line=dict(color='#059669', width=3)))
@@ -302,35 +301,26 @@ else:
             recent_log = ag1.sort_values(by='Date_Parsed', ascending=False).head(20)
             actual_cols = [c for c in display_cols if c in ag1.columns]
             
-            # --- ADDED: Row Styling Function ---
             def style_log_row(row):
                 styles = [''] * len(row)
-                
-                # 1. Determine Color for Quality Section (First 5 columns)
                 q_color = ''
                 q_val = str(row.get('Quality Status', '')).lower()
-                if any(x in q_val for x in ['appr', 'pass']): q_color = 'background-color: rgba(167, 243, 208, 0.3)' # Soft Green
-                elif any(x in q_val for x in ['rew', 'repro']): q_color = 'background-color: rgba(253, 230, 138, 0.3)' # Soft Yellow
-                elif any(x in q_val for x in ['can', 'rej']): q_color = 'background-color: rgba(254, 202, 202, 0.3)' # Soft Red
+                if any(x in q_val for x in ['appr', 'pass']): q_color = 'background-color: rgba(167, 243, 208, 0.3)'
+                elif any(x in q_val for x in ['rew', 'repro']): q_color = 'background-color: rgba(253, 230, 138, 0.3)'
+                elif any(x in q_val for x in ['can', 'rej']): q_color = 'background-color: rgba(254, 202, 202, 0.3)'
 
-                # 2. Determine Color for Status/WC Section (Last 2 columns)
                 wc_color = ''
                 wc_val = str(row.get('Status', '')).lower()
                 if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']): wc_color = 'background-color: rgba(167, 243, 208, 0.3)'
                 elif any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']): wc_color = 'background-color: rgba(253, 230, 138, 0.3)'
                 elif any(x in wc_val for x in ['can', 'rej']): wc_color = 'background-color: rgba(254, 202, 202, 0.3)'
 
-                # 3. Apply colors to the respective columns
                 quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks']
                 for i, col in enumerate(row.index):
-                    if col in quality_cols:
-                        styles[i] = q_color
-                    else:
-                        styles[i] = wc_color
-                        
+                    if col in quality_cols: styles[i] = q_color
+                    else: styles[i] = wc_color
                 return styles
             
-            # Apply styling and display
             styled_log = recent_log[actual_cols].style.apply(style_log_row, axis=1)
             st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
