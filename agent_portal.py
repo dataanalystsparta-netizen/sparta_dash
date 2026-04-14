@@ -185,6 +185,11 @@ else:
 
     try:
         df1, df2, last_sync = fetch_data()
+        
+        # Calculate Last Sale Date across the whole dataset (for streak reference)
+        all_sales_dates = pd.concat([df1['Date_Parsed'], df2['Date_Parsed']]).dropna()
+        ref_date = all_sales_dates.max().date() if not all_sales_dates.empty else datetime.date.today()
+
         ag1 = df1[df1['Advisor'] == agent].copy()
         ag2 = df2[df2['Advisor'] == agent].copy()
         
@@ -198,39 +203,39 @@ else:
         start_date = col_a.date_input("Start Date", datetime.date.today().replace(day=1))
         end_date = col_b.date_input("End Date", datetime.date.today())
 
-        ag1 = ag1[(ag1['Date_Parsed'].dt.date >= start_date) & (ag1['Date_Parsed'].dt.date <= end_date)]
-        ag2 = ag2[(ag2['Date_Parsed'].dt.date >= start_date) & (ag2['Date_Parsed'].dt.date <= end_date)]
+        ag1_filtered = ag1[(ag1['Date_Parsed'].dt.date >= start_date) & (ag1['Date_Parsed'].dt.date <= end_date)]
+        ag2_filtered = ag2[(ag2['Date_Parsed'].dt.date >= start_date) & (ag2['Date_Parsed'].dt.date <= end_date)]
         
-        ag1['Q_Status'] = ag1['Quality Status'].apply(map_quality)
-        ag2['P_Status'] = ag2['Status'].apply(map_portal)
-        wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
-        if wc_col: ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
+        ag1_filtered['Q_Status'] = ag1_filtered['Quality Status'].apply(map_quality)
+        ag2_filtered['P_Status'] = ag2_filtered['Status'].apply(map_portal)
+        wc_col = 'Status' if 'Status' in ag1_filtered.columns else 'Welcome call Status' if 'Welcome call Status' in ag1_filtered.columns else None
+        if wc_col: ag1_filtered['WC_Clean'] = ag1_filtered[wc_col].apply(map_wc)
 
-        total_apps = len(ag1)
-        total_ag2 = len(ag2)
+        total_apps = len(ag1_filtered)
+        total_ag2 = len(ag2_filtered)
         
         group_1 = [("Total Apps", total_apps, total_apps)]
         group_2 = [
-            ("Approved", len(ag1[ag1['Q_Status'] == 'Approved']), total_apps),
-            ("Rework", len(ag1[ag1['Q_Status'] == 'Rework']), total_apps),
-            ("Cancelled", len(ag1[ag1['Q_Status'] == 'Cancelled']), total_apps),
-            ("Rejected", len(ag1[ag1['Q_Status'] == 'Rejected']), total_apps),
-            ("Others", len(ag1[ag1['Q_Status'] == 'Others']), total_apps)
+            ("Approved", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved']), total_apps),
+            ("Rework", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rework']), total_apps),
+            ("Cancelled", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled']), total_apps),
+            ("Rejected", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rejected']), total_apps),
+            ("Others", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Others']), total_apps)
         ]
         group_3 = []
         if wc_col:
             group_3 = [
-                ("WC Done (Comm.)", len(ag1[ag1['WC_Clean'] == 'Done']), total_apps),
-                ("WC Pending", len(ag1[ag1['WC_Clean'] == 'Pending']), total_apps),
-                ("WC Paperwork", len(ag1[ag1['WC_Clean'] == 'Paperwork']), total_apps),
-                ("WC Cancelled", len(ag1[ag1['WC_Clean'] == 'Cancelled']), total_apps),
-                ("WC Others", len(ag1[ag1['WC_Clean'] == 'Others']), total_apps)
+                ("WC Done (Comm.)", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done']), total_apps),
+                ("WC Pending", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Pending']), total_apps),
+                ("WC Paperwork", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Paperwork']), total_apps),
+                ("WC Cancelled", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Cancelled']), total_apps),
+                ("WC Others", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Others']), total_apps)
             ]
         group_4 = [
-            ("Live", len(ag2[ag2['P_Status'] == 'Live']), total_ag2 if total_ag2 > 0 else total_apps),
-            ("Committed", len(ag2[ag2['P_Status'] == 'Committed']), total_ag2 if total_ag2 > 0 else total_apps),
-            ("Cancelled", len(ag2[ag2['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps),
-            ("Others", len(ag2[ag2['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
+            ("Live", len(ag2_filtered[ag2_filtered['P_Status'] == 'Live']), total_ag2 if total_ag2 > 0 else total_apps),
+            ("Committed", len(ag2_filtered[ag2_filtered['P_Status'] == 'Committed']), total_ag2 if total_ag2 > 0 else total_apps),
+            ("Cancelled", len(ag2_filtered[ag2_filtered['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps),
+            ("Others", len(ag2_filtered[ag2_filtered['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
         ]
 
         b1, b2, b3, b4 = st.columns([1.2, 2.5, 2.5, 2.2])
@@ -270,24 +275,24 @@ else:
         st.write("---")
 
         st.subheader("📅 Data Breakdown")
-        ag1['Date'] = ag1['Date_Parsed'].dt.date
-        ag2['Date'] = ag2['Date_Parsed'].dt.date
+        ag1_filtered['Date'] = ag1_filtered['Date_Parsed'].dt.date
+        ag2_filtered['Date'] = ag2_filtered['Date_Parsed'].dt.date
         view_mode = st.radio("View tables by:", ["Daily", "Monthly"], horizontal=True)
         
         if view_mode == "Daily":
-            ag1['Period'] = ag1['Date_Parsed'].dt.date
-            ag2['Period'] = ag2['Date_Parsed'].dt.date
+            ag1_filtered['Period'] = ag1_filtered['Date_Parsed'].dt.date
+            ag2_filtered['Period'] = ag2_filtered['Date_Parsed'].dt.date
             chart_group_col = 'Date'
         else:
-            ag1['Period'] = ag1['Date_Parsed'].dt.strftime('%Y-%m')
-            ag2['Period'] = ag2['Date_Parsed'].dt.strftime('%Y-%m')
+            ag1_filtered['Period'] = ag1_filtered['Date_Parsed'].dt.strftime('%Y-%m')
+            ag2_filtered['Period'] = ag2_filtered['Date_Parsed'].dt.strftime('%Y-%m')
             chart_group_col = 'Period'
         
         ca, cb, cc, cd = st.columns(4)
         with ca:
             st.markdown("##### Applications")
-            if not ag1.empty:
-                period_apps = ag1.groupby('Period').size().to_frame('Total Apps')
+            if not ag1_filtered.empty:
+                period_apps = ag1_filtered.groupby('Period').size().to_frame('Total Apps')
                 vmax_apps = max(period_apps.max().max(), 1.1)
                 styled_apps = period_apps.style.format(lambda x: "-" if x == 0 else x) \
                     .background_gradient(cmap='Greens', vmin=1, vmax=vmax_apps) \
@@ -296,8 +301,8 @@ else:
 
         with cb:
             st.markdown("##### Quality Audit Result")
-            if not ag1.empty:
-                period_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
+            if not ag1_filtered.empty:
+                period_qual = ag1_filtered.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
                 qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
                 period_qual = period_qual.reindex(columns=qual_order, fill_value=0)
                 period_qual = period_qual.loc[:, (period_qual != 0).any(axis=0)]
@@ -312,8 +317,8 @@ else:
 
         with cc:
             st.markdown("##### Welcome Call Status")
-            if wc_col and not ag1.empty:
-                period_wc = ag1.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
+            if wc_col and not ag1_filtered.empty:
+                period_wc = ag1_filtered.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
                 wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
                 period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
                 period_wc = period_wc.loc[:, (period_wc != 0).any(axis=0)]
@@ -330,8 +335,8 @@ else:
                 
         with cd:
             st.markdown("##### Live Status")
-            if not ag2.empty:
-                period_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
+            if not ag2_filtered.empty:
+                period_port = ag2_filtered.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
                 port_order = ['Live', 'Committed', 'Cancelled', 'Others']
                 period_port = period_port.reindex(columns=port_order, fill_value=0)
                 period_port = period_port.loc[:, (period_port != 0).any(axis=0)]
@@ -351,10 +356,10 @@ else:
         
         with col_trend:
             st.subheader("📈 My Trend")
-            if not ag1.empty:
-                d_apps = ag1.groupby(chart_group_col).size().to_frame('Total Apps')
-                d_appr = ag1[ag1['Q_Status'] == 'Approved'].groupby(chart_group_col).size().to_frame('Approved')
-                d_live = ag2[ag2['P_Status'] == 'Live'].groupby(chart_group_col).size().to_frame('Live')
+            if not ag1_filtered.empty:
+                d_apps = ag1_filtered.groupby(chart_group_col).size().to_frame('Total Apps')
+                d_appr = ag1_filtered[ag1_filtered['Q_Status'] == 'Approved'].groupby(chart_group_col).size().to_frame('Approved')
+                d_live = ag2_filtered[ag2_filtered['P_Status'] == 'Live'].groupby(chart_group_col).size().to_frame('Live')
                 i_comb = d_apps.join([d_appr, d_live], how='left').fillna(0).reset_index()
                 i_comb[chart_group_col] = i_comb[chart_group_col].astype(str)
                 fig = go.Figure()
@@ -367,50 +372,45 @@ else:
         with col_streak:
             st.subheader("🔥 Sales Streak & Activity")
             if not ag1.empty:
-                # 1. Logic for Working Days Streak (Mon-Fri + 1st, 3rd, 5th Sat)
-                def is_working_day(d):
-                    if d.weekday() < 5: return True # Mon-Fri
-                    if d.weekday() == 5: # Saturday
-                        day_num = d.day
+                # Working Day Logic: Mon-Fri + 1st, 3rd, 5th Saturday
+                def is_working_day(dt):
+                    wd = dt.weekday() # 0=Mon, 6=Sun
+                    if wd < 5: return True
+                    if wd == 5: # Saturday
+                        day_num = dt.day
                         week_num = (day_num - 1) // 7 + 1
                         return week_num in [1, 3, 5]
-                    return False # Sunday
+                    return False
 
-                # Data Lag: Ignore today and yesterday
-                eval_end_date = datetime.date.today() - datetime.timedelta(days=2)
-                
-                # Check consecutive working days backwards
+                # Calculate Streak using working days, starting from ref_date (last sale in dataset)
+                agent_sales_dates = set(ag1['Date_Parsed'].dt.date)
                 streak = 0
-                check_date = eval_end_date
+                check_date = ref_date
                 
-                # We sort existing sales to check activity
-                agent_active_dates = set(ag1['Date'].tolist())
-                
-                while True:
+                # Check backwards for 60 days max to calculate streak
+                for i in range(60):
                     if is_working_day(check_date):
-                        if check_date in agent_active_dates:
+                        if check_date in agent_sales_dates:
                             streak += 1
                         else:
-                            break # Streak broken on a working day
+                            break
                     check_date -= datetime.timedelta(days=1)
-                    if check_date < ag1['Date'].min(): break
-
+                
                 st.markdown(f"""
                     <div class="streak-card">
                         <p style="margin:0; font-size: 0.9rem; font-weight: 600; opacity: 0.9;">CURRENT WIN STREAK</p>
                         <p style="margin:0; font-size: 2.5rem; font-weight: 800;">{streak} Days</p>
-                        <p style="margin:0; font-size: 0.8rem; opacity: 0.8;">Working days streak (ends {eval_end_date})</p>
+                        <p style="margin:0; font-size: 0.8rem; opacity: 0.8;">Working days with activity (since {ref_date})</p>
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # 2. Activity Heatmap (Last 30 Days)
+                # Activity Heatmap (Last 30 Days)
                 st.markdown("##### Daily Activity (Last 30 Days)")
-                daily_sales = ag1.groupby('Date').size().reindex(
-                    pd.date_range(ag1['Date'].min(), datetime.date.today()), fill_value=0
-                ).sort_index(ascending=False)
+                heatmap_range = pd.date_range(end=ref_date, periods=30)
+                daily_counts = ag1.groupby(ag1['Date_Parsed'].dt.date).size()
+                heatmap_data = pd.DataFrame({'Date': heatmap_range.date})
+                heatmap_data['Sales'] = heatmap_data['Date'].map(daily_counts).fillna(0)
                 
-                heatmap_data = daily_sales.head(30).reset_index()
-                heatmap_data.columns = ['Date', 'Sales']
                 fig_heat = px.density_heatmap(
                     heatmap_data, 
                     x='Date', 
@@ -426,10 +426,10 @@ else:
         st.write("---")
 
         st.subheader("🔍 Recent Applications Log")
-        if not ag1.empty:
+        if not ag1_filtered.empty:
             display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
-            recent_log = ag1.sort_values(by='Date_Parsed', ascending=False).head(20)
-            actual_cols = [c for c in display_cols if c in ag1.columns]
+            recent_log = ag1_filtered.sort_values(by='Date_Parsed', ascending=False).head(20)
+            actual_cols = [c for c in display_cols if c in ag1_filtered.columns]
             
             def style_log_row(row):
                 styles = [''] * len(row)
