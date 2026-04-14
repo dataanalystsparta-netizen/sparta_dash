@@ -10,24 +10,23 @@ st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
 
 st.markdown("""
    <style>
-   .block-container { max-width: 95%; padding-top: 3rem; }
-    h3 { margin-bottom: 0.5rem !important; font-size: 1.2rem !important; color: #1E3A8A; }
-   .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
-   [data-testid="stMetricValue"] { font-size: 1.6rem !important; color: #1E3A8A; }
-   [data-testid="stMetricLabel"] { font-size: 0.85rem !important; white-space: nowrap; }
+   .block-container { max-width: 98%; padding-top: 1.5rem; }
+    h3 { margin-bottom: 0.5rem !important; font-size: 1.1rem !important; color: #1E3A8A; }
+   .last-updated { font-size: 0.75rem; color: gray; text-align: right; }
    
-   /* Custom KPI Styling */
+   /* Extra Small KPI Styling for Single Row */
    .kpi-card {
        background-color: #F8FAFC;
-       padding: 15px;
-       border-radius: 10px;
-       border-left: 5px solid #1E3A8A;
+       padding: 8px 4px;
+       border-radius: 6px;
+       border-top: 3px solid #1E3A8A;
        text-align: center;
-       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+       box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+       margin-bottom: 10px;
    }
-   .kpi-label { font-size: 0.8rem; color: #64748B; font-weight: 600; margin-bottom: 5px; text-transform: uppercase; }
-   .kpi-value { font-size: 1.5rem; color: #1E3A8A; font-weight: 700; margin: 0; }
-   .kpi-pc { font-size: 0.85rem; color: #10B981; font-weight: 500; }
+   .kpi-label { font-size: 0.65rem; color: #64748B; font-weight: 700; margin-bottom: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
+   .kpi-value { font-size: 1.1rem; color: #1E3A8A; font-weight: 700; margin: 0; line-height: 1.1; }
+   .kpi-pc { font-size: 0.7rem; color: #10B981; font-weight: 500; margin-top: 1px; }
    </style>
    """, unsafe_allow_html=True)
 
@@ -106,13 +105,13 @@ def map_wc(val):
     if any(x in s for x in ['can', 'rej']): return 'Cancelled'
     return 'Others'
 
-def render_kpi(label, value, total, prefix=""):
+def render_kpi(label, value, total):
     percent = (value / total * 100) if total > 0 else 0
     st.markdown(f"""
         <div class="kpi-card">
             <p class="kpi-label">{label}</p>
             <p class="kpi-value">{value:,}</p>
-            <p class="kpi-pc">{prefix}{percent:.1f}%</p>
+            <p class="kpi-pc">{percent:.1f}%</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -163,49 +162,53 @@ else:
         ag1 = ag1[(ag1['Date_Parsed'].dt.date >= start_date) & (ag1['Date_Parsed'].dt.date <= end_date)]
         ag2 = ag2[(ag2['Date_Parsed'].dt.date >= start_date) & (ag2['Date_Parsed'].dt.date <= end_date)]
         
-        # Clean Mappings
         ag1['Q_Status'] = ag1['Quality Status'].apply(map_quality)
         ag2['P_Status'] = ag2['Status'].apply(map_portal)
         wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
         if wc_col: ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
 
-        # ---------------- KPI SECTION ----------------
+        # ---------------- CONSOLIDATED KPI ROW ----------------
         total_apps = len(ag1)
-        
-        st.subheader("📊 Key Performance Indicators")
-        
-        # Row 1: Quality Status
-        st.markdown("### Quality Breakdown")
-        q1, q2, q3, q4, q5, q6 = st.columns(6)
-        with q1: render_kpi("Total Apps", total_apps, total_apps)
-        with q2: render_kpi("Approved", len(ag1[ag1['Q_Status'] == 'Approved']), total_apps)
-        with q3: render_kpi("Rework", len(ag1[ag1['Q_Status'] == 'Rework']), total_apps)
-        with q4: render_kpi("Cancelled", len(ag1[ag1['Q_Status'] == 'Cancelled']), total_apps)
-        with q5: render_kpi("Rejected", len(ag1[ag1['Q_Status'] == 'Rejected']), total_apps)
-        with q6: render_kpi("Others", len(ag1[ag1['Q_Status'] == 'Others']), total_apps)
-
-        # Row 2: Welcome Call Status
-        st.markdown("### Welcome Call Status")
-        if wc_col:
-            w1, w2, w3, w4, w5 = st.columns(5)
-            with w1: render_kpi("WC Done", len(ag1[ag1['WC_Clean'] == 'Done']), total_apps)
-            with w2: render_kpi("WC Pending", len(ag1[ag1['WC_Clean'] == 'Pending']), total_apps)
-            with w3: render_kpi("WC Paperwork", len(ag1[ag1['WC_Clean'] == 'Paperwork']), total_apps)
-            with w4: render_kpi("WC Cancelled", len(ag1[ag1['WC_Clean'] == 'Cancelled']), total_apps)
-            with w5: render_kpi("WC Others", len(ag1[ag1['WC_Clean'] == 'Others']), total_apps)
-
-        # Row 3: Live Status (ag2)
-        st.markdown("### Portal & Live Status")
-        l1, l2, l3, l4 = st.columns(4)
         total_ag2 = len(ag2)
-        with l1: render_kpi("Live", len(ag2[ag2['P_Status'] == 'Live']), total_ag2 if total_ag2 > 0 else total_apps)
-        with l2: render_kpi("Committed", len(ag2[ag2['P_Status'] == 'Committed']), total_ag2 if total_ag2 > 0 else total_apps)
-        with l3: render_kpi("Portal Cancelled", len(ag2[ag2['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps)
-        with l4: render_kpi("Portal Others", len(ag2[ag2['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
+        
+        # Prepare all possible KPI data
+        all_kpis = [
+            ("Total Apps", total_apps, total_apps),
+            ("Approved", len(ag1[ag1['Q_Status'] == 'Approved']), total_apps),
+            ("Rework", len(ag1[ag1['Q_Status'] == 'Rework']), total_apps),
+            ("Cancelled", len(ag1[ag1['Q_Status'] == 'Cancelled']), total_apps),
+            ("Rejected", len(ag1[ag1['Q_Status'] == 'Rejected']), total_apps),
+            ("Others", len(ag1[ag1['Q_Status'] == 'Others']), total_apps)
+        ]
+        
+        if wc_col:
+            all_kpis.extend([
+                ("WC Done", len(ag1[ag1['WC_Clean'] == 'Done']), total_apps),
+                ("WC Pending", len(ag1[ag1['WC_Clean'] == 'Pending']), total_apps),
+                ("WC Paperwork", len(ag1[ag1['WC_Clean'] == 'Paperwork']), total_apps),
+                ("WC Cancelled", len(ag1[ag1['WC_Clean'] == 'Cancelled']), total_apps),
+                ("WC Others", len(ag1[ag1['WC_Clean'] == 'Others']), total_apps)
+            ])
+            
+        all_kpis.extend([
+            ("Live", len(ag2[ag2['P_Status'] == 'Live']), total_ag2 if total_ag2 > 0 else total_apps),
+            ("Committed", len(ag2[ag2['P_Status'] == 'Committed']), total_ag2 if total_ag2 > 0 else total_apps),
+            ("Portal Cancelled", len(ag2[ag2['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps),
+            ("Portal Others", len(ag2[ag2['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
+        ])
+
+        # Filter out 0 values
+        active_kpis = [k for k in all_kpis if k[1] > 0]
+
+        if active_kpis:
+            cols = st.columns(len(active_kpis))
+            for i, kpi in enumerate(active_kpis):
+                with cols[i]:
+                    render_kpi(kpi[0], kpi[1], kpi[2])
 
         st.write("---")
 
-        # ---------------- REMAINING DASHBOARD ----------------
+        # ---------------- DASHBOARD CONTENT ----------------
         st.subheader("📅 Data Breakdown")
         ag1['Date'] = ag1['Date_Parsed'].dt.date
         ag2['Date'] = ag2['Date_Parsed'].dt.date
