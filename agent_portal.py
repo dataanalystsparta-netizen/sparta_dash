@@ -186,7 +186,7 @@ else:
     try:
         df1, df2, last_sync = fetch_data()
         
-        # Calculate Last Sale Date across the whole dataset (for streak reference)
+        # Calculate Reference Date (last day any sale occurred globally)
         all_sales_dates = pd.concat([df1['Date_Parsed'], df2['Date_Parsed']]).dropna()
         ref_date = all_sales_dates.max().date() if not all_sales_dates.empty else datetime.date.today()
 
@@ -375,32 +375,34 @@ else:
                 # Working Day Logic: Mon-Fri + 1st, 3rd, 5th Saturday
                 def is_working_day(dt):
                     wd = dt.weekday() # 0=Mon, 6=Sun
-                    if wd < 5: return True
+                    if wd < 5: return True # Mon-Fri
                     if wd == 5: # Saturday
                         day_num = dt.day
                         week_num = (day_num - 1) // 7 + 1
                         return week_num in [1, 3, 5]
                     return False
 
-                # Calculate Streak using working days, starting from ref_date (last sale in dataset)
+                # Calculate Streak using working days, starting from ref_date (last global sale)
                 agent_sales_dates = set(ag1['Date_Parsed'].dt.date)
                 streak = 0
                 check_date = ref_date
                 
-                # Check backwards for 60 days max to calculate streak
-                for i in range(60):
+                # Check backwards for 90 days max to calculate streak
+                for i in range(90):
                     if is_working_day(check_date):
                         if check_date in agent_sales_dates:
                             streak += 1
                         else:
+                            # If it's a work day and agent has no sales, the streak breaks
                             break
+                    # If it's not a work day (Sunday or 2nd/4th Sat), just skip back without breaking streak
                     check_date -= datetime.timedelta(days=1)
                 
                 st.markdown(f"""
                     <div class="streak-card">
                         <p style="margin:0; font-size: 0.9rem; font-weight: 600; opacity: 0.9;">CURRENT WIN STREAK</p>
                         <p style="margin:0; font-size: 2.5rem; font-weight: 800;">{streak} Days</p>
-                        <p style="margin:0; font-size: 0.8rem; opacity: 0.8;">Working days with activity (since {ref_date})</p>
+                        <p style="margin:0; font-size: 0.8rem; opacity: 0.8;">Working days with activity (Reference: {ref_date})</p>
                     </div>
                 """, unsafe_allow_html=True)
                 
