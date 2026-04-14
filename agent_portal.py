@@ -14,12 +14,12 @@ st.markdown("""
     h3 { margin-bottom: 0.5rem !important; font-size: 1.1rem !important; color: #1E3A8A; }
    .last-updated { font-size: 0.75rem; color: gray; text-align: right; }
    
-   /* Box Container Styling - Sharpened Boundaries */
+   /* Box Container Styling - Sharp Boundaries */
    .kpi-box {
        background-color: #F8FAFC;
        padding: 10px;
-       border-radius: 0px; /* Sharp corners */
-       border: 2px solid #475569; /* Thicker, darker border */
+       border-radius: 0px; 
+       border: 2px solid #475569; 
        height: 100%;
    }
    .box-label {
@@ -34,16 +34,15 @@ st.markdown("""
 
    /* Small KPI Card Styling */
    .kpi-card {
-       background-color: #FFFFFF;
        padding: 6px 2px;
        border-radius: 2px;
        border-top: 3px solid #1E3A8A;
        text-align: center;
        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
    }
-   .kpi-label { font-size: 0.6rem; color: #64748B; font-weight: 700; margin-bottom: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
+   .kpi-label { font-size: 0.6rem; color: #475569; font-weight: 700; margin-bottom: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
    .kpi-value { font-size: 1rem; color: #1E3A8A; font-weight: 700; margin: 0; line-height: 1; }
-   .kpi-pc { font-size: 0.65rem; color: #10B981; font-weight: 500; margin-top: 1px; }
+   .kpi-pc { font-size: 0.65rem; color: #0F172A; font-weight: 600; margin-top: 1px; }
    </style>
    """, unsafe_allow_html=True)
 
@@ -123,9 +122,17 @@ def map_wc(val):
     return 'Others'
 
 def render_kpi(label, value, total):
+    # Color Mapping Logic
+    lbl = label.lower()
+    bg = "#F1F5F9" # Default Gray
+    if "total" in lbl: bg = "#E0F2FE" # Light Blue
+    elif any(x in lbl for x in ["appr", "done", "live"]): bg = "#DCFCE7" # Light Green
+    elif any(x in lbl for x in ["rew", "pend", "paper", "comm"]): bg = "#FEF9C3" # Light Yellow
+    elif "can" in lbl or "rej" in lbl: bg = "#FEE2E2" # Light Red
+    
     percent = (value / total * 100) if total > 0 else 0
     st.markdown(f"""
-        <div class="kpi-card">
+        <div class="kpi-card" style="background-color: {bg};">
             <p class="kpi-label">{label}</p>
             <p class="kpi-value">{value:,}</p>
             <p class="kpi-pc">{percent:.1f}%</p>
@@ -209,8 +216,8 @@ else:
         group_4 = [
             ("Live", len(ag2[ag2['P_Status'] == 'Live']), total_ag2 if total_ag2 > 0 else total_apps),
             ("Committed", len(ag2[ag2['P_Status'] == 'Committed']), total_ag2 if total_ag2 > 0 else total_apps),
-            ("Comm. Cancelled", len(ag2[ag2['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps),
-            ("Comm. Others", len(ag2[ag2['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
+            ("Portal Cancelled", len(ag2[ag2['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps),
+            ("Portal Others", len(ag2[ag2['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
         ]
 
         # Render Layout
