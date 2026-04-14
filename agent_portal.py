@@ -318,7 +318,7 @@ else:
 
         st.write("---")
         
-        # ---------------- TRENDS & CALENDAR (REPLACED FUNNEL) ----------------
+        # ---------------- TRENDS & CALENDAR ----------------
         col_trend, col_cal = st.columns([3, 2])
         with col_trend:
             st.subheader("📈 My Trend")
@@ -338,13 +338,10 @@ else:
         with col_cal:
             st.subheader("🗓️ Sales Activity Calendar")
             
+            # Updated Logic: ONLY Sunday is a holiday. 
+            # 2nd and 4th Saturdays are now WORKING.
             def is_holiday(dt):
-                wd = dt.weekday() # 0=Mon, 6=Sun
-                if wd == 6: return True # Sunday
-                if wd == 5: # Saturday check
-                    week_num = (dt.day - 1) // 7 + 1
-                    return week_num in [2, 4] # 2nd and 4th Sat are holidays
-                return False
+                return dt.weekday() == 6 # 6 is Sunday
 
             c_month_col, c_year_col = st.columns(2)
             sel_month = c_month_col.selectbox("Month", list(calendar.month_name)[1:], index=today_date.month-1)
@@ -387,7 +384,7 @@ else:
                 plot_bgcolor='white'
             )
             st.plotly_chart(fig_cal, use_container_width=True)
-            st.caption("🟢 Sales | 🔘 Holiday")
+            st.caption("🟢 Sales | 🔘 Holiday (Sunday)")
 
         st.write("---")
 
