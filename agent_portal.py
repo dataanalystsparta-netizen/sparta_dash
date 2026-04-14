@@ -14,18 +14,18 @@ st.markdown("""
     h3 { margin-bottom: 0.5rem !important; font-size: 1.1rem !important; color: #1E3A8A; }
    .last-updated { font-size: 0.75rem; color: gray; text-align: right; }
    
-   /* Box Container Styling */
+   /* Box Container Styling - Sharpened Boundaries */
    .kpi-box {
-       background-color: #F1F5F9;
+       background-color: #F8FAFC;
        padding: 10px;
-       border-radius: 8px;
-       border: 1px solid #E2E8F0;
+       border-radius: 0px; /* Sharp corners */
+       border: 2px solid #475569; /* Thicker, darker border */
        height: 100%;
    }
    .box-label {
        font-size: 0.7rem;
        font-weight: 800;
-       color: #475569;
+       color: #1E3A8A;
        text-align: center;
        margin-bottom: 8px;
        text-transform: uppercase;
@@ -36,7 +36,7 @@ st.markdown("""
    .kpi-card {
        background-color: #FFFFFF;
        padding: 6px 2px;
-       border-radius: 4px;
+       border-radius: 2px;
        border-top: 3px solid #1E3A8A;
        text-align: center;
        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
@@ -214,7 +214,7 @@ else:
         ]
 
         # Render Layout
-        b1, b2, b3, b4 = st.columns([1, 2.5, 2.5, 2])
+        b1, b2, b3, b4 = st.columns([1.2, 2.5, 2.5, 2.2])
         
         with b1: # Box 1: Total Apps
             st.markdown('<div class="kpi-box"><p class="box-label">Total Apps</p>', unsafe_allow_html=True)
