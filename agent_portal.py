@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go 
 
 st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
-
+#
 st.markdown("""
    <style>
    .block-container { max-width: 95%; padding-top: 3rem; }
@@ -15,10 +15,6 @@ st.markdown("""
    .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
    [data-testid="stMetricValue"] { font-size: 1.6rem !important; color: #1E3A8A; }
    [data-testid="stMetricLabel"] { font-size: 0.85rem !important; white-space: nowrap; }
-   .kpi-box { text-align: center; padding: 10px; background-color: #F8FAFC; border-radius: 8px; border: 1px solid #E2E8F0; }
-   .kpi-label { font-size: 0.8rem; color: #64748B; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
-   .kpi-value { font-size: 1.5rem; color: #1E3A8A; font-weight: bold; margin-bottom: 0px; }
-   .kpi-perc { font-size: 0.75rem; color: #059669; font-weight: 500; }
    </style>
    """, unsafe_allow_html=True)
 
@@ -87,6 +83,8 @@ def fetch_data():
     df2 = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
     
     # Robust Date Parsing Logic for Mixed Formats:
+    # 1. We identify rows that look like UK format (containing '/')
+    # 2. We parse the rest as standard ISO (YYYY-MM-DD)
     def robust_date_parser(date_str):
         date_str = str(date_str).strip()
         try:
@@ -97,6 +95,8 @@ def fetch_data():
             return pd.NaT
 
     df2['Date_Parsed'] = df2['Sale Date'].apply(robust_date_parser)
+    
+    # Standardize Advisor names for mapping
     df2['Advisor'] = df2['Agent'].astype(str).str.strip().str.title()
 
     try:
@@ -179,73 +179,26 @@ else:
         ag1 = ag1[(ag1['Date_Parsed'].dt.date >= start_date) & (ag1['Date_Parsed'].dt.date <= end_date)]
         ag2 = ag2[(ag2['Date_Parsed'].dt.date >= start_date) & (ag2['Date_Parsed'].dt.date <= end_date)]
         
-        # Mapping statuses
         ag1['Q_Status'] = ag1['Quality Status'].apply(map_quality)
         ag2['P_Status'] = ag2['Status'].apply(map_portal)
-        wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
-        if wc_col: ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
 
-        # Helper function for KPI card with percentage underneath
-        def kpi_card(label, value, total, prefix=""):
-            perc = f"{(value / total * 100):.1f}%" if total > 0 else "0.0%"
-            st.markdown(f"""
-                <div class="kpi-box">
-                    <div class="kpi-label">{label}</div>
-                    <div class="kpi-value">{value:,}</div>
-                    <div class="kpi-perc">{perc} {prefix}</div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        # Pre-calculating Quality counts
         total_apps = len(ag1)
-        q_appr = len(ag1[ag1['Q_Status'] == 'Approved'])
-        q_can = len(ag1[ag1['Q_Status'] == 'Cancelled'])
-        q_rej = len(ag1[ag1['Q_Status'] == 'Rejected'])
-        q_rew = len(ag1[ag1['Q_Status'] == 'Rework'])
-
-        # Pre-calculating Welcome Call counts
-        wc_done = len(ag1[ag1['WC_Clean'] == 'Done']) if wc_col else 0
-        wc_pend = len(ag1[ag1['WC_Clean'] == 'Pending']) if wc_col else 0
-        wc_paper = len(ag1[ag1['WC_Clean'] == 'Paperwork']) if wc_col else 0
-        wc_can = len(ag1[ag1['WC_Clean'] == 'Cancelled']) if wc_col else 0
-
-        # Pre-calculating Portal counts
-        p_live = len(ag2[ag2['P_Status'] == 'Live'])
-        p_com = len(ag2[ag2['P_Status'] == 'Committed'])
-        p_can = len(ag2[ag2['P_Status'] == 'Cancelled'])
-
+        approved = len(ag1[ag1['Q_Status'] == 'Approved'])
+        approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
+        total_committed_apps = len(ag2) 
+        committed_rate = f"{(total_committed_apps / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
+        live = len(ag2[ag2['P_Status'] == 'Live'])
+        live_rate = f"{(live / total_committed_apps * 100):.1f}%" if total_committed_apps > 0 else "0.0%"
+        
         with st.container(border=True):
-            # Row 1: Quality Section
-            st.markdown("<p style='font-weight:bold; color:#1E3A8A; margin-bottom:10px;'>QUALITY PERFORMANCE</p>", unsafe_allow_html=True)
-            r1c1, r1c2, r1c3, r1c4, r1c5 = st.columns(5)
-            with r1c1: 
-                st.markdown(f'<div class="kpi-box"><div class="kpi-label">Total Apps</div><div class="kpi-value">{total_apps:,}</div><div class="kpi-perc">100% Volume</div></div>', unsafe_allow_html=True)
-            with r1c2: kpi_card("Q Approved", q_appr, total_apps)
-            with r1c3: kpi_card("Q Cancelled", q_can, total_apps)
-            with r1c4: kpi_card("Q Rejected", q_rej, total_apps)
-            with r1c5: kpi_card("Rework Req.", q_rew, total_apps)
-            
-            st.write("") # Spacer
-
-            # Row 2: Welcome Call Section
-            st.markdown("<p style='font-weight:bold; color:#1E3A8A; margin-bottom:10px;'>WELCOME CALL STATUS</p>", unsafe_allow_html=True)
-            r2c1, r2c2, r2c3, r2c4, r2c5 = st.columns(5)
-            with r2c1: kpi_card("WC Done", wc_done, total_apps)
-            with r2c2: kpi_card("WC Pending", wc_pend, total_apps)
-            with r2c3: kpi_card("WC Paperwork", wc_paper, total_apps)
-            with r2c4: kpi_card("WC Cancelled", wc_can, total_apps)
-            with r2c5: st.empty()
-
-            st.write("") # Spacer
-
-            # Row 3: Portal Section
-            st.markdown("<p style='font-weight:bold; color:#1E3A8A; margin-bottom:10px;'>PORTAL & LIVE STATUS</p>", unsafe_allow_html=True)
-            r3c1, r3c2, r3c3, r3c4, r3c5 = st.columns(5)
-            with r3c1: kpi_card("Committed", p_com, total_apps, "of total")
-            with r3c2: kpi_card("Live", p_live, p_com, "of committed")
-            with r3c3: kpi_card("Portal Cancel", p_can, p_com, "of committed")
-            with r3c4: st.empty()
-            with r3c5: st.empty()
+            m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
+            m1.metric("📝 Tot. Apps", f"{total_apps:,}")
+            m2.metric("✅ Approved", f"{approved:,}")
+            m3.metric("📈 Approv. Rate", approval_rate)
+            m4.metric("📦 Committed", f"{total_committed_apps:,}")
+            m5.metric("📋 Commit. Rate", committed_rate)
+            m6.metric("🌐 Live", f"{live:,}")
+            m7.metric("🚀 Live Rate", live_rate)
 
         st.subheader("📅 Data Breakdown")
         ag1['Date'] = ag1['Date_Parsed'].dt.date
@@ -292,7 +245,9 @@ else:
 
         with cc:
             st.markdown("##### Welcome Call Status")
+            wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
             if wc_col and not ag1.empty:
+                ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
                 period_wc = ag1.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
                 wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
                 period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
@@ -347,26 +302,35 @@ else:
             recent_log = ag1.sort_values(by='Date_Parsed', ascending=False).head(20)
             actual_cols = [c for c in display_cols if c in ag1.columns]
             
+            # --- ADDED: Row Styling Function ---
             def style_log_row(row):
                 styles = [''] * len(row)
+                
+                # 1. Determine Color for Quality Section (First 5 columns)
                 q_color = ''
                 q_val = str(row.get('Quality Status', '')).lower()
-                if any(x in q_val for x in ['appr', 'pass']): q_color = 'background-color: rgba(167, 243, 208, 0.3)'
-                elif any(x in q_val for x in ['rew', 'repro']): q_color = 'background-color: rgba(253, 230, 138, 0.3)'
-                elif any(x in q_val for x in ['can', 'rej']): q_color = 'background-color: rgba(254, 202, 202, 0.3)'
+                if any(x in q_val for x in ['appr', 'pass']): q_color = 'background-color: rgba(167, 243, 208, 0.3)' # Soft Green
+                elif any(x in q_val for x in ['rew', 'repro']): q_color = 'background-color: rgba(253, 230, 138, 0.3)' # Soft Yellow
+                elif any(x in q_val for x in ['can', 'rej']): q_color = 'background-color: rgba(254, 202, 202, 0.3)' # Soft Red
 
+                # 2. Determine Color for Status/WC Section (Last 2 columns)
                 wc_color = ''
                 wc_val = str(row.get('Status', '')).lower()
                 if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']): wc_color = 'background-color: rgba(167, 243, 208, 0.3)'
                 elif any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']): wc_color = 'background-color: rgba(253, 230, 138, 0.3)'
                 elif any(x in wc_val for x in ['can', 'rej']): wc_color = 'background-color: rgba(254, 202, 202, 0.3)'
 
+                # 3. Apply colors to the respective columns
                 quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks']
                 for i, col in enumerate(row.index):
-                    if col in quality_cols: styles[i] = q_color
-                    else: styles[i] = wc_color
+                    if col in quality_cols:
+                        styles[i] = q_color
+                    else:
+                        styles[i] = wc_color
+                        
                 return styles
             
+            # Apply styling and display
             styled_log = recent_log[actual_cols].style.apply(style_log_row, axis=1)
             st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
