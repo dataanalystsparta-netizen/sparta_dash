@@ -336,19 +336,53 @@ else:
                         .map(lambda x: 'background-color: transparent' if x == 0 else '')
                     st.dataframe(styled_port, use_container_width=True)
 
-        st.subheader("📈 My Trend")
-        if not ag1.empty:
-            d_apps = ag1.groupby(chart_group_col).size().to_frame('Total Apps')
-            d_appr = ag1[ag1['Q_Status'] == 'Approved'].groupby(chart_group_col).size().to_frame('Approved')
-            d_live = ag2[ag2['P_Status'] == 'Live'].groupby(chart_group_col).size().to_frame('Live')
-            i_comb = d_apps.join([d_appr, d_live], how='left').fillna(0).reset_index()
-            i_comb[chart_group_col] = i_comb[chart_group_col].astype(str)
-            fig = go.Figure()
-            fig.add_trace(go.Bar(x=i_comb[chart_group_col], y=i_comb['Total Apps'], name="Total Applications", marker_color='#60A5FA'))
-            fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Approved'], name="Quality Approved Applications", line=dict(color='#059669', width=3)))
-            fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Live'], name="Live Applications", line=dict(color='#F59E0B', width=3)))
-            fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0), xaxis_title="Date" if view_mode=="Daily" else "Month")
-            st.plotly_chart(fig, use_container_width=True)
+        st.write("---")
+        
+        # ---------------- TRENDS & FUNNEL ----------------
+        col_trend, col_funnel = st.columns([3, 2])
+        
+        with col_trend:
+            st.subheader("📈 My Trend")
+            if not ag1.empty:
+                d_apps = ag1.groupby(chart_group_col).size().to_frame('Total Apps')
+                d_appr = ag1[ag1['Q_Status'] == 'Approved'].groupby(chart_group_col).size().to_frame('Approved')
+                d_live = ag2[ag2['P_Status'] == 'Live'].groupby(chart_group_col).size().to_frame('Live')
+                i_comb = d_apps.join([d_appr, d_live], how='left').fillna(0).reset_index()
+                i_comb[chart_group_col] = i_comb[chart_group_col].astype(str)
+                fig = go.Figure()
+                fig.add_trace(go.Bar(x=i_comb[chart_group_col], y=i_comb['Total Apps'], name="Total Applications", marker_color='#60A5FA'))
+                fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Approved'], name="Quality Approved Applications", line=dict(color='#059669', width=3)))
+                fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Live'], name="Live Applications", line=dict(color='#F59E0B', width=3)))
+                fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0), xaxis_title="Date" if view_mode=="Daily" else "Month")
+                st.plotly_chart(fig, use_container_width=True)
+
+        with col_funnel:
+            st.subheader("🌪️ Conversion Funnel")
+            if not ag1.empty:
+                f_apps = total_apps
+                f_appr = len(ag1[ag1['Q_Status'] == 'Approved'])
+                f_live = len(ag2[ag2['P_Status'] == 'Live'])
+                
+                stages = ["Total Apps", "Quality Approved", "Live"]
+                values = [f_apps, f_appr, f_live]
+                colors = ['#60A5FA', '#34D399', '#FBBF24']
+                
+                if wc_col:
+                    f_wc = len(ag1[ag1['WC_Clean'] == 'Done'])
+                    stages.insert(2, "WC Done")
+                    values.insert(2, f_wc)
+                    colors.insert(2, '#A78BFA')
+
+                fig_funnel = go.Figure(go.Funnel(
+                    y = stages,
+                    x = values,
+                    textinfo = "value+percent initial",
+                    marker = {"color": colors}
+                ))
+                fig_funnel.update_layout(margin=dict(l=20, r=20, t=30, b=0))
+                st.plotly_chart(fig_funnel, use_container_width=True)
+
+        st.write("---")
 
         st.subheader("🔍 Recent Applications Log")
         if not ag1.empty:
