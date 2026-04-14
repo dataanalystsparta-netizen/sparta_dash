@@ -209,8 +209,8 @@ else:
         group_4 = [
             ("Live", len(ag2[ag2['P_Status'] == 'Live']), total_ag2 if total_ag2 > 0 else total_apps),
             ("Committed", len(ag2[ag2['P_Status'] == 'Committed']), total_ag2 if total_ag2 > 0 else total_apps),
-            ("Portal Cancelled", len(ag2[ag2['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps),
-            ("Portal Others", len(ag2[ag2['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
+            ("Comm. Cancelled", len(ag2[ag2['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps),
+            ("Comm. Others", len(ag2[ag2['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
         ]
 
         # Render Layout
