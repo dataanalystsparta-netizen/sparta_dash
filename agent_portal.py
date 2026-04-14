@@ -127,14 +127,13 @@ def map_wc(val):
 
 def render_kpi(label, value, total):
     lbl = label.lower()
-    bg = "#F1F5F9" # Default Gray
-    if "total" in lbl: bg = "#E0F2FE" # Light Blue
-    elif any(x in lbl for x in ["appr", "done", "live"]): bg = "#DCFCE7" # Light Green
-    elif any(x in lbl for x in ["rew", "pend", "paper", "comm"]): bg = "#FEF9C3" # Light Yellow
-    elif "can" in lbl or "rej" in lbl: bg = "#FEE2E2" # Light Red
+    bg = "#F1F5F9" 
+    if "total" in lbl: bg = "#E0F2FE" 
+    elif any(x in lbl for x in ["appr", "done", "live"]): bg = "#DCFCE7" 
+    elif any(x in lbl for x in ["rew", "pend", "paper", "comm"]): bg = "#FEF9C3" 
+    elif "can" in lbl or "rej" in lbl: bg = "#FEE2E2" 
     
     percent = (value / total * 100) if total > 0 else 0
-    # Logic to hide percentage if it is the "Total Apps" card
     pc_html = f'<p class="kpi-pc">{percent:.1f}%</p>' if "total apps" not in lbl else ""
     
     st.markdown(f"""
@@ -338,8 +337,8 @@ else:
 
         st.write("---")
         
-        # ---------------- TRENDS & FUNNEL ----------------
-        col_trend, col_funnel = st.columns([3, 2])
+        # ---------------- TRENDS & RECYCLING ANALYSIS ----------------
+        col_trend, col_segment = st.columns([3, 2])
         
         with col_trend:
             st.subheader("📈 My Trend")
@@ -356,31 +355,46 @@ else:
                 fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0), xaxis_title="Date" if view_mode=="Daily" else "Month")
                 st.plotly_chart(fig, use_container_width=True)
 
-        with col_funnel:
-            st.subheader("🌪️ Conversion Funnel")
-            if not ag1.empty:
-                f_apps = total_apps
-                f_appr = len(ag1[ag1['Q_Status'] == 'Approved'])
-                f_live = len(ag2[ag2['P_Status'] == 'Live'])
+        with col_segment:
+            st.subheader("♻️ Success by Lead Category")
+            segment_col = None
+            # The script will automatically search for your Talk Time buckets or Campaign column
+            for col in ['Talk Time Bucket', 'Lead Segment', 'Campaign', 'Lead Type', 'Source']:
+                if col in ag1.columns:
+                    segment_col = col
+                    break
+            
+            if segment_col and not ag1.empty:
+                seg_data = ag1.groupby(segment_col).agg(
+                    Total=('Q_Status', 'count'),
+                    Approved=('Q_Status', lambda x: (x == 'Approved').sum())
+                ).reset_index()
                 
-                stages = ["Total Apps", "Quality Approved", "Live"]
-                values = [f_apps, f_appr, f_live]
-                colors = ['#60A5FA', '#34D399', '#FBBF24']
+                # Filter out segments with zero apps to keep it clean
+                seg_data = seg_data[seg_data['Total'] > 0]
+                seg_data['Approval Rate'] = (seg_data['Approved'] / seg_data['Total'] * 100).round(1)
+                seg_data = seg_data.sort_values('Approval Rate', ascending=True) 
                 
-                if wc_col:
-                    f_wc = len(ag1[ag1['WC_Clean'] == 'Done'])
-                    stages.insert(2, "WC Done")
-                    values.insert(2, f_wc)
-                    colors.insert(2, '#A78BFA')
-
-                fig_funnel = go.Figure(go.Funnel(
-                    y = stages,
-                    x = values,
-                    textinfo = "value+percent initial",
-                    marker = {"color": colors}
+                fig_recycle = go.Figure()
+                fig_recycle.add_trace(go.Bar(
+                    y=seg_data[segment_col].astype(str), 
+                    x=seg_data['Approval Rate'], 
+                    orientation='h',
+                    marker=dict(color='#10B981'),
+                    text=seg_data['Approval Rate'].astype(str) + '%',
+                    textposition='auto',
+                    hovertemplate="<b>%{y}</b><br>Approval Rate: %{x}%<br>Approved: %{customdata[0]} / %{customdata[1]}<extra></extra>",
+                    customdata=seg_data[['Approved', 'Total']]
                 ))
-                fig_funnel.update_layout(margin=dict(l=20, r=20, t=30, b=0))
-                st.plotly_chart(fig_funnel, use_container_width=True)
+                fig_recycle.update_layout(
+                    margin=dict(l=0, r=20, t=30, b=0),
+                    xaxis_title="Approval Rate (%)",
+                    yaxis_title=None,
+                    hovermode="y unified"
+                )
+                st.plotly_chart(fig_recycle, use_container_width=True)
+            else:
+                st.info("💡 To view Recycling Analysis, ensure your Google Sheet has a column named 'Talk Time Bucket', 'Lead Segment', or 'Campaign' to track engagement levels.")
 
         st.write("---")
 
