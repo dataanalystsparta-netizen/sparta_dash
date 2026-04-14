@@ -14,19 +14,36 @@ st.markdown("""
     h3 { margin-bottom: 0.5rem !important; font-size: 1.1rem !important; color: #1E3A8A; }
    .last-updated { font-size: 0.75rem; color: gray; text-align: right; }
    
-   /* Extra Small KPI Styling for Single Row */
+   /* Box Container Styling */
+   .kpi-box {
+       background-color: #F1F5F9;
+       padding: 10px;
+       border-radius: 8px;
+       border: 1px solid #E2E8F0;
+       height: 100%;
+   }
+   .box-label {
+       font-size: 0.7rem;
+       font-weight: 800;
+       color: #475569;
+       text-align: center;
+       margin-bottom: 8px;
+       text-transform: uppercase;
+       letter-spacing: 0.5px;
+   }
+
+   /* Small KPI Card Styling */
    .kpi-card {
-       background-color: #F8FAFC;
-       padding: 8px 4px;
-       border-radius: 6px;
+       background-color: #FFFFFF;
+       padding: 6px 2px;
+       border-radius: 4px;
        border-top: 3px solid #1E3A8A;
        text-align: center;
        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-       margin-bottom: 10px;
    }
-   .kpi-label { font-size: 0.65rem; color: #64748B; font-weight: 700; margin-bottom: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
-   .kpi-value { font-size: 1.1rem; color: #1E3A8A; font-weight: 700; margin: 0; line-height: 1.1; }
-   .kpi-pc { font-size: 0.7rem; color: #10B981; font-weight: 500; margin-top: 1px; }
+   .kpi-label { font-size: 0.6rem; color: #64748B; font-weight: 700; margin-bottom: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
+   .kpi-value { font-size: 1rem; color: #1E3A8A; font-weight: 700; margin: 0; line-height: 1; }
+   .kpi-pc { font-size: 0.65rem; color: #10B981; font-weight: 500; margin-top: 1px; }
    </style>
    """, unsafe_allow_html=True)
 
@@ -167,44 +184,69 @@ else:
         wc_col = 'Status' if 'Status' in ag1.columns else 'Welcome call Status' if 'Welcome call Status' in ag1.columns else None
         if wc_col: ag1['WC_Clean'] = ag1[wc_col].apply(map_wc)
 
-        # ---------------- CONSOLIDATED KPI ROW ----------------
+        # ---------------- CATEGORISED KPI BOXES ----------------
         total_apps = len(ag1)
         total_ag2 = len(ag2)
         
-        # Prepare all possible KPI data
-        all_kpis = [
-            ("Total Apps", total_apps, total_apps),
+        # Define Groups
+        group_1 = [("Total Apps", total_apps, total_apps)]
+        group_2 = [
             ("Approved", len(ag1[ag1['Q_Status'] == 'Approved']), total_apps),
             ("Rework", len(ag1[ag1['Q_Status'] == 'Rework']), total_apps),
             ("Cancelled", len(ag1[ag1['Q_Status'] == 'Cancelled']), total_apps),
             ("Rejected", len(ag1[ag1['Q_Status'] == 'Rejected']), total_apps),
             ("Others", len(ag1[ag1['Q_Status'] == 'Others']), total_apps)
         ]
-        
+        group_3 = []
         if wc_col:
-            all_kpis.extend([
+            group_3 = [
                 ("WC Done", len(ag1[ag1['WC_Clean'] == 'Done']), total_apps),
                 ("WC Pending", len(ag1[ag1['WC_Clean'] == 'Pending']), total_apps),
                 ("WC Paperwork", len(ag1[ag1['WC_Clean'] == 'Paperwork']), total_apps),
                 ("WC Cancelled", len(ag1[ag1['WC_Clean'] == 'Cancelled']), total_apps),
                 ("WC Others", len(ag1[ag1['WC_Clean'] == 'Others']), total_apps)
-            ])
-            
-        all_kpis.extend([
+            ]
+        group_4 = [
             ("Live", len(ag2[ag2['P_Status'] == 'Live']), total_ag2 if total_ag2 > 0 else total_apps),
             ("Committed", len(ag2[ag2['P_Status'] == 'Committed']), total_ag2 if total_ag2 > 0 else total_apps),
             ("Portal Cancelled", len(ag2[ag2['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps),
             ("Portal Others", len(ag2[ag2['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
-        ])
+        ]
 
-        # Filter out 0 values
-        active_kpis = [k for k in all_kpis if k[1] > 0]
+        # Render Layout
+        b1, b2, b3, b4 = st.columns([1, 2.5, 2.5, 2])
+        
+        with b1: # Box 1: Total Apps
+            st.markdown('<div class="kpi-box"><p class="box-label">Total Apps</p>', unsafe_allow_html=True)
+            render_kpi(group_1[0][0], group_1[0][1], group_1[0][2])
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        if active_kpis:
-            cols = st.columns(len(active_kpis))
-            for i, kpi in enumerate(active_kpis):
-                with cols[i]:
-                    render_kpi(kpi[0], kpi[1], kpi[2])
+        with b2: # Box 2: Quality Cards
+            active_g2 = [k for k in group_2 if k[1] > 0]
+            if active_g2:
+                st.markdown('<div class="kpi-box"><p class="box-label">Quality Cards</p>', unsafe_allow_html=True)
+                cols = st.columns(len(active_g2))
+                for i, kpi in enumerate(active_g2):
+                    with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        with b3: # Box 3: Welcome Call Cards
+            active_g3 = [k for k in group_3 if k[1] > 0]
+            if active_g3:
+                st.markdown('<div class="kpi-box"><p class="box-label">Welcome Call Cards</p>', unsafe_allow_html=True)
+                cols = st.columns(len(active_g3))
+                for i, kpi in enumerate(active_g3):
+                    with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        with b4: # Box 4: Live Status Cards
+            active_g4 = [k for k in group_4 if k[1] > 0]
+            if active_g4:
+                st.markdown('<div class="kpi-box"><p class="box-label">Live Status Cards</p>', unsafe_allow_html=True)
+                cols = st.columns(len(active_g4))
+                for i, kpi in enumerate(active_g4):
+                    with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
+                st.markdown('</div>', unsafe_allow_html=True)
 
         st.write("---")
 
