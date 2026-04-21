@@ -1,4 +1,5 @@
 import streamlit as st
+import pd as pd
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
@@ -14,9 +15,15 @@ st.markdown("""
     <style>
     .block-container { max-width: 98%; padding-top: 1.5rem; }
     h3 { margin-bottom: 0.5rem !important; font-size: 1.1rem !important; color: #1E3A8A; }
+    h5 { font-size: 0.9rem !important; font-weight: 700; color: #475569; margin-bottom: 10px !important; }
     .last-updated { font-size: 0.75rem; color: gray; text-align: right; }
     
-    /* Improved Box Container - Modern & Subtle */
+    /* Modern Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #f1f1f1; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+    /* Improved Box Container */
     .kpi-box {
         background-color: #F1F5F9; 
         padding: 15px;
@@ -25,6 +32,17 @@ st.markdown("""
         height: 100%;
         box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
     }
+    
+    /* Table Container Styling */
+    .table-container {
+        background-color: white;
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid #E2E8F0;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        margin-bottom: 20px;
+    }
+
     .box-label {
         font-size: 0.75rem;
         font-weight: 800;
@@ -46,7 +64,7 @@ st.markdown("""
         border-radius: 2px;
     }
 
-    /* KPI Card - Polished with Depth */
+    /* KPI Card */
     .kpi-card {
         padding: 12px 5px;
         border-radius: 10px;
@@ -60,44 +78,20 @@ st.markdown("""
         flex-direction: column;
         justify-content: center;
     }
-    
     .kpi-card:hover {
         transform: translateY(-3px);
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
     }
 
-    .kpi-label { 
-        font-size: 0.65rem; 
-        color: #64748B; 
-        font-weight: 700; 
-        margin-bottom: 4px; 
-        text-transform: uppercase; 
-    }
-    .kpi-value { 
-        font-size: 1.2rem; 
-        color: #0F172A; 
-        font-weight: 800; 
-        margin: 0; 
-        line-height: 1; 
-    }
+    .kpi-label { font-size: 0.65rem; color: #64748B; font-weight: 700; margin-bottom: 4px; text-transform: uppercase; }
+    .kpi-value { font-size: 1.2rem; color: #0F172A; font-weight: 800; margin: 0; line-height: 1; }
     .kpi-pc { 
-        font-size: 0.7rem; 
-        color: #1E3A8A; 
-        font-weight: 700; 
-        margin-top: 4px;
-        background: rgba(30, 58, 138, 0.1);
-        display: inline-block;
-        padding: 2px 6px;
-        border-radius: 4px;
+        font-size: 0.7rem; color: #1E3A8A; font-weight: 700; margin-top: 4px;
+        background: rgba(30, 58, 138, 0.1); display: inline-block; padding: 2px 6px; border-radius: 4px;
     }
 
     /* Insight Flags */
-    .insight-container {
-        display: flex;
-        gap: 12px;
-        overflow-x: auto;
-        padding: 10px 5px 20px 5px;
-    }
+    .insight-container { display: flex; gap: 12px; overflow-x: auto; padding: 10px 5px 20px 5px; }
     .insight-card {
         background: #FFFFFF;
         border-left: 5px solid #1E3A8A;
@@ -109,6 +103,13 @@ st.markdown("""
     .insight-title { font-size: 0.7rem; font-weight: 800; color: #64748B; margin: 0; text-transform: uppercase; }
     .insight-phrase { font-size: 0.9rem; font-weight: 700; color: #1E3A8A; margin: 4px 0; }
     .insight-comment { font-size: 0.75rem; color: #475569; margin: 0; line-height: 1.3; }
+    
+    /* Target Streamlit Dataframe to add rounded corners */
+    [data-testid="stDataFrame"] {
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid #E2E8F0;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -189,7 +190,6 @@ def map_wc(val):
 
 def render_kpi(label, value, total):
     lbl = label.lower()
-    # Subtle accent colors for the card border
     accent = "#94A3B8" 
     if "total" in lbl: accent = "#3B82F6"
     elif any(x in lbl for x in ["appr", "done", "live"]): accent = "#10B981"
@@ -261,7 +261,7 @@ else:
         wc_col = 'Status' if 'Status' in ag1_filtered.columns else 'Welcome call Status' if 'Welcome call Status' in ag1_filtered.columns else None
         if wc_col: ag1_filtered['WC_Clean'] = ag1_filtered[wc_col].apply(map_wc)
 
-        # ---------------- CATEGORISED KPI BOXES ----------------
+        # ---------------- KPI BOXES ----------------
         total_apps = len(ag1_filtered)
         total_ag2 = len(ag2_filtered)
         
@@ -321,7 +321,6 @@ else:
 
         # ---------------- INSIGHT FLAGS ----------------
         flags_html = ""
-        
         if total_apps > 0:
             q_appr = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved']) / total_apps
             q_can = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled']) / total_apps
@@ -329,24 +328,9 @@ else:
             q_rew = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rework']) / total_apps
 
             if q_appr > 0.60: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Quality</p><p class="insight-phrase">High Approval Rate</p><p class="insight-comment">Excellent pitch and quality compliance!</p></div>'
-            elif q_appr < 0.60: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">Low Approval Rate</p><p class="insight-comment">Review the quality guidelines to increase quality approval!</p></div>'
-            
-            if q_can > 0.40: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Quality</p><p class="insight-phrase">High Cancellation</p><p class="insight-comment">High Quality Cancellations, review the quality guidelines!</p></div>'
-            if q_rej > 0.20: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">High Rejection</p><p class="insight-comment">High Quality Rejections! Pay attention to quality guidelines!</p></div>'
-            if q_rew > 0.30: flags_html += '<div class="insight-card" style="border-color:#3b82f6"><p class="insight-title">Quality</p><p class="insight-phrase">Frequent Reworks</p><p class="insight-comment">Pay closer attention to quality guidelines, to avoid large number of Quality Reworks.</p></div>'
-
-            if wc_col:
-                wc_done = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done']) / total_apps
-                wc_can = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Cancelled']) / total_apps
-                if wc_done < 0.70: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Welcome Call</p><p class="insight-phrase">Low Completion</p><p class="insight-comment">Address customer requirements closely to increase Welcome call approvals!</p></div>'
-                if wc_can > 0.15: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Welcome Call</p><p class="insight-phrase">High WC Cancellation</p><p class="insight-comment">Address customer doubts in the sales call to avoid Welcome call cancellations!</p></div>'
-
-        if total_ag2 > 0:
-            l_live = len(ag2_filtered[ag2_filtered['P_Status'] == 'Live']) / total_ag2
-            l_can = len(ag2_filtered[ag2_filtered['P_Status'] == 'Cancelled']) / total_ag2
-            if l_live > 0.20: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Live Stage</p><p class="insight-phrase">Strong Conversion</p><p class="insight-comment">Good live rate! Great overall quality of applications!</p></div>'
-            elif l_live < 0.20: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Live Stage</p><p class="insight-phrase">Low Live Rate</p><p class="insight-comment">Identify bottlenecks preventing sales from going live.</p></div>'
-            if l_can > 0.65: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Live Stage</p><p class="insight-phrase">High Final Loss</p><p class="insight-comment">Large drops between applications and Committed. Identify bottlenecks!</p></div>'
+            elif q_appr < 0.60: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">Low Approval Rate</p><p class="insight-comment">Review quality guidelines to increase approval!</p></div>'
+            if q_can > 0.40: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Quality</p><p class="insight-phrase">High Cancellation</p><p class="insight-comment">High cancellations detected!</p></div>'
+            if q_rej > 0.20: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">High Rejection</p><p class="insight-comment">Pay attention to rejection flags!</p></div>'
 
         if flags_html:
             st.write("")
@@ -355,6 +339,7 @@ else:
 
         st.write("---")
 
+        # ---------------- DATA BREAKDOWN TABLES ----------------
         st.subheader("📅 Data Breakdown")
         ag1_filtered['Date'] = ag1_filtered['Date_Parsed'].dt.date
         ag2_filtered['Date'] = ag2_filtered['Date_Parsed'].dt.date
@@ -370,47 +355,48 @@ else:
             chart_group_col = 'Period'
         
         ca, cb, cc, cd = st.columns(4)
+        
+        # Styles for the mini-tables
+        def get_styled_table(df, col_name, color):
+            vmax = max(df.max().max(), 1.1)
+            return df.style.format(lambda x: "-" if x == 0 else x)\
+                .background_gradient(cmap=color, vmin=1, vmax=vmax)\
+                .map(lambda x: 'background-color: transparent; color: #94A3B8;' if x == 0 else 'font-weight: bold;')
+
         with ca:
             st.markdown("##### Applications")
             if not ag1_filtered.empty:
                 period_apps = ag1_filtered.groupby('Period').size().to_frame('Total Apps')
-                vmax_apps = max(period_apps.max().max(), 1.1)
-                styled_apps = period_apps.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', vmin=1, vmax=vmax_apps).map(lambda x: 'background-color: transparent' if x == 0 else '')
-                st.dataframe(styled_apps, use_container_width=True)
+                st.markdown('<div class="table-container">', unsafe_allow_html=True)
+                st.dataframe(get_styled_table(period_apps, 'Total Apps', 'Greens'), use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
         with cb:
-            st.markdown("##### Quality Audit Result")
+            st.markdown("##### Quality Audit")
             if not ag1_filtered.empty:
                 period_qual = ag1_filtered.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
-                qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
-                period_qual = period_qual.reindex(columns=qual_order, fill_value=0)
+                period_qual = period_qual.reindex(columns=['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others'], fill_value=0)
                 period_qual = period_qual.loc[:, (period_qual != 0).any(axis=0)]
-                if not period_qual.empty:
-                    vmax_qual = max(period_qual.max().max(), 1.1)
-                    styled_qual = period_qual.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])], vmin=1, vmax=vmax_qual).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Rework'])], vmin=1, vmax=vmax_qual).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Cancelled', 'Rejected'])], vmin=1, vmax=vmax_qual).map(lambda x: 'background-color: transparent' if x == 0 else '')
-                    st.dataframe(styled_qual, use_container_width=True)
+                st.markdown('<div class="table-container">', unsafe_allow_html=True)
+                st.dataframe(get_styled_table(period_qual, '', 'Blues'), use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
         with cc:
-            st.markdown("##### Welcome Call Status")
+            st.markdown("##### Welcome Call")
             if wc_col and not ag1_filtered.empty:
                 period_wc = ag1_filtered.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
-                wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
-                period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
+                period_wc = period_wc.reindex(columns=['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others'], fill_value=0)
                 period_wc = period_wc.loc[:, (period_wc != 0).any(axis=0)]
-                if not period_wc.empty:
-                    vmax_wc = max(period_wc.max().max(), 1.1)
-                    styled_wc = period_wc.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Done'])], vmin=1, vmax=vmax_wc).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Pending', 'Paperwork'])], vmin=1, vmax=vmax_wc).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_wc).map(lambda x: 'background-color: transparent' if x == 0 else '')
-                    st.dataframe(styled_wc, use_container_width=True)
-            else: st.info("No Welcome Call data.")
+                st.markdown('<div class="table-container">', unsafe_allow_html=True)
+                st.dataframe(get_styled_table(period_wc, '', 'Purples'), use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
         with cd:
             st.markdown("##### Live Status")
             if not ag2_filtered.empty:
                 period_port = ag2_filtered.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
-                port_order = ['Live', 'Committed', 'Cancelled', 'Others']
-                period_port = period_port.reindex(columns=port_order, fill_value=0)
+                period_port = period_port.reindex(columns=['Live', 'Committed', 'Cancelled', 'Others'], fill_value=0)
                 period_port = period_port.loc[:, (period_port != 0).any(axis=0)]
-                if not period_port.empty:
-                    vmax_port = max(period_port.max().max(), 1.1)
-                    styled_port = period_port.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1, vmax=vmax_port).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])], vmin=1, vmax=vmax_port).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_port).map(lambda x: 'background-color: transparent' if x == 0 else '')
-                    st.dataframe(styled_port, use_container_width=True)
+                st.markdown('<div class="table-container">', unsafe_allow_html=True)
+                st.dataframe(get_styled_table(period_port, '', 'YlOrBr'), use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
 
         st.write("---")
         
@@ -425,17 +411,16 @@ else:
                 i_comb = d_apps.join([d_appr, d_live], how='left').fillna(0).reset_index()
                 i_comb[chart_group_col] = i_comb[chart_group_col].astype(str)
                 fig = go.Figure()
-                fig.add_trace(go.Bar(x=i_comb[chart_group_col], y=i_comb['Total Apps'], name="Total Applications", marker_color='#60A5FA'))
-                fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Approved'], name="Quality Approved Applications", line=dict(color='#059669', width=3)))
-                fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Live'], name="Live Applications", line=dict(color='#F59E0B', width=3)))
-                fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0), xaxis_title="Date" if view_mode=="Daily" else "Month")
+                fig.add_trace(go.Bar(x=i_comb[chart_group_col], y=i_comb['Total Apps'], name="Total Applications", marker_color='#60A5FA', opacity=0.7))
+                fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Approved'], name="Quality Approved", line=dict(color='#059669', width=3), mode='lines+markers'))
+                fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Live'], name="Live", line=dict(color='#F59E0B', width=3), mode='lines+markers'))
+                fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig, use_container_width=True)
 
         with col_cal:
             st.subheader("🗓️ Sales Activity Calendar")
-            
             def is_holiday(dt):
-                wd = dt.weekday() # 0=Mon, 6=Sun
+                wd = dt.weekday()
                 if wd == 6: return True 
                 if wd == 5: 
                     week_num = (dt.day - 1) // 7 + 1
@@ -449,70 +434,65 @@ else:
             m_idx = list(calendar.month_name).index(sel_month)
             num_days = calendar.monthrange(sel_year, m_idx)[1]
             dates = [datetime.date(sel_year, m_idx, day) for day in range(1, num_days+1)]
-            
             daily_sales = ag1.groupby(ag1['Date_Parsed'].dt.date).size()
             cal_df = pd.DataFrame({
-                'Date': dates,
-                'Day': [d.day for d in dates],
+                'Date': dates, 'Day': [d.day for d in dates],
                 'Weekday': [d.strftime('%a') for d in dates],
                 'WeekNum': [int(d.strftime('%V')) if d.strftime('%V').isdigit() else 0 for d in dates],
                 'Sales': [daily_sales.get(d, 0) for d in dates],
                 'Type': ['Holiday' if is_holiday(d) else 'Working' for d in dates]
             })
 
-            cal_df['HoverText'] = cal_df.apply(lambda r: "Holiday" if r['Type'] == 'Holiday' else f"{r['Sales']}", axis=1)
-
             fig_cal = go.Figure()
             working_days = cal_df[cal_df['Type'] == 'Working']
             fig_cal.add_trace(go.Heatmap(
                 x=working_days['Weekday'], y=working_days['WeekNum'], z=working_days['Sales'],
-                text=working_days['Day'], 
-                customdata=working_days['HoverText'],
-                hovertemplate="%{customdata}<extra></extra>",
-                texttemplate="%{text}",
-                colorscale=[[0, 'white'], [0.1, '#d1fae5'], [1, '#047857']],
+                text=working_days['Day'], customdata=working_days['Sales'],
+                hovertemplate="Day %{text}: %{customdata} Sales<extra></extra>",
+                texttemplate="%{text}", colorscale=[[0, 'white'], [0.1, '#d1fae5'], [1, '#047857']],
                 showscale=False, xgap=3, ygap=3
             ))
-
             holidays = cal_df[cal_df['Type'] == 'Holiday']
             fig_cal.add_trace(go.Scatter(
                 x=holidays['Weekday'], y=holidays['WeekNum'], mode='markers+text',
-                marker=dict(symbol='square', size=35, color='#E2E8F0'),
-                text=holidays['Day'], 
-                customdata=holidays['HoverText'],
-                hovertemplate="%{customdata}<extra></extra>",
-                textfont=dict(color='#94A3B8'),
-                showlegend=False
+                marker=dict(symbol='square', size=30, color='#F1F5F9'),
+                text=holidays['Day'], textfont=dict(color='#94A3B8'), showlegend=False
             ))
-
-            fig_cal.update_layout(
-                height=300, margin=dict(l=0, r=0, t=10, b=10),
+            fig_cal.update_layout(height=280, margin=dict(l=0, r=0, t=10, b=10),
                 xaxis=dict(side="top", categoryorder='array', categoryarray=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
-                yaxis=dict(autorange="reversed", showgrid=False, zeroline=False, showticklabels=False),
-                plot_bgcolor='white'
-            )
+                yaxis=dict(autorange="reversed", showgrid=False, showticklabels=False), plot_bgcolor='white')
             st.plotly_chart(fig_cal, use_container_width=True)
-            st.caption("🟢 Sales | ⚪ No Sales | 🔘 Holiday ")
 
         st.write("---")
 
+        # ---------------- RECENT LOG ----------------
         st.subheader("🔍 Recent Applications Log")
         if not ag1_filtered.empty:
-            display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
+            display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Status', 'Welcome call Remarks']
             recent_log = ag1_filtered.sort_values(by='Date_Parsed', ascending=False).head(20)
             actual_cols = [c for c in display_cols if c in ag1_filtered.columns]
             
             def style_log_row(row):
-                styles = [''] * len(row)
                 q_val = str(row.get('Quality Status', '')).lower()
-                q_color = 'background-color: rgba(167, 243, 208, 0.3)' if any(x in q_val for x in ['appr', 'pass']) else 'background-color: rgba(253, 230, 138, 0.3)' if any(x in q_val for x in ['rew', 'repro']) else 'background-color: rgba(254, 202, 202, 0.3)' if any(x in q_val for x in ['can', 'rej']) else ''
                 wc_val = str(row.get('Status', '')).lower()
-                wc_color = 'background-color: rgba(167, 243, 208, 0.3)' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.3)' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.3)' if any(x in wc_val for x in ['can', 'rej']) else ''
-                quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks']
-                for i, col in enumerate(row.index): styles[i] = q_color if col in quality_cols else wc_color
+                
+                # Dynamic Colors for Status
+                q_bg = 'background-color: #ecfdf5;' if any(x in q_val for x in ['appr', 'pass']) else \
+                       'background-color: #fffbeb;' if any(x in q_val for x in ['rew', 'repro']) else \
+                       'background-color: #fef2f2;' if any(x in q_val for x in ['can', 'rej']) else ''
+                
+                wc_bg = 'background-color: #f0f9ff;' if any(x in wc_val for x in ['done', 'pass', 'live']) else ''
+                
+                styles = []
+                for col in row.index:
+                    if col in ['Quality Status', 'Quality Remarks']: styles.append(q_bg)
+                    elif col in ['Status', 'Welcome call Remarks']: styles.append(wc_bg)
+                    else: styles.append('')
                 return styles
             
+            st.markdown('<div class="table-container">', unsafe_allow_html=True)
             styled_log = recent_log[actual_cols].style.apply(style_log_row, axis=1)
             st.dataframe(styled_log, use_container_width=True, hide_index=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
     except Exception as e: st.error(f"Error: {e}")
