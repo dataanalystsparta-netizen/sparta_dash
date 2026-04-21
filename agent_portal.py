@@ -452,7 +452,7 @@ else:
                 plot_bgcolor='white'
             )
             st.plotly_chart(fig_cal, use_container_width=True)
-            st.caption("🟢 Sales | 🔘 Holiday")
+            st.caption("🟢 Sales | ⚪ No Sales | 🔘 Holiday ")
 
         st.write("---")
 
