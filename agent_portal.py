@@ -48,6 +48,25 @@ st.markdown("""
    .kpi-label { font-size: 0.6rem; color: #475569; font-weight: 700; margin-bottom: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
    .kpi-value { font-size: 1rem; color: #1E3A8A; font-weight: 700; margin: 0; line-height: 1; }
    .kpi-pc { font-size: 0.65rem; color: #0F172A; font-weight: 600; margin-top: 1px; }
+
+   /* NEW: Insight Flags Styling */
+   .insight-container {
+       display: flex;
+       gap: 10px;
+       overflow-x: auto;
+       padding: 5px 0px 15px 0px;
+   }
+   .insight-card {
+       background: #FFFFFF;
+       border-left: 4px solid #1E3A8A;
+       padding: 8px 12px;
+       min-width: 200px;
+       border-radius: 4px;
+       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+   }
+   .insight-title { font-size: 0.7rem; font-weight: 800; color: #475569; margin: 0; text-transform: uppercase; }
+   .insight-phrase { font-size: 0.85rem; font-weight: 700; color: #1E3A8A; margin: 2px 0; }
+   .insight-comment { font-size: 0.7rem; color: #64748B; margin: 0; line-height: 1.2; }
    </style>
    """, unsafe_allow_html=True)
 
@@ -199,7 +218,47 @@ else:
         wc_col = 'Status' if 'Status' in ag1_filtered.columns else 'Welcome call Status' if 'Welcome call Status' in ag1_filtered.columns else None
         if wc_col: ag1_filtered['WC_Clean'] = ag1_filtered[wc_col].apply(map_wc)
 
+        # ---------------- NEW: POINTS TO LOOK OUT (FLAGS) ----------------
+        total_apps = len(ag1_filtered)
+        total_ag2 = len(ag2_filtered)
+        flags_html = ""
+        
+        if total_apps > 0:
+            # Quality Checks
+            q_appr = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved']) / total_apps
+            q_can = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled']) / total_apps
+            q_rej = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rejected']) / total_apps
+            q_rew = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rework']) / total_apps
+
+            if q_appr > 0.85: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Quality</p><p class="insight-phrase">High Approval Rate</p><p class="insight-comment">Excellent pitch quality and compliance.</p></div>'
+            elif q_appr < 0.60: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">Low Approval Rate</p><p class="insight-comment">Review the quality guidelines to reduce loss.</p></div>'
+            
+            if q_can > 0.15: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Quality</p><p class="insight-phrase">High Cancellation</p><p class="insight-comment">Customer drop-off is high. Strengthen the close.</p></div>'
+            if q_rej > 0.15: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">High Rejection</p><p class="insight-comment">Check customer eligibility before submisson.</p></div>'
+            if q_rew > 0.15: flags_html += '<div class="insight-card" style="border-color:#3b82f6"><p class="insight-title">Quality</p><p class="insight-phrase">Frequent Reworks</p><p class="insight-comment">Pay closer attention to detail in data entry.</p></div>'
+
+            # WC Checks
+            if wc_col:
+                wc_done = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done']) / total_apps
+                wc_can = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Cancelled']) / total_apps
+                if wc_done < 0.70: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Welcome Call</p><p class="insight-phrase">Low Completion</p><p class="insight-comment">Several sales are pending; follow up today.</p></div>'
+                if wc_can > 0.15: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Welcome Call</p><p class="insight-phrase">High WC Cancellation</p><p class="insight-comment">Address customer doubts earlier in the call.</p></div>'
+
+        if total_ag2 > 0:
+            # Live Checks
+            l_live = len(ag2_filtered[ag2_filtered['P_Status'] == 'Live']) / total_ag2
+            l_can = len(ag2_filtered[ag2_filtered['P_Status'] == 'Cancelled']) / total_ag2
+            if l_live > 0.75: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Live Stage</p><p class="insight-phrase">Strong Conversion</p><p class="insight-comment">Great pipeline management; keep it up.</p></div>'
+            elif l_live < 0.50: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Live Stage</p><p class="insight-phrase">Low Live Rate</p><p class="insight-comment">Identify bottlenecks preventing sales going live.</p></div>'
+            if l_can > 0.20: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Live Stage</p><p class="insight-phrase">High Final Loss</p><p class="insight-comment">Large drop between Approval and Live.</p></div>'
+
+        if flags_html:
+            st.subheader("💡 Points to Look Out")
+            st.markdown(f'<div class="insight-container">{flags_html}</div>', unsafe_allow_html=True)
+            st.write("")
+
         # ---------------- CATEGORISED KPI BOXES ----------------
+        # [Rest of your script continues exactly as before...]
         total_apps = len(ag1_filtered)
         total_ag2 = len(ag2_filtered)
         
@@ -364,11 +423,9 @@ else:
                 'Type': ['Holiday' if is_holiday(d) else 'Working' for d in dates]
             })
 
-            # Define custom hover text
             cal_df['HoverText'] = cal_df.apply(lambda r: "Holiday" if r['Type'] == 'Holiday' else f"{r['Sales']}", axis=1)
 
             fig_cal = go.Figure()
-            # Heatmap for Working Days
             working_days = cal_df[cal_df['Type'] == 'Working']
             fig_cal.add_trace(go.Heatmap(
                 x=working_days['Weekday'], y=working_days['WeekNum'], z=working_days['Sales'],
@@ -380,7 +437,6 @@ else:
                 showscale=False, xgap=3, ygap=3
             ))
 
-            # Heatmap for Holidays
             holidays = cal_df[cal_df['Type'] == 'Holiday']
             fig_cal.add_trace(go.Scatter(
                 x=holidays['Weekday'], y=holidays['WeekNum'], mode='markers+text',
