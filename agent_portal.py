@@ -218,47 +218,7 @@ else:
         wc_col = 'Status' if 'Status' in ag1_filtered.columns else 'Welcome call Status' if 'Welcome call Status' in ag1_filtered.columns else None
         if wc_col: ag1_filtered['WC_Clean'] = ag1_filtered[wc_col].apply(map_wc)
 
-        # ---------------- NEW: POINTS TO LOOK OUT (FLAGS) ----------------
-        total_apps = len(ag1_filtered)
-        total_ag2 = len(ag2_filtered)
-        flags_html = ""
-        
-        if total_apps > 0:
-            # Quality Checks
-            q_appr = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved']) / total_apps
-            q_can = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled']) / total_apps
-            q_rej = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rejected']) / total_apps
-            q_rew = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rework']) / total_apps
-
-            if q_appr > 0.60: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Quality</p><p class="insight-phrase">High Approval Rate</p><p class="insight-comment">Excellent pitch and quality compliance!</p></div>'
-            elif q_appr < 0.60: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">Low Approval Rate</p><p class="insight-comment">Review the quality guidelines to increase quality approval!</p></div>'
-            
-            if q_can > 0.40: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Quality</p><p class="insight-phrase">High Cancellation</p><p class="insight-comment">High Quality Cancellations, review the quality guidelines.</p></div>'
-            if q_rej > 0.40: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">High Rejection</p><p class="insight-comment">High Quality Rejections! Pay attention to quality guidelines!</p></div>'
-            if q_rew > 0.40: flags_html += '<div class="insight-card" style="border-color:#3b82f6"><p class="insight-title">Quality</p><p class="insight-phrase">Frequent Reworks</p><p class="insight-comment">Pay closer attention to quality guidelines, to avoid large number of quality reworks.</p></div>'
-
-            # WC Checks
-            if wc_col:
-                wc_done = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done']) / total_apps
-                wc_can = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Cancelled']) / total_apps
-                if wc_done < 0.70: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Welcome Call</p><p class="insight-phrase">Low Completion</p><p class="insight-comment">Address customer requirements closely to increase Welcome call approvals!</p></div>'
-                if wc_can > 0.15: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Welcome Call</p><p class="insight-phrase">High WC Cancellation</p><p class="insight-comment">Address customer doubts in the sales call to avoid cancellations!</p></div>'
-
-        if total_ag2 > 0:
-            # Live Checks
-            l_live = len(ag2_filtered[ag2_filtered['P_Status'] == 'Live']) / total_ag2
-            l_can = len(ag2_filtered[ag2_filtered['P_Status'] == 'Cancelled']) / total_ag2
-            if l_live > 0.20: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Live Stage</p><p class="insight-phrase">Strong Conversion</p><p class="insight-comment">Great overall quality of applications!</p></div>'
-            elif l_live < 0.20: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Live Stage</p><p class="insight-phrase">Low Live Rate</p><p class="insight-comment">Identify bottlenecks preventing sales going live.</p></div>'
-            if l_can > 0.65: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Live Stage</p><p class="insight-phrase">High Final Loss</p><p class="insight-comment">Large drops between applications and Committed. Identify bottlenecks!</p></div>'
-
-        if flags_html:
-            st.subheader("💡 Points to Look Out For")
-            st.markdown(f'<div class="insight-container">{flags_html}</div>', unsafe_allow_html=True)
-            st.write("")
-
         # ---------------- CATEGORISED KPI BOXES ----------------
-        # [Rest of your script continues exactly as before...]
         total_apps = len(ag1_filtered)
         total_ag2 = len(ag2_filtered)
         
@@ -315,6 +275,43 @@ else:
                 for i, kpi in enumerate(active_g4):
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
                 st.markdown('</div>', unsafe_allow_html=True)
+
+        # ---------------- NEW POSITION: POINTS TO LOOK OUT (FLAGS) ----------------
+        flags_html = ""
+        
+        if total_apps > 0:
+            # Quality Checks
+            q_appr = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved']) / total_apps
+            q_can = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled']) / total_apps
+            q_rej = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rejected']) / total_apps
+            q_rew = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rework']) / total_apps
+
+            if q_appr > 0.60: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Quality</p><p class="insight-phrase">High Approval Rate</p><p class="insight-comment">Excellent pitch and quality compliance!</p></div>'
+            elif q_appr < 0.60: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">Low Approval Rate</p><p class="insight-comment">Review the quality guidelines to increase quality approval!</p></div>'
+            
+            if q_can > 0.40: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Quality</p><p class="insight-phrase">High Cancellation</p><p class="insight-comment">High Quality Cancellations, review the quality guidelines.</p></div>'
+            if q_rej > 0.40: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">High Rejection</p><p class="insight-comment">High Quality Rejections! Pay attention to quality guidelines!</p></div>'
+            if q_rew > 0.40: flags_html += '<div class="insight-card" style="border-color:#3b82f6"><p class="insight-title">Quality</p><p class="insight-phrase">Frequent Reworks</p><p class="insight-comment">Pay closer attention to quality guidelines, to avoid large number of quality reworks.</p></div>'
+
+            # WC Checks
+            if wc_col:
+                wc_done = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done']) / total_apps
+                wc_can = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Cancelled']) / total_apps
+                if wc_done < 0.70: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Welcome Call</p><p class="insight-phrase">Low Completion</p><p class="insight-comment">Address customer requirements closely to increase Welcome call approvals!</p></div>'
+                if wc_can > 0.15: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Welcome Call</p><p class="insight-phrase">High WC Cancellation</p><p class="insight-comment">Address customer doubts in the sales call to avoid cancellations!</p></div>'
+
+        if total_ag2 > 0:
+            # Live Checks
+            l_live = len(ag2_filtered[ag2_filtered['P_Status'] == 'Live']) / total_ag2
+            l_can = len(ag2_filtered[ag2_filtered['P_Status'] == 'Cancelled']) / total_ag2
+            if l_live > 0.20: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Live Stage</p><p class="insight-phrase">Strong Conversion</p><p class="insight-comment">Great overall quality of applications!</p></div>'
+            elif l_live < 0.20: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Live Stage</p><p class="insight-phrase">Low Live Rate</p><p class="insight-comment">Identify bottlenecks preventing sales going live.</p></div>'
+            if l_can > 0.65: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Live Stage</p><p class="insight-phrase">High Final Loss</p><p class="insight-comment">Large drops between applications and Committed. Identify bottlenecks!</p></div>'
+
+        if flags_html:
+            st.write("")
+            st.subheader("💡 Points to Look Out For")
+            st.markdown(f'<div class="insight-container">{flags_html}</div>', unsafe_allow_html=True)
 
         st.write("---")
 
