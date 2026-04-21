@@ -253,7 +253,7 @@ else:
             if l_can > 0.65: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Live Stage</p><p class="insight-phrase">High Final Loss</p><p class="insight-comment">Large drops between applications and Committed. Identify bottlenecks!</p></div>'
 
         if flags_html:
-            st.subheader("💡 Points to Look Out")
+            st.subheader("💡 Points to Look Out For")
             st.markdown(f'<div class="insight-container">{flags_html}</div>', unsafe_allow_html=True)
             st.write("")
 
