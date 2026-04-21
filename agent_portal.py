@@ -477,7 +477,7 @@ else:
             holidays = cal_df[cal_df['Type'] == 'Holiday']
             fig_cal.add_trace(go.Scatter(
                 x=holidays['Weekday'], y=holidays['WeekNum'], mode='markers+text',
-                marker=dict(symbol='square', size=35, color='#E2E8F0'),
+                marker=dict(symbol='square', size=35, color='#ADD8E6'),
                 text=holidays['Day'], 
                 customdata=holidays['HoverText'],
                 hovertemplate="%{customdata}<extra></extra>",
