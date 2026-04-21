@@ -9,66 +9,108 @@ import calendar
 
 st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
 
+# --- IMPROVED UI SECTION ---
 st.markdown("""
-   <style>
-   .block-container { max-width: 98%; padding-top: 1.5rem; }
+    <style>
+    .block-container { max-width: 98%; padding-top: 1.5rem; }
     h3 { margin-bottom: 0.5rem !important; font-size: 1.1rem !important; color: #1E3A8A; }
-   .last-updated { font-size: 0.75rem; color: gray; text-align: right; }
-   
-   /* Box Container Styling - Sharp Boundaries */
-   .kpi-box {
-       background-color: #F8FAFC;
-       padding: 10px;
-       border-radius: 0px; 
-       border: 2px solid #475569; 
-       height: 100%;
-   }
-   .box-label {
-       font-size: 0.7rem;
-       font-weight: 800;
-       color: #1E3A8A;
-       text-align: center;
-       margin-bottom: 8px;
-       text-transform: uppercase;
-       letter-spacing: 0.5px;
-   }
+    .last-updated { font-size: 0.75rem; color: gray; text-align: right; }
+    
+    /* Improved Box Container - Modern & Subtle */
+    .kpi-box {
+        background-color: #F1F5F9; 
+        padding: 15px;
+        border-radius: 12px; 
+        border: 1px solid #E2E8F0; 
+        height: 100%;
+        box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+    }
+    .box-label {
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #475569;
+        text-align: left;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        display: flex;
+        align-items: center;
+    }
+    .box-label::before {
+        content: "";
+        display: inline-block;
+        width: 4px;
+        height: 12px;
+        background: #1E3A8A;
+        margin-right: 8px;
+        border-radius: 2px;
+    }
 
-   /* Small KPI Card Styling */
-   .kpi-card {
-       padding: 6px 2px;
-       border-radius: 2px;
-       border-top: 3px solid #1E3A8A;
-       text-align: center;
-       box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-       min-height: 75px;
-       display: flex;
-       flex-direction: column;
-       justify-content: center;
-   }
-   .kpi-label { font-size: 0.6rem; color: #475569; font-weight: 700; margin-bottom: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
-   .kpi-value { font-size: 1rem; color: #1E3A8A; font-weight: 700; margin: 0; line-height: 1; }
-   .kpi-pc { font-size: 0.65rem; color: #0F172A; font-weight: 600; margin-top: 1px; }
+    /* KPI Card - Polished with Depth */
+    .kpi-card {
+        padding: 12px 5px;
+        border-radius: 10px;
+        text-align: center;
+        background: white;
+        border: 1px solid rgba(0,0,0,0.05);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        min-height: 85px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    
+    .kpi-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    }
 
-   /* NEW: Insight Flags Styling */
-   .insight-container {
-       display: flex;
-       gap: 10px;
-       overflow-x: auto;
-       padding: 5px 0px 15px 0px;
-   }
-   .insight-card {
-       background: #FFFFFF;
-       border-left: 4px solid #1E3A8A;
-       padding: 8px 12px;
-       min-width: 200px;
-       border-radius: 4px;
-       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-   }
-   .insight-title { font-size: 0.7rem; font-weight: 800; color: #475569; margin: 0; text-transform: uppercase; }
-   .insight-phrase { font-size: 0.85rem; font-weight: 700; color: #1E3A8A; margin: 2px 0; }
-   .insight-comment { font-size: 0.7rem; color: #64748B; margin: 0; line-height: 1.2; }
-   </style>
-   """, unsafe_allow_html=True)
+    .kpi-label { 
+        font-size: 0.65rem; 
+        color: #64748B; 
+        font-weight: 700; 
+        margin-bottom: 4px; 
+        text-transform: uppercase; 
+    }
+    .kpi-value { 
+        font-size: 1.2rem; 
+        color: #0F172A; 
+        font-weight: 800; 
+        margin: 0; 
+        line-height: 1; 
+    }
+    .kpi-pc { 
+        font-size: 0.7rem; 
+        color: #1E3A8A; 
+        font-weight: 700; 
+        margin-top: 4px;
+        background: rgba(30, 58, 138, 0.1);
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+
+    /* Insight Flags */
+    .insight-container {
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+        padding: 10px 5px 20px 5px;
+    }
+    .insight-card {
+        background: #FFFFFF;
+        border-left: 5px solid #1E3A8A;
+        padding: 12px 16px;
+        min-width: 220px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    .insight-title { font-size: 0.7rem; font-weight: 800; color: #64748B; margin: 0; text-transform: uppercase; }
+    .insight-phrase { font-size: 0.9rem; font-weight: 700; color: #1E3A8A; margin: 4px 0; }
+    .insight-comment { font-size: 0.75rem; color: #475569; margin: 0; line-height: 1.3; }
+    </style>
+    """, unsafe_allow_html=True)
 
 ACCESS_KEYS = st.secrets["agent_keys"]
 
@@ -147,17 +189,18 @@ def map_wc(val):
 
 def render_kpi(label, value, total):
     lbl = label.lower()
-    bg = "#F1F5F9" # Default Gray
-    if "total" in lbl: bg = "#E0F2FE" # Light Blue
-    elif any(x in lbl for x in ["appr", "done", "live"]): bg = "#DCFCE7" # Light Green
-    elif any(x in lbl for x in ["rew", "pend", "paper", "comm"]): bg = "#FEF9C3" # Light Yellow
-    elif "can" in lbl or "rej" in lbl: bg = "#FEE2E2" # Light Red
+    # Subtle accent colors for the card border
+    accent = "#94A3B8" 
+    if "total" in lbl: accent = "#3B82F6"
+    elif any(x in lbl for x in ["appr", "done", "live"]): accent = "#10B981"
+    elif any(x in lbl for x in ["rew", "pend", "paper", "comm"]): accent = "#F59E0B"
+    elif "can" in lbl or "rej" in lbl: accent = "#EF4444"
     
     percent = (value / total * 100) if total > 0 else 0
-    pc_html = f'<p class="kpi-pc">{percent:.1f}%</p>' if "total apps" not in lbl else ""
+    pc_html = f'<div style="display:flex; justify-content:center;"><p class="kpi-pc">{percent:.1f}%</p></div>' if "total apps" not in lbl else ""
     
     st.markdown(f"""
-        <div class="kpi-card" style="background-color: {bg};">
+        <div class="kpi-card" style="border-top: 4px solid {accent};">
             <p class="kpi-label">{label}</p>
             <p class="kpi-value">{value:,}</p>
             {pc_html}
@@ -233,7 +276,7 @@ else:
         group_3 = []
         if wc_col:
             group_3 = [
-                ("WC Done (Comm.)", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done']), total_apps),
+                ("WC Done", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done']), total_apps),
                 ("WC Pending", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Pending']), total_apps),
                 ("WC Paperwork", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Paperwork']), total_apps),
                 ("WC Cancelled", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Cancelled']), total_apps),
@@ -248,13 +291,13 @@ else:
 
         b1, b2, b3, b4 = st.columns([1.2, 2.5, 2.5, 2.2])
         with b1: 
-            st.markdown('<div class="kpi-box"><p class="box-label">Total Apps</p>', unsafe_allow_html=True)
+            st.markdown('<div class="kpi-box"><p class="box-label">Overview</p>', unsafe_allow_html=True)
             render_kpi(group_1[0][0], group_1[0][1], group_1[0][2])
             st.markdown('</div>', unsafe_allow_html=True)
         with b2: 
             active_g2 = [k for k in group_2 if k[1] > 0]
             if active_g2:
-                st.markdown('<div class="kpi-box"><p class="box-label">Quality Status</p>', unsafe_allow_html=True)
+                st.markdown('<div class="kpi-box"><p class="box-label">Quality Audit</p>', unsafe_allow_html=True)
                 cols = st.columns(len(active_g2))
                 for i, kpi in enumerate(active_g2):
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
@@ -262,7 +305,7 @@ else:
         with b3: 
             active_g3 = [k for k in group_3 if k[1] > 0]
             if active_g3:
-                st.markdown('<div class="kpi-box"><p class="box-label">Welcome Call Status</p>', unsafe_allow_html=True)
+                st.markdown('<div class="kpi-box"><p class="box-label">Welcome Call</p>', unsafe_allow_html=True)
                 cols = st.columns(len(active_g3))
                 for i, kpi in enumerate(active_g3):
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
@@ -270,17 +313,16 @@ else:
         with b4: 
             active_g4 = [k for k in group_4 if k[1] > 0]
             if active_g4:
-                st.markdown('<div class="kpi-box"><p class="box-label">Live Status</p>', unsafe_allow_html=True)
+                st.markdown('<div class="kpi-box"><p class="box-label">Live Sync</p>', unsafe_allow_html=True)
                 cols = st.columns(len(active_g4))
                 for i, kpi in enumerate(active_g4):
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # ---------------- NEW POSITION: POINTS TO LOOK OUT (FLAGS) ----------------
+        # ---------------- INSIGHT FLAGS ----------------
         flags_html = ""
         
         if total_apps > 0:
-            # Quality Checks
             q_appr = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved']) / total_apps
             q_can = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled']) / total_apps
             q_rej = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rejected']) / total_apps
@@ -293,7 +335,6 @@ else:
             if q_rej > 0.20: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">High Rejection</p><p class="insight-comment">High Quality Rejections! Pay attention to quality guidelines!</p></div>'
             if q_rew > 0.30: flags_html += '<div class="insight-card" style="border-color:#3b82f6"><p class="insight-title">Quality</p><p class="insight-phrase">Frequent Reworks</p><p class="insight-comment">Pay closer attention to quality guidelines, to avoid large number of Quality Reworks.</p></div>'
 
-            # WC Checks
             if wc_col:
                 wc_done = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done']) / total_apps
                 wc_can = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Cancelled']) / total_apps
@@ -301,7 +342,6 @@ else:
                 if wc_can > 0.15: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Welcome Call</p><p class="insight-phrase">High WC Cancellation</p><p class="insight-comment">Address customer doubts and in the sales call to avoid Welcome call cancellations!</p></div>'
 
         if total_ag2 > 0:
-            # Live Checks
             l_live = len(ag2_filtered[ag2_filtered['P_Status'] == 'Live']) / total_ag2
             l_can = len(ag2_filtered[ag2_filtered['P_Status'] == 'Cancelled']) / total_ag2
             if l_live > 0.20: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Live Stage</p><p class="insight-phrase">Strong Conversion</p><p class="insight-comment">Good live rate! Great overall quality of applications!</p></div>'
@@ -374,7 +414,7 @@ else:
 
         st.write("---")
         
-        # ---------------- TRENDS & CALENDAR (REPLACED FUNNEL) ----------------
+        # ---------------- TRENDS & CALENDAR ----------------
         col_trend, col_cal = st.columns([3, 2])
         with col_trend:
             st.subheader("📈 My Trend")
@@ -396,10 +436,10 @@ else:
             
             def is_holiday(dt):
                 wd = dt.weekday() # 0=Mon, 6=Sun
-                if wd == 6: return True # Sunday
-                if wd == 5: # Saturday check
+                if wd == 6: return True 
+                if wd == 5: 
                     week_num = (dt.day - 1) // 7 + 1
-                    return week_num in [1, 3, 5] # 1st, 3rd, 5th Sat are holidays
+                    return week_num in [1, 3, 5] 
                 return False
 
             c_month_col, c_year_col = st.columns(2)
