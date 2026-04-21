@@ -297,7 +297,7 @@ else:
         with b2: 
             active_g2 = [k for k in group_2 if k[1] > 0]
             if active_g2:
-                st.markdown('<div class="kpi-box"><p class="box-label">Quality Audit</p>', unsafe_allow_html=True)
+                st.markdown('<div class="kpi-box"><p class="box-label">Quality Audit Status</p>', unsafe_allow_html=True)
                 cols = st.columns(len(active_g2))
                 for i, kpi in enumerate(active_g2):
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
@@ -305,7 +305,7 @@ else:
         with b3: 
             active_g3 = [k for k in group_3 if k[1] > 0]
             if active_g3:
-                st.markdown('<div class="kpi-box"><p class="box-label">Welcome Call</p>', unsafe_allow_html=True)
+                st.markdown('<div class="kpi-box"><p class="box-label">Welcome Call Status</p>', unsafe_allow_html=True)
                 cols = st.columns(len(active_g3))
                 for i, kpi in enumerate(active_g3):
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
@@ -313,7 +313,7 @@ else:
         with b4: 
             active_g4 = [k for k in group_4 if k[1] > 0]
             if active_g4:
-                st.markdown('<div class="kpi-box"><p class="box-label">Live Sync</p>', unsafe_allow_html=True)
+                st.markdown('<div class="kpi-box"><p class="box-label">Live Status</p>', unsafe_allow_html=True)
                 cols = st.columns(len(active_g4))
                 for i, kpi in enumerate(active_g4):
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
