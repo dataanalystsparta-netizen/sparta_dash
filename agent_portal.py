@@ -49,18 +49,17 @@ st.markdown("""
    .kpi-value { font-size: 1rem; color: #1E3A8A; font-weight: 700; margin: 0; line-height: 1; }
    .kpi-pc { font-size: 0.65rem; color: #0F172A; font-weight: 600; margin-top: 1px; }
 
-   /* NEW: Insight Flags Styling */
+   /* NEW: Insight Flags Styling - Adjusted for vertical stacking */
    .insight-container {
        display: flex;
-       gap: 10px;
-       overflow-x: auto;
-       padding: 5px 0px 15px 0px;
+       flex-direction: column;
+       gap: 8px;
+       padding: 0px 5px;
    }
    .insight-card {
        background: #FFFFFF;
        border-left: 4px solid #1E3A8A;
        padding: 8px 12px;
-       min-width: 200px;
        border-radius: 4px;
        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
    }
@@ -218,244 +217,98 @@ else:
         wc_col = 'Status' if 'Status' in ag1_filtered.columns else 'Welcome call Status' if 'Welcome call Status' in ag1_filtered.columns else None
         if wc_col: ag1_filtered['WC_Clean'] = ag1_filtered[wc_col].apply(map_wc)
 
-        # ---------------- NEW: POINTS TO LOOK OUT (FLAGS) ----------------
+        # ---------------- PRE-CALCULATE FLAGS ----------------
         total_apps = len(ag1_filtered)
         total_ag2 = len(ag2_filtered)
         flags_html = ""
         
         if total_apps > 0:
-            # Quality Checks
             q_appr = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved']) / total_apps
             q_can = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled']) / total_apps
             q_rej = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rejected']) / total_apps
             q_rew = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rework']) / total_apps
 
             if q_appr > 0.60: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Quality</p><p class="insight-phrase">High Approval Rate</p><p class="insight-comment">Excellent pitch and quality compliance!</p></div>'
-            elif q_appr < 0.60: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">Low Approval Rate</p><p class="insight-comment">Review the quality guidelines to increase quality approval!</p></div>'
-            
-            if q_can > 0.40: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Quality</p><p class="insight-phrase">High Cancellation</p><p class="insight-comment">High Quality Cancellations, review the quality guidelines.</p></div>'
-            if q_rej > 0.40: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">High Rejection</p><p class="insight-comment">High Quality Rejections! Pay attention to quality guidelines!</p></div>'
-            if q_rew > 0.40: flags_html += '<div class="insight-card" style="border-color:#3b82f6"><p class="insight-title">Quality</p><p class="insight-phrase">Frequent Reworks</p><p class="insight-comment">Pay closer attention to quality guidelines, to avoid large number of quality reworks.</p></div>'
+            elif q_appr < 0.60: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">Low Approval Rate</p><p class="insight-comment">Review quality guidelines!</p></div>'
+            if q_can > 0.40: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Quality</p><p class="insight-phrase">High Cancellation</p><p class="insight-comment">Review quality guidelines.</p></div>'
+            if q_rej > 0.40: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Quality</p><p class="insight-phrase">High Rejection</p><p class="insight-comment">Pay attention to quality guidelines!</p></div>'
+            if q_rew > 0.40: flags_html += '<div class="insight-card" style="border-color:#3b82f6"><p class="insight-title">Quality</p><p class="insight-phrase">Frequent Reworks</p><p class="insight-comment">Avoid large number of quality reworks.</p></div>'
 
-            # WC Checks
             if wc_col:
                 wc_done = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done']) / total_apps
                 wc_can = len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Cancelled']) / total_apps
-                if wc_done < 0.70: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Welcome Call</p><p class="insight-phrase">Low Completion</p><p class="insight-comment">Address customer requirements closely to increase Welcome call approvals!</p></div>'
-                if wc_can > 0.15: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Welcome Call</p><p class="insight-phrase">High WC Cancellation</p><p class="insight-comment">Address customer doubts in the sales call to avoid cancellations!</p></div>'
+                if wc_done < 0.70: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Welcome Call</p><p class="insight-phrase">Low Completion</p><p class="insight-comment">Address customer requirements closely.</p></div>'
+                if wc_can > 0.15: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Welcome Call</p><p class="insight-phrase">High WC Cancellation</p><p class="insight-comment">Address customer doubts in the sales call!</p></div>'
 
         if total_ag2 > 0:
-            # Live Checks
             l_live = len(ag2_filtered[ag2_filtered['P_Status'] == 'Live']) / total_ag2
             l_can = len(ag2_filtered[ag2_filtered['P_Status'] == 'Cancelled']) / total_ag2
-            if l_live > 0.20: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Live Stage</p><p class="insight-phrase">Strong Conversion</p><p class="insight-comment">Great overall quality of applications!</p></div>'
-            elif l_live < 0.20: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Live Stage</p><p class="insight-phrase">Low Live Rate</p><p class="insight-comment">Identify bottlenecks preventing sales going live.</p></div>'
-            if l_can > 0.65: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Live Stage</p><p class="insight-phrase">High Final Loss</p><p class="insight-comment">Large drops between applications and Committed. Identify bottlenecks!</p></div>'
+            if l_live > 0.20: flags_html += '<div class="insight-card" style="border-color:#10b981"><p class="insight-title">Live Stage</p><p class="insight-phrase">Strong Conversion</p><p class="insight-comment">Great overall quality!</p></div>'
+            elif l_live < 0.20: flags_html += '<div class="insight-card" style="border-color:#f59e0b"><p class="insight-title">Live Stage</p><p class="insight-phrase">Low Live Rate</p><p class="insight-comment">Identify bottlenecks.</p></div>'
+            if l_can > 0.65: flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Live Stage</p><p class="insight-phrase">High Final Loss</p><p class="insight-comment">Large drops from applications.</p></div>'
 
-        if flags_html:
-            st.subheader("💡 Points to Look Out For")
-            st.markdown(f'<div class="insight-container">{flags_html}</div>', unsafe_allow_html=True)
-            st.write("")
+        # ---------------- LAYOUT: KPI BOXES (Left) & FLAGS (Right) ----------------
+        col_main_kpi, col_insights = st.columns([0.8, 0.2])
 
-        # ---------------- CATEGORISED KPI BOXES ----------------
-        # [Rest of your script continues exactly as before...]
-        total_apps = len(ag1_filtered)
-        total_ag2 = len(ag2_filtered)
-        
-        group_1 = [("Total Apps", total_apps, total_apps)]
-        group_2 = [
-            ("Approved", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved']), total_apps),
-            ("Rework", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rework']), total_apps),
-            ("Cancelled", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled']), total_apps),
-            ("Rejected", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rejected']), total_apps),
-            ("Others", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Others']), total_apps)
-        ]
-        group_3 = []
-        if wc_col:
-            group_3 = [
-                ("WC Done (Comm.)", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done']), total_apps),
-                ("WC Pending", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Pending']), total_apps),
-                ("WC Paperwork", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Paperwork']), total_apps),
-                ("WC Cancelled", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Cancelled']), total_apps),
-                ("WC Others", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Others']), total_apps)
+        with col_main_kpi:
+            group_1 = [("Total Apps", total_apps, total_apps)]
+            group_2 = [
+                ("Approved", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved']), total_apps),
+                ("Rework", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rework']), total_apps),
+                ("Cancelled", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled']), total_apps),
+                ("Rejected", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rejected']), total_apps),
+                ("Others", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Others']), total_apps)
             ]
-        group_4 = [
-            ("Live", len(ag2_filtered[ag2_filtered['P_Status'] == 'Live']), total_ag2 if total_ag2 > 0 else total_apps),
-            ("Committed", len(ag2_filtered[ag2_filtered['P_Status'] == 'Committed']), total_ag2 if total_ag2 > 0 else total_apps),
-            ("Cancelled", len(ag2_filtered[ag2_filtered['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps),
-            ("Others", len(ag2_filtered[ag2_filtered['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
-        ]
+            group_3 = []
+            if wc_col:
+                group_3 = [
+                    ("WC Done (Comm.)", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done']), total_apps),
+                    ("WC Pending", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Pending']), total_apps),
+                    ("WC Paperwork", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Paperwork']), total_apps),
+                    ("WC Cancelled", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Cancelled']), total_apps),
+                    ("WC Others", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Others']), total_apps)
+                ]
+            group_4 = [
+                ("Live", len(ag2_filtered[ag2_filtered['P_Status'] == 'Live']), total_ag2 if total_ag2 > 0 else total_apps),
+                ("Committed", len(ag2_filtered[ag2_filtered['P_Status'] == 'Committed']), total_ag2 if total_ag2 > 0 else total_apps),
+                ("Cancelled", len(ag2_filtered[ag2_filtered['P_Status'] == 'Cancelled']), total_ag2 if total_ag2 > 0 else total_apps),
+                ("Others", len(ag2_filtered[ag2_filtered['P_Status'] == 'Others']), total_ag2 if total_ag2 > 0 else total_apps)
+            ]
 
-        b1, b2, b3, b4 = st.columns([1.2, 2.5, 2.5, 2.2])
-        with b1: 
-            st.markdown('<div class="kpi-box"><p class="box-label">Total Apps</p>', unsafe_allow_html=True)
-            render_kpi(group_1[0][0], group_1[0][1], group_1[0][2])
-            st.markdown('</div>', unsafe_allow_html=True)
-        with b2: 
-            active_g2 = [k for k in group_2 if k[1] > 0]
-            if active_g2:
-                st.markdown('<div class="kpi-box"><p class="box-label">Quality Status</p>', unsafe_allow_html=True)
-                cols = st.columns(len(active_g2))
-                for i, kpi in enumerate(active_g2):
-                    with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
+            b1, b2, b3, b4 = st.columns([1.2, 2.5, 2.5, 2.2])
+            with b1: 
+                st.markdown('<div class="kpi-box"><p class="box-label">Total Apps</p>', unsafe_allow_html=True)
+                render_kpi(group_1[0][0], group_1[0][1], group_1[0][2])
                 st.markdown('</div>', unsafe_allow_html=True)
-        with b3: 
-            active_g3 = [k for k in group_3 if k[1] > 0]
-            if active_g3:
-                st.markdown('<div class="kpi-box"><p class="box-label">Welcome Call Status</p>', unsafe_allow_html=True)
-                cols = st.columns(len(active_g3))
-                for i, kpi in enumerate(active_g3):
-                    with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
-                st.markdown('</div>', unsafe_allow_html=True)
-        with b4: 
-            active_g4 = [k for k in group_4 if k[1] > 0]
-            if active_g4:
-                st.markdown('<div class="kpi-box"><p class="box-label">Live Status</p>', unsafe_allow_html=True)
-                cols = st.columns(len(active_g4))
-                for i, kpi in enumerate(active_g4):
-                    with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
-                st.markdown('</div>', unsafe_allow_html=True)
+            with b2: 
+                active_g2 = [k for k in group_2 if k[1] > 0]
+                if active_g2:
+                    st.markdown('<div class="kpi-box"><p class="box-label">Quality Status</p>', unsafe_allow_html=True)
+                    cols = st.columns(len(active_g2))
+                    for i, kpi in enumerate(active_g2):
+                        with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
+                    st.markdown('</div>', unsafe_allow_html=True)
+            with b3: 
+                active_g3 = [k for k in group_3 if k[1] > 0]
+                if active_g3:
+                    st.markdown('<div class="kpi-box"><p class="box-label">Welcome Call Status</p>', unsafe_allow_html=True)
+                    cols = st.columns(len(active_g3))
+                    for i, kpi in enumerate(active_g3):
+                        with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
+                    st.markdown('</div>', unsafe_allow_html=True)
+            with b4: 
+                active_g4 = [k for k in group_4 if k[1] > 0]
+                if active_g4:
+                    st.markdown('<div class="kpi-box"><p class="box-label">Live Status</p>', unsafe_allow_html=True)
+                    cols = st.columns(len(active_g4))
+                    for i, kpi in enumerate(active_g4):
+                        with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
+                    st.markdown('</div>', unsafe_allow_html=True)
 
-        st.write("---")
-
-        st.subheader("📅 Data Breakdown")
-        ag1_filtered['Date'] = ag1_filtered['Date_Parsed'].dt.date
-        ag2_filtered['Date'] = ag2_filtered['Date_Parsed'].dt.date
-        view_mode = st.radio("View tables by:", ["Daily", "Monthly"], horizontal=True)
-        
-        if view_mode == "Daily":
-            ag1_filtered['Period'] = ag1_filtered['Date_Parsed'].dt.date
-            ag2_filtered['Period'] = ag2_filtered['Date_Parsed'].dt.date
-            chart_group_col = 'Date'
-        else:
-            ag1_filtered['Period'] = ag1_filtered['Date_Parsed'].dt.strftime('%Y-%m')
-            ag2_filtered['Period'] = ag2_filtered['Date_Parsed'].dt.strftime('%Y-%m')
-            chart_group_col = 'Period'
-        
-        ca, cb, cc, cd = st.columns(4)
-        with ca:
-            st.markdown("##### Applications")
-            if not ag1_filtered.empty:
-                period_apps = ag1_filtered.groupby('Period').size().to_frame('Total Apps')
-                vmax_apps = max(period_apps.max().max(), 1.1)
-                styled_apps = period_apps.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', vmin=1, vmax=vmax_apps).map(lambda x: 'background-color: transparent' if x == 0 else '')
-                st.dataframe(styled_apps, use_container_width=True)
-        with cb:
-            st.markdown("##### Quality Audit Result")
-            if not ag1_filtered.empty:
-                period_qual = ag1_filtered.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
-                qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
-                period_qual = period_qual.reindex(columns=qual_order, fill_value=0)
-                period_qual = period_qual.loc[:, (period_qual != 0).any(axis=0)]
-                if not period_qual.empty:
-                    vmax_qual = max(period_qual.max().max(), 1.1)
-                    styled_qual = period_qual.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])], vmin=1, vmax=vmax_qual).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Rework'])], vmin=1, vmax=vmax_qual).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Cancelled', 'Rejected'])], vmin=1, vmax=vmax_qual).map(lambda x: 'background-color: transparent' if x == 0 else '')
-                    st.dataframe(styled_qual, use_container_width=True)
-        with cc:
-            st.markdown("##### Welcome Call Status")
-            if wc_col and not ag1_filtered.empty:
-                period_wc = ag1_filtered.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
-                wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
-                period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
-                period_wc = period_wc.loc[:, (period_wc != 0).any(axis=0)]
-                if not period_wc.empty:
-                    vmax_wc = max(period_wc.max().max(), 1.1)
-                    styled_wc = period_wc.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Done'])], vmin=1, vmax=vmax_wc).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Pending', 'Paperwork'])], vmin=1, vmax=vmax_wc).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_wc).map(lambda x: 'background-color: transparent' if x == 0 else '')
-                    st.dataframe(styled_wc, use_container_width=True)
-            else: st.info("No Welcome Call data.")
-        with cd:
-            st.markdown("##### Live Status")
-            if not ag2_filtered.empty:
-                period_port = ag2_filtered.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
-                port_order = ['Live', 'Committed', 'Cancelled', 'Others']
-                period_port = period_port.reindex(columns=port_order, fill_value=0)
-                period_port = period_port.loc[:, (period_port != 0).any(axis=0)]
-                if not period_port.empty:
-                    vmax_port = max(period_port.max().max(), 1.1)
-                    styled_port = period_port.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1, vmax=vmax_port).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])], vmin=1, vmax=vmax_port).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_port).map(lambda x: 'background-color: transparent' if x == 0 else '')
-                    st.dataframe(styled_port, use_container_width=True)
-
-        st.write("---")
-        
-        # ---------------- TRENDS & CALENDAR (REPLACED FUNNEL) ----------------
-        col_trend, col_cal = st.columns([3, 2])
-        with col_trend:
-            st.subheader("📈 My Trend")
-            if not ag1_filtered.empty:
-                d_apps = ag1_filtered.groupby(chart_group_col).size().to_frame('Total Apps')
-                d_appr = ag1_filtered[ag1_filtered['Q_Status'] == 'Approved'].groupby(chart_group_col).size().to_frame('Approved')
-                d_live = ag2_filtered[ag2_filtered['P_Status'] == 'Live'].groupby(chart_group_col).size().to_frame('Live')
-                i_comb = d_apps.join([d_appr, d_live], how='left').fillna(0).reset_index()
-                i_comb[chart_group_col] = i_comb[chart_group_col].astype(str)
-                fig = go.Figure()
-                fig.add_trace(go.Bar(x=i_comb[chart_group_col], y=i_comb['Total Apps'], name="Total Applications", marker_color='#60A5FA'))
-                fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Approved'], name="Quality Approved Applications", line=dict(color='#059669', width=3)))
-                fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Live'], name="Live Applications", line=dict(color='#F59E0B', width=3)))
-                fig.update_layout(hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0), xaxis_title="Date" if view_mode=="Daily" else "Month")
-                st.plotly_chart(fig, use_container_width=True)
-
-        with col_cal:
-            st.subheader("🗓️ Sales Activity Calendar")
-            
-            def is_holiday(dt):
-                wd = dt.weekday() # 0=Mon, 6=Sun
-                if wd == 6: return True # Sunday
-                if wd == 5: # Saturday check
-                    week_num = (dt.day - 1) // 7 + 1
-                    return week_num in [1, 3, 5] # 1st, 3rd, 5th Sat are holidays
-                return False
-
-            c_month_col, c_year_col = st.columns(2)
-            sel_month = c_month_col.selectbox("Month", list(calendar.month_name)[1:], index=today_date.month-1)
-            sel_year = c_year_col.selectbox("Year", [2025, 2026], index=1)
-            
-            m_idx = list(calendar.month_name).index(sel_month)
-            num_days = calendar.monthrange(sel_year, m_idx)[1]
-            dates = [datetime.date(sel_year, m_idx, day) for day in range(1, num_days+1)]
-            
-            daily_sales = ag1.groupby(ag1['Date_Parsed'].dt.date).size()
-            cal_df = pd.DataFrame({
-                'Date': dates,
-                'Day': [d.day for d in dates],
-                'Weekday': [d.strftime('%a') for d in dates],
-                'WeekNum': [int(d.strftime('%V')) if d.strftime('%V').isdigit() else 0 for d in dates],
-                'Sales': [daily_sales.get(d, 0) for d in dates],
-                'Type': ['Holiday' if is_holiday(d) else 'Working' for d in dates]
-            })
-
-            cal_df['HoverText'] = cal_df.apply(lambda r: "Holiday" if r['Type'] == 'Holiday' else f"{r['Sales']}", axis=1)
-
-            fig_cal = go.Figure()
-            working_days = cal_df[cal_df['Type'] == 'Working']
-            fig_cal.add_trace(go.Heatmap(
-                x=working_days['Weekday'], y=working_days['WeekNum'], z=working_days['Sales'],
-                text=working_days['Day'], 
-                customdata=working_days['HoverText'],
-                hovertemplate="%{customdata}<extra></extra>",
-                texttemplate="%{text}",
-                colorscale=[[0, 'white'], [0.1, '#d1fae5'], [1, '#047857']],
-                showscale=False, xgap=3, ygap=3
-            ))
-
-            holidays = cal_df[cal_df['Type'] == 'Holiday']
-            fig_cal.add_trace(go.Scatter(
-                x=holidays['Weekday'], y=holidays['WeekNum'], mode='markers+text',
-                marker=dict(symbol='square', size=35, color='#E2E8F0'),
-                text=holidays['Day'], 
-                customdata=holidays['HoverText'],
-                hovertemplate="%{customdata}<extra></extra>",
-                textfont=dict(color='#94A3B8'),
-                showlegend=False
-            ))
-
-            fig_cal.update_layout(
-                height=300, margin=dict(l=0, r=0, t=10, b=10),
-                xaxis=dict(side="top", categoryorder='array', categoryarray=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
-                yaxis=dict(autorange="reversed", showgrid=False, zeroline=False, showticklabels=False),
-                plot_bgcolor='white'
-            )
-            st.plotly_chart(fig_cal, use_container_width=True)
-            st.caption("🟢 Sales | 🔘 Holiday")
+        with col_insights:
+            if flags_html:
+                st.markdown('<p style="font-size:1.1rem; font-weight:700; color:#1E3A8A; margin-bottom:10px;">💡 Points to Look Out</p>', unsafe_allow_html=True)
+                st.markdown(f'<div class="insight-container">{flags_html}</div>', unsafe_allow_html=True)
 
         st.write("---")
 
