@@ -496,7 +496,8 @@ else:
         st.write("---")
 # ---------------- UPDATED RECENT APPLICATIONS LOG WITH SECTIONS ----------------
         st.subheader("🔍 Recent Applications Log")
-        try:
+        
+        try: # Start of the try block
             if not ag1_filtered.empty:
                 # Prepare df2 for merging (clean key and handle duplicates)
                 ag2_clean = ag2.copy()
@@ -549,6 +550,7 @@ else:
                         return ""
 
                     q_val = get_val('Quality Status')
+                    # Standardized 'approve' check
                     q_color = 'background-color: rgba(167, 243, 208, 0.3)' if any(x in q_val for x in ['appr', 'pass']) else 'background-color: rgba(253, 230, 138, 0.3)' if any(x in q_val for x in ['rew', 'repro']) else 'background-color: rgba(254, 202, 202, 0.3)' if any(x in q_val for x in ['can', 'rej']) else ''
                     
                     wc_val = get_val('Status')
@@ -582,23 +584,20 @@ else:
                             styles[i] = wc_color
                     return styles
                 
-                # --- APPLY BORDERS TO SECTIONS ---
-                # We identify the indices where sections change to apply borders
+                # --- APPLY STYLING AND SECTION BORDERS ---
                 styled_log = display_df.style.apply(style_log_row, axis=1)
                 
-                # Define CSS for the bold boundaries
                 section_borders = [
                     {'selector': 'th.col_heading.level0', 'props': [('border-left', '2px solid #555'), ('border-right', '2px solid #555'), ('font-weight', 'bold')]},
-                    # Apply vertical lines between MultiIndex groups
-                    {'selector': 'td.col0, th.col0', 'props': [('border-left', '2px solid #555')]}, # Start of Basic Info
-                    {'selector': 'td.col2, th.col2', 'props': [('border-left', '2px solid #555')]}, # Start of Quality
-                    {'selector': 'td.col4, th.col4', 'props': [('border-left', '2px solid #555')]}, # Start of Welcome Call
-                    {'selector': 'td.col6, th.col6', 'props': [('border-left', '2px solid #555')]}, # Start of Live Status
-                    {'selector': 'td.col11, th.col11', 'props': [('border-right', '2px solid #555')]} # End of Table
+                    {'selector': 'td.col0, th.col0', 'props': [('border-left', '2px solid #555')]}, 
+                    {'selector': 'td.col2, th.col2', 'props': [('border-left', '2px solid #555')]}, 
+                    {'selector': 'td.col4, th.col4', 'props': [('border-left', '2px solid #555')]}, 
+                    {'selector': 'td.col6, th.col6', 'props': [('border-left', '2px solid #555')]}, 
+                    {'selector': 'td.col11, th.col11', 'props': [('border-right', '2px solid #555')]} 
                 ]
                 
                 styled_log.set_table_styles(section_borders, overwrite=False)
-                
                 st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
-        except Exception as e: st.error(f"Error: {e}")
+        except Exception as e: 
+            st.error(f"Error: {e}")
