@@ -110,17 +110,10 @@ st.markdown("""
     .insight-phrase { font-size: 0.9rem; font-weight: 700; color: #1E3A8A; margin: 4px 0; }
     .insight-comment { font-size: 0.75rem; color: #475569; margin: 0; line-height: 1.3; }
 
-    /* --- SECTION HEADERS FOR TABLE --- */
-    .table-section-header {
-        background-color: #F8FAFC;
-        padding: 5px 10px;
-        font-size: 0.8rem;
-        font-weight: 700;
-        color: #1E3A8A;
-        border-bottom: 2px solid #E2E8F0;
-        margin-top: 10px;
-        display: flex;
-        justify-content: space-around;
+    /* --- NEW LOG TABLE SECTION STYLING --- */
+    [data-testid="stDataFrame"] {
+        border-radius: 10px;
+        border: 1px solid #e6e9ef;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -510,17 +503,6 @@ else:
 
         # ---------------- UPDATED RECENT APPLICATIONS LOG ----------------
         st.subheader("🔍 Recent Applications Log")
-        
-        # Section Label Header for Visibility
-        st.markdown("""
-        <div class="table-section-header">
-            <div style="flex:1; text-align:center; border-right: 2px solid #CBD5E1;">Section 1: Basic Info</div>
-            <div style="flex:1; text-align:center; border-right: 2px solid #CBD5E1;">Section 2: Quality Audit</div>
-            <div style="flex:1; text-align:center; border-right: 2px solid #CBD5E1;">Section 3: Welcome Call</div>
-            <div style="flex:2.5; text-align:center;">Section 4: Portal & Delivery Status</div>
-        </div>
-        """, unsafe_allow_html=True)
-
         if not ag1_filtered.empty:
             ag2_clean = ag2.copy()
             ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
@@ -535,56 +517,71 @@ else:
                 how='left'
             )
 
-            # Define Columns based on the 4 requested sections
+            # --- COLUMN GROUPING LOGIC ---
             display_cols = [
-                'Standardized_Date', 'Customer Name',  # Section 1
-                'Quality Status', 'Quality Remarks',   # Section 2
-                'Status', 'Welcome call Remarks',     # Section 3
-                'LetterStatus', 'CallStatus', 'Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason' # Section 4
+                'Standardized_Date', 'Customer Name', 
+                'Quality Status', 'Quality Remarks', 
+                'Status', 'Welcome call Remarks', 
+                'LetterStatus', 'CallStatus', 'Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason'
             ]
             
             recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
             actual_cols = [c for c in display_cols if c in merged_log.columns]
-            
-            def style_log_row(row):
+
+            def style_log_table(row):
                 styles = [''] * len(row)
                 
-                # Colors for visibility
-                sec1_bg = 'background-color: #F8FAFC;' # Neutral Slate
-                sec2_bg = 'background-color: #F0F9FF;' # Light Blue
-                sec3_bg = 'background-color: #FDFCF0;' # Light Yellowish
-                sec4_bg = 'background-color: #F5F3FF;' # Light Purple
-                
-                # Column Groupings
-                group1 = ['Standardized_Date', 'Customer Name']
-                group2 = ['Quality Status', 'Quality Remarks']
-                group3 = ['Status', 'Welcome call Remarks']
-                
-                for i, col in enumerate(row.index):
-                    # Sectional Base Backgrounds
-                    if col in group1: base = sec1_bg
-                    elif col in group2: base = sec2_bg
-                    elif col in group3: base = sec3_bg
-                    else: base = sec4_bg
+                # Definitions for visual boundaries
+                sec_basic = [0, 1]
+                sec_quality = [2, 3]
+                sec_welcome = [4, 5]
+                sec_portal = [6, 7, 8, 9, 10, 11]
 
-                    # Border Logic to separate sections visually
-                    border = ""
-                    if col == 'Customer Name' or col == 'Quality Remarks' or col == 'Welcome call Remarks':
-                        border = 'border-right: 3px solid #CBD5E1;'
+                # Logical styling colors
+                q_val = str(row.get('Quality Status', '')).lower()
+                q_bg = 'background-color: rgba(167, 243, 208, 0.2);' if any(x in q_val for x in ['appr', 'pass']) else 'background-color: rgba(253, 230, 138, 0.2);' if any(x in q_val for x in ['rew', 'repro']) else 'background-color: rgba(254, 202, 202, 0.2);' if any(x in q_val for x in ['can', 'rej']) else ''
+                
+                wc_val = str(row.get('Status', '')).lower()
+                wc_bg = 'background-color: rgba(167, 243, 208, 0.1);' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.1);' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.1);' if any(x in wc_val for x in ['can', 'rej']) else ''
+
+                p_val = str(row.get('Portal Status', '')).lower()
+                p_bg = 'background-color: rgba(16, 185, 129, 0.1);' if 'live' in p_val else 'background-color: rgba(245, 158, 11, 0.1);' if 'committed' in p_val else 'background-color: rgba(239, 68, 68, 0.1);' if any(x in p_val for x in ['rej', 'cancel']) else ''
+
+                # Apply Borders and Logic colors
+                border_style = "border-right: 2px solid #1E3A8A !important;"
+                
+                for i in range(len(row)):
+                    # Section Colors
+                    if i in sec_quality: styles[i] += q_bg
+                    elif i in sec_welcome: styles[i] += wc_bg
+                    elif i in sec_portal: styles[i] += p_bg
                     
-                    # Status Highlights
-                    val = str(row[col]).lower()
-                    highlight = ""
-                    if col in ['Quality Status', 'Status', 'Portal Status', 'CallStatus']:
-                        if any(x in val for x in ['appr', 'pass', 'done', 'live', 'satisfied']):
-                            highlight = 'color: #059669; font-weight: bold;'
-                        elif any(x in val for x in ['can', 'rej', 'fail', 'pend']):
-                            highlight = 'color: #DC2626; font-weight: bold;'
-                    
-                    styles[i] = f"{base} {border} {highlight}"
+                    # Section Separation Boundaries
+                    if i in [1, 3, 5]: # Right edges of first 3 sections
+                        styles[i] += border_style
+
                 return styles
+
+            # Custom header renaming to show sections
+            rename_map = {
+                'Standardized_Date': 'Date',
+                'Status': 'WC Status',
+                'Welcome call Remarks': 'WC Remarks'
+            }
             
-            styled_log = recent_log[actual_cols].style.apply(style_log_row, axis=1)
-            st.dataframe(styled_log, use_container_width=True, hide_index=True)
+            # Rendering Table with grouping logic
+            styled_df = recent_log[actual_cols].rename(columns=rename_map).style.apply(style_log_table, axis=1)
+            
+            # Use Markdown to add a legend for the boundaries
+            st.markdown("""
+                <div style="display: flex; gap: 10px; margin-bottom: 5px;">
+                    <span style="border-left: 3px solid #1E3A8A; padding-left: 5px; font-size: 0.8rem; font-weight: bold;">Section 1: Basic Info</span>
+                    <span style="border-left: 3px solid #1E3A8A; padding-left: 5px; font-size: 0.8rem; font-weight: bold;">Section 2: Quality Audit</span>
+                    <span style="border-left: 3px solid #1E3A8A; padding-left: 5px; font-size: 0.8rem; font-weight: bold;">Section 3: Welcome Call</span>
+                    <span style="border-left: 3px solid #1E3A8A; padding-left: 5px; font-size: 0.8rem; font-weight: bold;">Section 4: Portal & Delivery</span>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
     except Exception as e: st.error(f"Error: {e}")
