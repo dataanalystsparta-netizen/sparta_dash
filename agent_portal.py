@@ -189,7 +189,6 @@ def map_wc(val):
 
 def render_kpi(label, value, total):
     lbl = label.lower()
-    # Subtle accent colors for the card border
     accent = "#94A3B8" 
     if "total" in lbl: accent = "#3B82F6"
     elif any(x in lbl for x in ["appr", "done", "live"]): accent = "#10B981"
@@ -499,23 +498,29 @@ else:
         # ---------------- UPDATED RECENT APPLICATIONS LOG ----------------
         st.subheader("🔍 Recent Applications Log")
         if not ag1_filtered.empty:
-            # Prepare df2 for merging (clean key and handle duplicates)
-            ag2_clean = ag2.copy()
-            ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
-            # Rename Sparta2 Status to avoid collision
-            ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status'})
-            # Get latest entry for each CLI to avoid row multiplication
-            ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
+            # 1. Bulletproof the keys (strips floats, spaces, and leading zeroes for an exact character match)
+            ag1_filtered['CLI_Key'] = ag1_filtered['CLI'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.lstrip('0')
             
-            # Merge with ag1
-            ag1_filtered['CLI_Key'] = ag1_filtered['CLI'].astype(str).str.strip()
+            ag2_clean = ag2.copy()
+            ag2_clean['Telephone_Key'] = ag2_clean['Telephone No.'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.lstrip('0')
+            ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status'})
+            
+            # 2. Get latest entry for each Telephone to avoid row multiplication
+            ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone_Key', keep='last')
+            
+            # 3. Safely select the new columns (ignores any that don't perfectly match your Google Sheet headers to prevent crashing)
+            desired_ag2_cols = ['Telephone_Key', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status']
+            actual_ag2_cols = [c for c in desired_ag2_cols if c in ag2_unique.columns]
+            
+            # Merge
             merged_log = ag1_filtered.merge(
-                ag2_unique[['Telephone No.', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status']],
+                ag2_unique[actual_ag2_cols],
                 left_on='CLI_Key', 
-                right_on='Telephone No.', 
+                right_on='Telephone_Key', 
                 how='left'
             )
 
+            # Master display list
             display_cols = [
                 'Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 
                 'Quality Call Remarks', 'Status', 'Welcome call Remarks',
@@ -524,7 +529,9 @@ else:
             ]
             
             recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
-            actual_cols = [c for c in display_cols if c in merged_log.columns]
+            
+            # Only attempt to display columns that successfully survived the merge
+            final_display_cols = [c for c in display_cols if c in merged_log.columns]
             
             def style_log_row(row):
                 styles = [''] * len(row)
@@ -540,7 +547,8 @@ else:
                     styles[i] = q_color if col in quality_cols else wc_color
                 return styles
             
-            styled_log = recent_log[actual_cols].style.apply(style_log_row, axis=1)
+            styled_log = recent_log[final_display_cols].style.apply(style_log_row, axis=1)
             st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
-    except Exception as e: st.error(f"Error: {e}")
+    except Exception as e: 
+        st.error(f"Error: {e}")
