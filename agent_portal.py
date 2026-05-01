@@ -497,16 +497,23 @@ else:
 
         # ---------------- UPDATED RECENT APPLICATIONS LOG ----------------
         st.subheader("🔍 Recent Applications Log")
+        
+        # Section labels for better UI visibility
+        st.markdown("""
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 800; color: #1E3A8A; margin-bottom: -15px; text-transform: uppercase;">
+                <div style="width: 15%;">[ 1. CUSTOMER ]</div>
+                <div style="width: 15%;">[ 2. QUALITY ]</div>
+                <div style="width: 15%;">[ 3. WELCOME CALL ]</div>
+                <div style="width: 50%; text-align: center;">[ 4. FINAL PORTAL STATUS & REMARKS ]</div>
+            </div>
+        """, unsafe_allow_html=True)
+
         if not ag1_filtered.empty:
-            # Prepare df2 for merging (clean key and handle duplicates)
             ag2_clean = ag2.copy()
             ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
-            # Rename Sparta2 Status to avoid collision
             ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status'})
-            # Get latest entry for each CLI to avoid row multiplication
             ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
             
-            # Merge with ag1
             ag1_filtered['CLI_Key'] = ag1_filtered['CLI'].astype(str).str.strip()
             merged_log = ag1_filtered.merge(
                 ag2_unique[['Telephone No.', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status']],
@@ -515,11 +522,16 @@ else:
                 how='left'
             )
 
-            # --- UPDATED COLUMN ORDER AS REQUESTED ---
+            # --- UPDATED COLUMN ORDER AS REQUESTED (4 SECTIONS) ---
             display_cols = [
-                'Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 
-                'Status', 'Welcome call Remarks', 'LetterStatus', 'CallStatus', 
-                'Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason'
+                # 1. Date, Customer Name
+                'Standardized_Date', 'Customer Name', 
+                # 2. Quality Status, Quality Remarks
+                'Quality Status', 'Quality Remarks', 
+                # 3. Status, Welcome Call Remarks
+                'Status', 'Welcome call Remarks', 
+                # 4. Letter Status, CallStatus, Portal Status, Comments, Voice of Customer, Cancellation Reason
+                'LetterStatus', 'CallStatus', 'Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason'
             ]
             
             recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
@@ -530,39 +542,32 @@ else:
                 
                 # Sheet 1: Quality Section Styling
                 q_val = str(row.get('Quality Status', '')).lower()
-                q_color = 'background-color: rgba(167, 243, 208, 0.3)' if any(x in q_val for x in ['appr', 'pass']) else 'background-color: rgba(253, 230, 138, 0.3)' if any(x in q_val for x in ['rew', 'repro']) else 'background-color: rgba(254, 202, 202, 0.3)' if any(x in q_val for x in ['can', 'rej']) else ''
+                q_color = 'background-color: rgba(167, 243, 208, 0.4)' if any(x in q_val for x in ['appr', 'pass']) else 'background-color: rgba(253, 230, 138, 0.4)' if any(x in q_val for x in ['rew', 'repro']) else 'background-color: rgba(254, 202, 202, 0.4)' if any(x in q_val for x in ['can', 'rej']) else ''
                 
                 # Sheet 1: Welcome Call Section Styling
                 wc_val = str(row.get('Status', '')).lower()
-                wc_color = 'background-color: rgba(167, 243, 208, 0.15)' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.15)' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.15)' if any(x in wc_val for x in ['can', 'rej']) else ''
-                
-                # Sheet 2: CallStatus Logic
-                call_val = str(row.get('CallStatus', '')).lower()
-                c_color = ''
-                if 'satisfied' in call_val: c_color = 'background-color: rgba(16, 185, 129, 0.3)' # Green
-                elif any(x in call_val for x in ['pend', 'cancel']): c_color = 'background-color: rgba(239, 68, 68, 0.3)' # Red
+                wc_color = 'background-color: rgba(167, 243, 208, 0.2)' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.2)' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.2)' if any(x in wc_val for x in ['can', 'rej']) else ''
                 
                 # Sheet 2: Portal Status & Linked Columns Logic
                 portal_val = str(row.get('Portal Status', '')).lower()
                 p_color = ''
-                if 'live' in portal_val: p_color = 'background-color: rgba(16, 185, 129, 0.3)' # Green
-                elif 'committed' in portal_val: p_color = 'background-color: rgba(245, 158, 11, 0.3)' # Yellow
-                elif any(x in portal_val for x in ['rej', 'cancel']): p_color = 'background-color: rgba(239, 68, 68, 0.3)' # Red
+                if 'live' in portal_val: p_color = 'background-color: rgba(16, 185, 129, 0.15)' 
+                elif 'committed' in portal_val: p_color = 'background-color: rgba(245, 158, 11, 0.15)' 
+                elif any(x in portal_val for x in ['rej', 'cancel']): p_color = 'background-color: rgba(239, 68, 68, 0.15)'
 
-                quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
-                portal_group = ['Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason']
+                # Define columns by functional group for background logic
+                group_2 = ['Quality Status', 'Quality Remarks']
+                group_3 = ['Status', 'Welcome call Remarks']
+                group_4 = ['LetterStatus', 'CallStatus', 'Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason']
                 
                 for i, col in enumerate(row.index):
-                    if col == 'LetterStatus':
-                        styles[i] = 'background-color: rgba(59, 130, 246, 0.3)' # Always Blue
-                    elif col == 'CallStatus':
-                        styles[i] = c_color
-                    elif col in portal_group:
-                        styles[i] = p_color
-                    elif col in quality_cols:
+                    if col in group_2:
                         styles[i] = q_color
-                    else:
+                    elif col in group_3:
                         styles[i] = wc_color
+                    elif col in group_4:
+                        styles[i] = p_color
+                    # Group 1 (Date, Name) remains neutral/white
                 return styles
             
             styled_log = recent_log[actual_cols].style.apply(style_log_row, axis=1)
