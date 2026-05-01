@@ -492,12 +492,11 @@ else:
             )
             st.plotly_chart(fig_cal, use_container_width=True)
             st.caption("🟢 Sales | ⚪ No Sales | 🔵 Holiday ")
-
-        st.write("---")
-# ---------------- UPDATED RECENT APPLICATIONS LOG WITH SECTIONS ----------------
+st.write("---")
+        # ---------------- UPDATED RECENT APPLICATIONS LOG WITH SECTIONS ----------------
         st.subheader("🔍 Recent Applications Log")
         
-        try: # Start of the try block
+        try: 
             if not ag1_filtered.empty:
                 # Prepare df2 for merging (clean key and handle duplicates)
                 ag2_clean = ag2.copy()
