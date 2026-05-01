@@ -523,12 +523,12 @@ else:
                 ('Quality Audit', 'Quality Remarks'),
                 ('Welcome Call', 'Status'),
                 ('Welcome Call', 'Welcome call Remarks'),
-                ('Portal & Delivery Status', 'LetterStatus'),
-                ('Portal & Delivery Status', 'CallStatus'),
-                ('Portal & Delivery Status', 'Portal Status'),
-                ('Portal & Delivery Status', 'Comments'),
-                ('Portal & Delivery Status', 'Voice of Customer'),
-                ('Portal & Delivery Status', 'Cancellation Reason')
+                ('Live Status', 'LetterStatus'),
+                ('Live Status', 'CallStatus'),
+                ('Live Status', 'Portal Status'),
+                ('Live Status', 'Comments'),
+                ('Live Status', 'Voice of Customer'),
+                ('Live Status', 'Cancellation Reason')
             ]
             
             recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
