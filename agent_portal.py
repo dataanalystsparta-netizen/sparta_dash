@@ -599,25 +599,42 @@ else:
                 # 2. Apply Styles to Index Positions
                 for i, col_tuple in enumerate(row.index):
                     col = col_tuple[1] 
+                    current_style = ""
+                    
                     if col == 'LetterStatus':
-                        styles[i] = 'background-color: rgba(59, 130, 246, 0.3);'
+                        current_style = 'background-color: rgba(59, 130, 246, 0.3);'
                     elif col == 'CallStatus':
-                        styles[i] = c_style
+                        current_style = c_style
                     elif col in portal_group:
                         if col == 'Portal Status':
-                            styles[i] = p_style
+                            current_style = p_style
                         else:
-                            styles[i] = f'background-color: {p_bg};' if p_bg else ''
+                            current_style = f'background-color: {p_bg};' if p_bg else ''
                     elif col in quality_cols:
                         if col == 'Quality Status':
-                            styles[i] = q_style
+                            current_style = q_style
                         else:
-                            styles[i] = f'background-color: {q_bg};' if q_bg else ''
+                            current_style = f'background-color: {q_bg};' if q_bg else ''
                     else: # Welcome Call group
                         if col == 'Status':
-                            styles[i] = wc_style
+                            current_style = wc_style
                         else:
-                            styles[i] = f'background-color: {wc_bg};' if wc_bg else ''
+                            current_style = f'background-color: {wc_bg};' if wc_bg else ''
+                    
+                    # --- BOLD BOUNDARY ENHANCEMENT ---
+                    # Left Boundary of the table
+                    if col == 'Standardized_Date':
+                        current_style += 'border-left: 3px solid #1E3A8A;'
+                    
+                    # Right Boundaries of each of the 4 sections
+                    # Basic Info. ends at 'Customer Name'
+                    # Quality Audit ends at 'Quality Remarks'
+                    # Welcome Call ends at 'Welcome call Remarks'
+                    # Live Status ends at 'Cancellation Reason'
+                    if col in ['Customer Name', 'Quality Remarks', 'Welcome call Remarks', 'Cancellation Reason']:
+                        current_style += 'border-right: 3px solid #1E3A8A;'
+                    
+                    styles[i] = current_style
                 return styles      
             
             styled_log = display_df.style.apply(style_log_row, axis=1)
