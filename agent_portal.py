@@ -494,97 +494,111 @@ else:
             st.caption("🟢 Sales | ⚪ No Sales | 🔵 Holiday ")
 
         st.write("---")
-
-        # ---------------- UPDATED RECENT APPLICATIONS LOG WITH SECTIONS ----------------
+# ---------------- UPDATED RECENT APPLICATIONS LOG WITH SECTIONS ----------------
         st.subheader("🔍 Recent Applications Log")
-        if not ag1_filtered.empty:
-            # Prepare df2 for merging (clean key and handle duplicates)
-            ag2_clean = ag2.copy()
-            ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
-            # Rename Sparta2 Status to avoid collision
-            ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status'})
-            # Get latest entry for each CLI to avoid row multiplication
-            ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
-            
-            # Merge with ag1
-            ag1_filtered['CLI_Key'] = ag1_filtered['CLI'].astype(str).str.strip()
-            merged_log = ag1_filtered.merge(
-                ag2_unique[['Telephone No.', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status']],
-                left_on='CLI_Key', 
-                right_on='Telephone No.', 
-                how='left'
-            )
-
-            # Define multi-level columns (Section Headers)
-            columns_layout = [
-                ('Basic Info.', 'Standardized_Date'),
-                ('Basic Info.', 'Customer Name'),
-                ('Quality Audit', 'Quality Status'),
-                ('Quality Audit', 'Quality Remarks'),
-                ('Welcome Call', 'Status'),
-                ('Welcome Call', 'Welcome call Remarks'),
-                ('Live Status', 'LetterStatus'),
-                ('Live Status', 'CallStatus'),
-                ('Live Status', 'Portal Status'),
-                ('Live Status', 'Comments'),
-                ('Live Status', 'Voice of Customer'),
-                ('Live Status', 'Cancellation Reason')
-            ]
-            
-            recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
-            
-            # Filter layout to only include columns that exist in the merged dataframe
-            valid_layout = [item for item in columns_layout if item[1] in merged_log.columns]
-            
-            # Create the MultiIndex dataframe for display
-            display_df = recent_log[[item[1] for item in valid_layout]].copy()
-            display_df.columns = pd.MultiIndex.from_tuples(valid_layout)
-
-            def style_log_row(row):
-                styles = [''] * len(row)
+        try:
+            if not ag1_filtered.empty:
+                # Prepare df2 for merging (clean key and handle duplicates)
+                ag2_clean = ag2.copy()
+                ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
+                # Rename Sparta2 Status to avoid collision
+                ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status'})
+                # Get latest entry for each CLI to avoid row multiplication
+                ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
                 
-                # Logic for colors based on the SECOND level of index (the actual column name)
-                # Helper to get value from a MultiIndex row
-                def get_val(col_name):
-                    for col in row.index:
-                        if col[1] == col_name: return str(row[col]).lower()
-                    return ""
+                # Merge with ag1
+                ag1_filtered['CLI_Key'] = ag1_filtered['CLI'].astype(str).str.strip()
+                merged_log = ag1_filtered.merge(
+                    ag2_unique[['Telephone No.', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status']],
+                    left_on='CLI_Key', 
+                    right_on='Telephone No.', 
+                    how='left'
+                )
 
-                q_val = get_val('Quality Status')
-                q_color = 'background-color: rgba(167, 243, 208, 0.3)' if any(x in q_val for x in ['appr', 'pass']) else 'background-color: rgba(253, 230, 138, 0.3)' if any(x in q_val for x in ['rew', 'repro']) else 'background-color: rgba(254, 202, 202, 0.3)' if any(x in q_val for x in ['can', 'rej']) else ''
+                # Define multi-level columns (Section Headers)
+                columns_layout = [
+                    ('Basic Info.', 'Standardized_Date'),
+                    ('Basic Info.', 'Customer Name'),
+                    ('Quality Audit', 'Quality Status'),
+                    ('Quality Audit', 'Quality Remarks'),
+                    ('Welcome Call', 'Status'),
+                    ('Welcome Call', 'Welcome call Remarks'),
+                    ('Live Status', 'LetterStatus'),
+                    ('Live Status', 'CallStatus'),
+                    ('Live Status', 'Portal Status'),
+                    ('Live Status', 'Comments'),
+                    ('Live Status', 'Voice of Customer'),
+                    ('Live Status', 'Cancellation Reason')
+                ]
                 
-                wc_val = get_val('Status')
-                wc_color = 'background-color: rgba(167, 243, 208, 0.15)' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.15)' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.15)' if any(x in wc_val for x in ['can', 'rej']) else ''
+                recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
                 
-                call_val = get_val('CallStatus')
-                c_color = ''
-                if 'satisfied' in call_val: c_color = 'background-color: rgba(16, 185, 129, 0.3)'
-                elif any(x in call_val for x in ['pend', 'cancel']): c_color = 'background-color: rgba(239, 68, 68, 0.3)'
+                # Filter layout to only include columns that exist in the merged dataframe
+                valid_layout = [item for item in columns_layout if item[1] in merged_log.columns]
                 
-                portal_val = get_val('Portal Status')
-                p_color = ''
-                if 'live' in portal_val: p_color = 'background-color: rgba(16, 185, 129, 0.3)'
-                elif 'committed' in portal_val: p_color = 'background-color: rgba(245, 158, 11, 0.3)'
-                elif any(x in portal_val for x in ['rej', 'cancel']): p_color = 'background-color: rgba(239, 68, 68, 0.3)'
+                # Create the MultiIndex dataframe for display
+                display_df = recent_log[[item[1] for item in valid_layout]].copy()
+                display_df.columns = pd.MultiIndex.from_tuples(valid_layout)
 
-                quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
-                portal_group = ['Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason']
-                
-                for i, col_tuple in enumerate(row.index):
-                    col = col_tuple[1] # Actual column name
-                    if col == 'LetterStatus':
-                        styles[i] = 'background-color: rgba(59, 130, 246, 0.3)'
-                    elif col == 'CallStatus':
-                        styles[i] = c_color
-                    elif col in portal_group:
-                        styles[i] = p_color
-                    elif col in quality_cols:
-                        styles[i] = q_color
-                    else:
-                        styles[i] = wc_color
-                return styles
-            
-            styled_log = display_df.style.apply(style_log_row, axis=1)
-            st.dataframe(styled_log, use_container_width=True, hide_index=True)
+                def style_log_row(row):
+                    styles = [''] * len(row)
+                    
+                    def get_val(col_name):
+                        for col in row.index:
+                            if col[1] == col_name: return str(row[col]).lower()
+                        return ""
 
-    except Exception as e: st.error(f"Error: {e}")
+                    q_val = get_val('Quality Status')
+                    q_color = 'background-color: rgba(167, 243, 208, 0.3)' if any(x in q_val for x in ['appr', 'pass']) else 'background-color: rgba(253, 230, 138, 0.3)' if any(x in q_val for x in ['rew', 'repro']) else 'background-color: rgba(254, 202, 202, 0.3)' if any(x in q_val for x in ['can', 'rej']) else ''
+                    
+                    wc_val = get_val('Status')
+                    wc_color = 'background-color: rgba(167, 243, 208, 0.15)' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.15)' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.15)' if any(x in wc_val for x in ['can', 'rej']) else ''
+                    
+                    call_val = get_val('CallStatus')
+                    c_color = ''
+                    if 'satisfied' in call_val: c_color = 'background-color: rgba(16, 185, 129, 0.3)'
+                    elif any(x in call_val for x in ['pend', 'cancel']): c_color = 'background-color: rgba(239, 68, 68, 0.3)'
+                    
+                    portal_val = get_val('Portal Status')
+                    p_color = ''
+                    if 'live' in portal_val: p_color = 'background-color: rgba(16, 185, 129, 0.3)'
+                    elif 'committed' in portal_val: p_color = 'background-color: rgba(245, 158, 11, 0.3)'
+                    elif any(x in portal_val for x in ['rej', 'cancel']): p_color = 'background-color: rgba(239, 68, 68, 0.3)'
+
+                    quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
+                    portal_group = ['Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason']
+                    
+                    for i, col_tuple in enumerate(row.index):
+                        col = col_tuple[1] 
+                        if col == 'LetterStatus':
+                            styles[i] = 'background-color: rgba(59, 130, 246, 0.3)'
+                        elif col == 'CallStatus':
+                            styles[i] = c_color
+                        elif col in portal_group:
+                            styles[i] = p_color
+                        elif col in quality_cols:
+                            styles[i] = q_color
+                        else:
+                            styles[i] = wc_color
+                    return styles
+                
+                # --- APPLY BORDERS TO SECTIONS ---
+                # We identify the indices where sections change to apply borders
+                styled_log = display_df.style.apply(style_log_row, axis=1)
+                
+                # Define CSS for the bold boundaries
+                section_borders = [
+                    {'selector': 'th.col_heading.level0', 'props': [('border-left', '2px solid #555'), ('border-right', '2px solid #555'), ('font-weight', 'bold')]},
+                    # Apply vertical lines between MultiIndex groups
+                    {'selector': 'td.col0, th.col0', 'props': [('border-left', '2px solid #555')]}, # Start of Basic Info
+                    {'selector': 'td.col2, th.col2', 'props': [('border-left', '2px solid #555')]}, # Start of Quality
+                    {'selector': 'td.col4, th.col4', 'props': [('border-left', '2px solid #555')]}, # Start of Welcome Call
+                    {'selector': 'td.col6, th.col6', 'props': [('border-left', '2px solid #555')]}, # Start of Live Status
+                    {'selector': 'td.col11, th.col11', 'props': [('border-right', '2px solid #555')]} # End of Table
+                ]
+                
+                styled_log.set_table_styles(section_borders, overwrite=False)
+                
+                st.dataframe(styled_log, use_container_width=True, hide_index=True)
+
+        except Exception as e: st.error(f"Error: {e}")
