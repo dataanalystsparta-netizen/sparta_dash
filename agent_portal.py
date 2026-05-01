@@ -496,20 +496,48 @@ else:
 
         st.write("---")
 
+        # ---------------- UPDATED RECENT APPLICATIONS LOG ----------------
         st.subheader("🔍 Recent Applications Log")
         if not ag1_filtered.empty:
-            display_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks', 'Status', 'Welcome call Remarks']
-            recent_log = ag1_filtered.sort_values(by='Date_Parsed', ascending=False).head(20)
-            actual_cols = [c for c in display_cols if c in ag1_filtered.columns]
+            # Prepare df2 for merging (clean key and handle duplicates)
+            ag2_clean = ag2.copy()
+            ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
+            # Rename Sparta2 Status to avoid collision
+            ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status'})
+            # Get latest entry for each CLI to avoid row multiplication
+            ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
+            
+            # Merge with ag1
+            ag1_filtered['CLI_Key'] = ag1_filtered['CLI'].astype(str).str.strip()
+            merged_log = ag1_filtered.merge(
+                ag2_unique[['Telephone No.', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status']],
+                left_on='CLI_Key', 
+                right_on='Telephone No.', 
+                how='left'
+            )
+
+            display_cols = [
+                'Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 
+                'Quality Call Remarks', 'Status', 'Welcome call Remarks',
+                'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 
+                'Cancellation Reason', 'Portal Status'
+            ]
+            
+            recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
+            actual_cols = [c for c in display_cols if c in merged_log.columns]
             
             def style_log_row(row):
                 styles = [''] * len(row)
                 q_val = str(row.get('Quality Status', '')).lower()
                 q_color = 'background-color: rgba(167, 243, 208, 0.3)' if any(x in q_val for x in ['appr', 'pass']) else 'background-color: rgba(253, 230, 138, 0.3)' if any(x in q_val for x in ['rew', 'repro']) else 'background-color: rgba(254, 202, 202, 0.3)' if any(x in q_val for x in ['can', 'rej']) else ''
+                
+                # Sheet 1 Status (Welcome Call)
                 wc_val = str(row.get('Status', '')).lower()
-                wc_color = 'background-color: rgba(167, 243, 208, 0.3)' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.3)' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.3)' if any(x in wc_val for x in ['can', 'rej']) else ''
+                wc_color = 'background-color: rgba(167, 243, 208, 0.15)' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.15)' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.15)' if any(x in wc_val for x in ['can', 'rej']) else ''
+                
                 quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks']
-                for i, col in enumerate(row.index): styles[i] = q_color if col in quality_cols else wc_color
+                for i, col in enumerate(row.index):
+                    styles[i] = q_color if col in quality_cols else wc_color
                 return styles
             
             styled_log = recent_log[actual_cols].style.apply(style_log_row, axis=1)
