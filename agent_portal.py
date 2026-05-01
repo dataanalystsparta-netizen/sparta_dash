@@ -244,7 +244,13 @@ else:
         
         col_title, col_time = st.columns([3, 1])
         with col_title:
-            st.title(f"My Performance Dashboard")
+            # Layout for Logo + Title
+            t_col1, t_col2 = st.columns([0.15, 0.85])
+            with t_col1:
+                st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/images.jpg", width=65)
+            with t_col2:
+                st.title(f"My Performance Dashboard")
+                
         col_time.markdown(f"<p class='last-updated'>Data Last Synced:<br><b>{last_sync}</b></p>", unsafe_allow_html=True)
 
         st.write("---")
