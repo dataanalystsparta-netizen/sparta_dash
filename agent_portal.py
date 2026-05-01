@@ -516,11 +516,11 @@ else:
                 how='left'
             )
 
+            # --- COLUMN REORDERING FIXED HERE ---
             display_cols = [
                 'Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 
-                'Quality Call Remarks', 'Status', 'Welcome call Remarks',
-                'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 
-                'Cancellation Reason', 'Portal Status'
+                'Status', 'Welcome call Remarks', 'LetterStatus', 'CallStatus', 
+                'Comments', 'Voice of Customer', 'Cancellation Reason'
             ]
             
             recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
@@ -535,7 +535,7 @@ else:
                 wc_val = str(row.get('Status', '')).lower()
                 wc_color = 'background-color: rgba(167, 243, 208, 0.15)' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.15)' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.15)' if any(x in wc_val for x in ['can', 'rej']) else ''
                 
-                quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 'Quality Call Remarks']
+                quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
                 for i, col in enumerate(row.index):
                     styles[i] = q_color if col in quality_cols else wc_color
                 return styles
