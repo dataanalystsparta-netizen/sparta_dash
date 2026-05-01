@@ -527,16 +527,42 @@ else:
             
             def style_log_row(row):
                 styles = [''] * len(row)
+                
+                # Sheet 1: Quality Section Styling
                 q_val = str(row.get('Quality Status', '')).lower()
                 q_color = 'background-color: rgba(167, 243, 208, 0.3)' if any(x in q_val for x in ['appr', 'pass']) else 'background-color: rgba(253, 230, 138, 0.3)' if any(x in q_val for x in ['rew', 'repro']) else 'background-color: rgba(254, 202, 202, 0.3)' if any(x in q_val for x in ['can', 'rej']) else ''
                 
-                # Sheet 1 Status (Welcome Call)
+                # Sheet 1: Welcome Call Section Styling
                 wc_val = str(row.get('Status', '')).lower()
                 wc_color = 'background-color: rgba(167, 243, 208, 0.15)' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.15)' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.15)' if any(x in wc_val for x in ['can', 'rej']) else ''
                 
+                # Sheet 2: CallStatus Logic
+                call_val = str(row.get('CallStatus', '')).lower()
+                c_color = ''
+                if 'satisfied' in call_val: c_color = 'background-color: rgba(16, 185, 129, 0.3)' # Green
+                elif any(x in call_val for x in ['pend', 'cancel']): c_color = 'background-color: rgba(239, 68, 68, 0.3)' # Red
+                
+                # Sheet 2: Portal Status & Linked Columns Logic
+                portal_val = str(row.get('Portal Status', '')).lower()
+                p_color = ''
+                if 'live' in portal_val: p_color = 'background-color: rgba(16, 185, 129, 0.3)' # Green
+                elif 'committed' in portal_val: p_color = 'background-color: rgba(245, 158, 11, 0.3)' # Yellow
+                elif any(x in portal_val for x in ['rej', 'cancel']): p_color = 'background-color: rgba(239, 68, 68, 0.3)' # Red
+
                 quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
+                portal_group = ['Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason']
+                
                 for i, col in enumerate(row.index):
-                    styles[i] = q_color if col in quality_cols else wc_color
+                    if col == 'LetterStatus':
+                        styles[i] = 'background-color: rgba(59, 130, 246, 0.3)' # Always Blue
+                    elif col == 'CallStatus':
+                        styles[i] = c_color
+                    elif col in portal_group:
+                        styles[i] = p_color
+                    elif col in quality_cols:
+                        styles[i] = q_color
+                    else:
+                        styles[i] = wc_color
                 return styles
             
             styled_log = recent_log[actual_cols].style.apply(style_log_row, axis=1)
