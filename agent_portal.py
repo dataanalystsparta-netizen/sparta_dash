@@ -109,6 +109,19 @@ st.markdown("""
     .insight-title { font-size: 0.7rem; font-weight: 800; color: #64748B; margin: 0; text-transform: uppercase; }
     .insight-phrase { font-size: 0.9rem; font-weight: 700; color: #1E3A8A; margin: 4px 0; }
     .insight-comment { font-size: 0.75rem; color: #475569; margin: 0; line-height: 1.3; }
+
+    /* --- SECTION HEADERS FOR TABLE --- */
+    .table-section-header {
+        background-color: #F8FAFC;
+        padding: 5px 10px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #1E3A8A;
+        border-bottom: 2px solid #E2E8F0;
+        margin-top: 10px;
+        display: flex;
+        justify-content: space-around;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -498,14 +511,14 @@ else:
         # ---------------- UPDATED RECENT APPLICATIONS LOG ----------------
         st.subheader("🔍 Recent Applications Log")
         
-        # Section labels for better UI visibility
+        # Section Label Header for Visibility
         st.markdown("""
-            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 800; color: #1E3A8A; margin-bottom: -15px; text-transform: uppercase;">
-                <div style="width: 15%;">[ 1. CUSTOMER ]</div>
-                <div style="width: 15%;">[ 2. QUALITY ]</div>
-                <div style="width: 15%;">[ 3. WELCOME CALL ]</div>
-                <div style="width: 50%; text-align: center;">[ 4. FINAL PORTAL STATUS & REMARKS ]</div>
-            </div>
+        <div class="table-section-header">
+            <div style="flex:1; text-align:center; border-right: 2px solid #CBD5E1;">Section 1: Basic Info</div>
+            <div style="flex:1; text-align:center; border-right: 2px solid #CBD5E1;">Section 2: Quality Audit</div>
+            <div style="flex:1; text-align:center; border-right: 2px solid #CBD5E1;">Section 3: Welcome Call</div>
+            <div style="flex:2.5; text-align:center;">Section 4: Portal & Delivery Status</div>
+        </div>
         """, unsafe_allow_html=True)
 
         if not ag1_filtered.empty:
@@ -522,16 +535,12 @@ else:
                 how='left'
             )
 
-            # --- UPDATED COLUMN ORDER AS REQUESTED (4 SECTIONS) ---
+            # Define Columns based on the 4 requested sections
             display_cols = [
-                # 1. Date, Customer Name
-                'Standardized_Date', 'Customer Name', 
-                # 2. Quality Status, Quality Remarks
-                'Quality Status', 'Quality Remarks', 
-                # 3. Status, Welcome Call Remarks
-                'Status', 'Welcome call Remarks', 
-                # 4. Letter Status, CallStatus, Portal Status, Comments, Voice of Customer, Cancellation Reason
-                'LetterStatus', 'CallStatus', 'Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason'
+                'Standardized_Date', 'Customer Name',  # Section 1
+                'Quality Status', 'Quality Remarks',   # Section 2
+                'Status', 'Welcome call Remarks',     # Section 3
+                'LetterStatus', 'CallStatus', 'Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason' # Section 4
             ]
             
             recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
@@ -540,34 +549,39 @@ else:
             def style_log_row(row):
                 styles = [''] * len(row)
                 
-                # Sheet 1: Quality Section Styling
-                q_val = str(row.get('Quality Status', '')).lower()
-                q_color = 'background-color: rgba(167, 243, 208, 0.4)' if any(x in q_val for x in ['appr', 'pass']) else 'background-color: rgba(253, 230, 138, 0.4)' if any(x in q_val for x in ['rew', 'repro']) else 'background-color: rgba(254, 202, 202, 0.4)' if any(x in q_val for x in ['can', 'rej']) else ''
+                # Colors for visibility
+                sec1_bg = 'background-color: #F8FAFC;' # Neutral Slate
+                sec2_bg = 'background-color: #F0F9FF;' # Light Blue
+                sec3_bg = 'background-color: #FDFCF0;' # Light Yellowish
+                sec4_bg = 'background-color: #F5F3FF;' # Light Purple
                 
-                # Sheet 1: Welcome Call Section Styling
-                wc_val = str(row.get('Status', '')).lower()
-                wc_color = 'background-color: rgba(167, 243, 208, 0.2)' if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']) else 'background-color: rgba(253, 230, 138, 0.2)' if any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']) else 'background-color: rgba(254, 202, 202, 0.2)' if any(x in wc_val for x in ['can', 'rej']) else ''
-                
-                # Sheet 2: Portal Status & Linked Columns Logic
-                portal_val = str(row.get('Portal Status', '')).lower()
-                p_color = ''
-                if 'live' in portal_val: p_color = 'background-color: rgba(16, 185, 129, 0.15)' 
-                elif 'committed' in portal_val: p_color = 'background-color: rgba(245, 158, 11, 0.15)' 
-                elif any(x in portal_val for x in ['rej', 'cancel']): p_color = 'background-color: rgba(239, 68, 68, 0.15)'
-
-                # Define columns by functional group for background logic
-                group_2 = ['Quality Status', 'Quality Remarks']
-                group_3 = ['Status', 'Welcome call Remarks']
-                group_4 = ['LetterStatus', 'CallStatus', 'Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason']
+                # Column Groupings
+                group1 = ['Standardized_Date', 'Customer Name']
+                group2 = ['Quality Status', 'Quality Remarks']
+                group3 = ['Status', 'Welcome call Remarks']
                 
                 for i, col in enumerate(row.index):
-                    if col in group_2:
-                        styles[i] = q_color
-                    elif col in group_3:
-                        styles[i] = wc_color
-                    elif col in group_4:
-                        styles[i] = p_color
-                    # Group 1 (Date, Name) remains neutral/white
+                    # Sectional Base Backgrounds
+                    if col in group1: base = sec1_bg
+                    elif col in group2: base = sec2_bg
+                    elif col in group3: base = sec3_bg
+                    else: base = sec4_bg
+
+                    # Border Logic to separate sections visually
+                    border = ""
+                    if col == 'Customer Name' or col == 'Quality Remarks' or col == 'Welcome call Remarks':
+                        border = 'border-right: 3px solid #CBD5E1;'
+                    
+                    # Status Highlights
+                    val = str(row[col]).lower()
+                    highlight = ""
+                    if col in ['Quality Status', 'Status', 'Portal Status', 'CallStatus']:
+                        if any(x in val for x in ['appr', 'pass', 'done', 'live', 'satisfied']):
+                            highlight = 'color: #059669; font-weight: bold;'
+                        elif any(x in val for x in ['can', 'rej', 'fail', 'pend']):
+                            highlight = 'color: #DC2626; font-weight: bold;'
+                    
+                    styles[i] = f"{base} {border} {highlight}"
                 return styles
             
             styled_log = recent_log[actual_cols].style.apply(style_log_row, axis=1)
