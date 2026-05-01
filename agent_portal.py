@@ -417,7 +417,7 @@ else:
         col_trend, col_cal = st.columns([3, 2])
         with col_trend:
             st.subheader("📈 My Trend")
-            if not ag1_filtered.empty:
+            if not_ag1_filtered := not ag1_filtered.empty:
                 d_apps = ag1_filtered.groupby(chart_group_col).size().to_frame('Total Apps')
                 d_appr = ag1_filtered[ag1_filtered['Q_Status'] == 'Approved'].groupby(chart_group_col).size().to_frame('Approved')
                 d_live = ag2_filtered[ag2_filtered['P_Status'] == 'Live'].groupby(chart_group_col).size().to_frame('Live')
@@ -517,8 +517,8 @@ else:
 
             # Define multi-level columns (Section Headers)
             columns_layout = [
-                ('📝Basic Info.', 'Standardized_Date'),
-                ('📝Basic Info.', 'Customer Name'),
+                ('Basic Info.', 'Standardized_Date'),
+                ('Basic Info.', 'Customer Name'),
                 ('Quality Audit', 'Quality Status'),
                 ('Quality Audit', 'Quality Remarks'),
                 ('Welcome Call', 'Status'),
@@ -554,43 +554,48 @@ else:
                 DARK_AMBER = '#92400E'
                 DARK_RED = '#991B1B'
 
+                # --- UNIFIED BACKGROUND PALETTE (MATCHING LIVE STATUS) ---
+                BG_GREEN = 'rgba(16, 185, 129, 0.3)'
+                BG_AMBER = 'rgba(245, 158, 11, 0.3)'
+                BG_RED   = 'rgba(239, 68, 68, 0.3)'
+
                 # 1. Determine Background Colors & High Contrast Text Colors
                 q_val = get_val('Quality Status')
                 q_bg, q_txt = '', ''
                 if any(x in q_val for x in ['appr', 'pass']):
-                    q_bg, q_txt = 'rgba(167, 243, 208, 0.3)', DARK_GREEN
+                    q_bg, q_txt = BG_GREEN, DARK_GREEN
                 elif any(x in q_val for x in ['rew', 'repro']):
-                    q_bg, q_txt = 'rgba(253, 230, 138, 0.3)', DARK_AMBER
+                    q_bg, q_txt = BG_AMBER, DARK_AMBER
                 elif any(x in q_val for x in ['can', 'rej']):
-                    q_bg, q_txt = 'rgba(254, 202, 202, 0.3)', DARK_RED
+                    q_bg, q_txt = BG_RED, DARK_RED
                 q_style = f'background-color: {q_bg}; color: {q_txt}; font-weight: bold;' if q_bg else ''
 
                 wc_val = get_val('Status')
                 wc_bg, wc_txt = '', ''
                 if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']):
-                    wc_bg, wc_txt = 'rgba(167, 243, 208, 0.15)', DARK_GREEN
+                    wc_bg, wc_txt = BG_GREEN, DARK_GREEN
                 elif any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']):
-                    wc_bg, wc_txt = 'rgba(253, 230, 138, 0.15)', DARK_AMBER
+                    wc_bg, wc_txt = BG_AMBER, DARK_AMBER
                 elif any(x in wc_val for x in ['can', 'rej']):
-                    wc_bg, wc_txt = 'rgba(254, 202, 202, 0.15)', DARK_RED
+                    wc_bg, wc_txt = BG_RED, DARK_RED
                 wc_style = f'background-color: {wc_bg}; color: {wc_txt}; font-weight: bold;' if wc_bg else ''
 
                 call_val = get_val('CallStatus')
                 c_bg, c_txt = '', ''
                 if 'satisfied' in call_val:
-                    c_bg, c_txt = 'rgba(16, 185, 129, 0.3)', DARK_GREEN
+                    c_bg, c_txt = BG_GREEN, DARK_GREEN
                 elif any(x in call_val for x in ['pend', 'cancel']):
-                    c_bg, c_txt = 'rgba(239, 68, 68, 0.3)', DARK_RED
+                    c_bg, c_txt = BG_RED, DARK_RED
                 c_style = f'background-color: {c_bg}; color: {c_txt}; font-weight: bold;' if c_bg else ''
                 
                 portal_val = get_val('Portal Status')
                 p_bg, p_txt = '', ''
                 if 'live' in portal_val:
-                    p_bg, p_txt = 'rgba(16, 185, 129, 0.3)', DARK_GREEN
+                    p_bg, p_txt = BG_GREEN, DARK_GREEN
                 elif 'committed' in portal_val:
-                    p_bg, p_txt = 'rgba(245, 158, 11, 0.3)', DARK_AMBER
+                    p_bg, p_txt = BG_AMBER, DARK_AMBER
                 elif any(x in portal_val for x in ['rej', 'cancel']):
-                    p_bg, p_txt = 'rgba(239, 68, 68, 0.3)', DARK_RED
+                    p_bg, p_txt = BG_RED, DARK_RED
                 p_style = f'background-color: {p_bg}; color: {p_txt}; font-weight: bold;' if p_bg else ''
 
                 quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
@@ -622,15 +627,9 @@ else:
                             current_style = f'background-color: {wc_bg};' if wc_bg else ''
                     
                     # --- BOLD BOUNDARY ENHANCEMENT ---
-                    # Left Boundary of the table
                     if col == 'Standardized_Date':
                         current_style += 'border-left: 3px solid #1E3A8A;'
                     
-                    # Right Boundaries of each of the 4 sections
-                    # Basic Info. ends at 'Customer Name'
-                    # Quality Audit ends at 'Quality Remarks'
-                    # Welcome Call ends at 'Welcome call Remarks'
-                    # Live Status ends at 'Cancellation Reason'
                     if col in ['Customer Name', 'Quality Remarks', 'Welcome call Remarks', 'Cancellation Reason']:
                         current_style += 'border-right: 3px solid #1E3A8A;'
                     
