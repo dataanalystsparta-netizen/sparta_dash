@@ -189,7 +189,6 @@ def map_wc(val):
 
 def render_kpi(label, value, total):
     lbl = label.lower()
-    # Subtle accent colors for the card border
     accent = "#94A3B8" 
     if "total" in lbl: accent = "#3B82F6"
     elif any(x in lbl for x in ["appr", "done", "live"]): accent = "#10B981"
@@ -516,11 +515,11 @@ else:
                 how='left'
             )
 
-            # --- COLUMN REORDERING FIXED HERE ---
+            # --- UPDATED COLUMN ORDER AS REQUESTED ---
             display_cols = [
                 'Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks', 
                 'Status', 'Welcome call Remarks', 'LetterStatus', 'CallStatus', 
-                'Comments', 'Voice of Customer', 'Cancellation Reason'
+                'Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason'
             ]
             
             recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
