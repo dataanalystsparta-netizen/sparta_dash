@@ -7,6 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go 
 import calendar
 
+
 st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
 
 # --- IMPROVED UI SECTION ---
