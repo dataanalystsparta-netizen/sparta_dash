@@ -495,18 +495,14 @@ else:
 
         st.write("---")
 
-        # ---------------- UPDATED RECENT APPLICATIONS LOG WITH SECTIONS ----------------
+        # ---------------- UPDATED RECENT APPLICATIONS LOG - SPLIT INTO 4 TABLES ----------------
         st.subheader("🔍 Recent Applications Log")
         if not ag1_filtered.empty:
-            # Prepare df2 for merging (clean key and handle duplicates)
             ag2_clean = ag2.copy()
             ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
-            # Rename Sparta2 Status to avoid collision
             ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status'})
-            # Get latest entry for each CLI to avoid row multiplication
             ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
             
-            # Merge with ag1
             ag1_filtered['CLI_Key'] = ag1_filtered['CLI'].astype(str).str.strip()
             merged_log = ag1_filtered.merge(
                 ag2_unique[['Telephone No.', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status']],
@@ -515,128 +511,73 @@ else:
                 how='left'
             )
 
-            # Define multi-level columns (Section Headers)
-            columns_layout = [
-                ('Basic Info.', 'Standardized_Date'),
-                ('Basic Info.', 'Customer Name'),
-                ('Quality Audit', 'Quality Status'),
-                ('Quality Audit', 'Quality Remarks'),
-                ('Welcome Call', 'Status'),
-                ('Welcome Call', 'Welcome call Remarks'),
-                ('Live Status', 'LetterStatus'),
-                ('Live Status', 'CallStatus'),
-                ('Live Status', 'Portal Status'),
-                ('Live Status', 'Comments'),
-                ('Live Status', 'Voice of Customer'),
-                ('Live Status', 'Cancellation Reason')
-            ]
-            
             recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
-            
-            # Filter layout to only include columns that exist in the merged dataframe
-            valid_layout = [item for item in columns_layout if item[1] in merged_log.columns]
-            
-            # Create the MultiIndex dataframe for display
-            display_df = recent_log[[item[1] for item in valid_layout]].copy()
-            display_df.columns = pd.MultiIndex.from_tuples(valid_layout)
 
-            def style_log_row(row):
-                styles = [''] * len(row)
-                
-                # Helper to get value from a MultiIndex row
-                def get_val(col_name):
-                    for col in row.index:
-                        if col[1] == col_name: return str(row[col]).lower()
-                    return ""
+            # High Contrast Colors
+            DARK_GREEN, DARK_AMBER, DARK_RED = '#065F46', '#92400E', '#991B1B'
 
-                # --- High Contrast Color Pallet ---
-                DARK_GREEN = '#065F46'
-                DARK_AMBER = '#92400E'
-                DARK_RED = '#991B1B'
+            def style_basic(row):
+                return ['background-color: white'] * len(row)
 
-                # 1. Determine Background Colors & High Contrast Text Colors
-                q_val = get_val('Quality Status')
-                q_bg, q_txt = '', ''
-                if any(x in q_val for x in ['appr', 'pass']):
-                    q_bg, q_txt = 'rgba(167, 243, 208, 0.3)', DARK_GREEN
-                elif any(x in q_val for x in ['rew', 'repro']):
-                    q_bg, q_txt = 'rgba(253, 230, 138, 0.3)', DARK_AMBER
-                elif any(x in q_val for x in ['can', 'rej']):
-                    q_bg, q_txt = 'rgba(254, 202, 202, 0.3)', DARK_RED
-                q_style = f'background-color: {q_bg}; color: {q_txt}; font-weight: bold;' if q_bg else ''
+            def style_quality(row):
+                val = str(row['Quality Status']).lower()
+                bg, txt = '', ''
+                if any(x in val for x in ['appr', 'pass']): bg, txt = 'rgba(167, 243, 208, 0.3)', DARK_GREEN
+                elif any(x in val for x in ['rew', 'repro']): bg, txt = 'rgba(253, 230, 138, 0.3)', DARK_AMBER
+                elif any(x in val for x in ['can', 'rej']): bg, txt = 'rgba(254, 202, 202, 0.3)', DARK_RED
+                base = f'background-color: {bg}; color: {txt}; font-weight: bold;' if bg else ''
+                return [base if col == 'Quality Status' else f'background-color: {bg};' for col in row.index]
 
-                wc_val = get_val('Status')
-                wc_bg, wc_txt = '', ''
-                if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']):
-                    wc_bg, wc_txt = 'rgba(167, 243, 208, 0.15)', DARK_GREEN
-                elif any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']):
-                    wc_bg, wc_txt = 'rgba(253, 230, 138, 0.15)', DARK_AMBER
-                elif any(x in wc_val for x in ['can', 'rej']):
-                    wc_bg, wc_txt = 'rgba(254, 202, 202, 0.15)', DARK_RED
-                wc_style = f'background-color: {wc_bg}; color: {wc_txt}; font-weight: bold;' if wc_bg else ''
+            def style_welcome(row):
+                val = str(row['Status']).lower()
+                bg, txt = '', ''
+                if any(x in val for x in ['done', 'pass', 'comp', 'live']): bg, txt = 'rgba(167, 243, 208, 0.15)', DARK_GREEN
+                elif any(x in val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']): bg, txt = 'rgba(253, 230, 138, 0.15)', DARK_AMBER
+                elif any(x in val for x in ['can', 'rej']): bg, txt = 'rgba(254, 202, 202, 0.15)', DARK_RED
+                base = f'background-color: {bg}; color: {txt}; font-weight: bold;' if bg else ''
+                return [base if col == 'Status' else f'background-color: {bg};' for col in row.index]
 
-                call_val = get_val('CallStatus')
-                c_bg, c_txt = '', ''
-                if 'satisfied' in call_val:
-                    c_bg, c_txt = 'rgba(16, 185, 129, 0.3)', DARK_GREEN
-                elif any(x in call_val for x in ['pend', 'cancel']):
-                    c_bg, c_txt = 'rgba(239, 68, 68, 0.3)', DARK_RED
-                c_style = f'background-color: {c_bg}; color: {c_txt}; font-weight: bold;' if c_bg else ''
-                
-                portal_val = get_val('Portal Status')
+            def style_live(row):
+                p_val = str(row['Portal Status']).lower()
+                c_val = str(row['CallStatus']).lower()
                 p_bg, p_txt = '', ''
-                if 'live' in portal_val:
-                    p_bg, p_txt = 'rgba(16, 185, 129, 0.3)', DARK_GREEN
-                elif 'committed' in portal_val:
-                    p_bg, p_txt = 'rgba(245, 158, 11, 0.3)', DARK_AMBER
-                elif any(x in portal_val for x in ['rej', 'cancel']):
-                    p_bg, p_txt = 'rgba(239, 68, 68, 0.3)', DARK_RED
-                p_style = f'background-color: {p_bg}; color: {p_txt}; font-weight: bold;' if p_bg else ''
-
-                quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
-                portal_group = ['Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason']
+                if 'live' in p_val: p_bg, p_txt = 'rgba(16, 185, 129, 0.3)', DARK_GREEN
+                elif 'committed' in p_val: p_bg, p_txt = 'rgba(245, 158, 11, 0.3)', DARK_AMBER
+                elif any(x in p_val for x in ['rej', 'cancel']): p_bg, p_txt = 'rgba(239, 68, 68, 0.3)', DARK_RED
                 
-                # 2. Apply Styles to Index Positions
-                for i, col_tuple in enumerate(row.index):
-                    col = col_tuple[1] 
-                    current_style = ""
-                    
-                    if col == 'LetterStatus':
-                        current_style = 'background-color: rgba(59, 130, 246, 0.3);'
-                    elif col == 'CallStatus':
-                        current_style = c_style
-                    elif col in portal_group:
-                        if col == 'Portal Status':
-                            current_style = p_style
-                        else:
-                            current_style = f'background-color: {p_bg};' if p_bg else ''
-                    elif col in quality_cols:
-                        if col == 'Quality Status':
-                            current_style = q_style
-                        else:
-                            current_style = f'background-color: {q_bg};' if q_bg else ''
-                    else: # Welcome Call group
-                        if col == 'Status':
-                            current_style = wc_style
-                        else:
-                            current_style = f'background-color: {wc_bg};' if wc_bg else ''
-                    
-                    # --- BOLD BOUNDARY ENHANCEMENT ---
-                    # Left Boundary of the table
-                    if col == 'Standardized_Date':
-                        current_style += 'border-left: 3px solid #1E3A8A;'
-                    
-                    # Right Boundaries of each of the 4 sections
-                    # Basic Info. ends at 'Customer Name'
-                    # Quality Audit ends at 'Quality Remarks'
-                    # Welcome Call ends at 'Welcome call Remarks'
-                    # Live Status ends at 'Cancellation Reason'
-                    if col in ['Customer Name', 'Quality Remarks', 'Welcome call Remarks', 'Cancellation Reason']:
-                        current_style += 'border-right: 3px solid #1E3A8A;'
-                    
-                    styles[i] = current_style
-                return styles      
+                c_bg, c_txt = '', ''
+                if 'satisfied' in c_val: c_bg, c_txt = 'rgba(16, 185, 129, 0.3)', DARK_GREEN
+                elif any(x in c_val for x in ['pend', 'cancel']): c_bg, c_txt = 'rgba(239, 68, 68, 0.3)', DARK_RED
+
+                styles = []
+                for col in row.index:
+                    if col == 'Portal Status': styles.append(f'background-color: {p_bg}; color: {p_txt}; font-weight: bold;')
+                    elif col == 'CallStatus': styles.append(f'background-color: {c_bg}; color: {c_txt}; font-weight: bold;')
+                    elif col == 'LetterStatus': styles.append('background-color: rgba(59, 130, 246, 0.3);')
+                    else: styles.append(f'background-color: {p_bg};' if p_bg else '')
+                return styles
+
+            # Define Layout Columns
+            t1, t2, t3, t4 = st.columns([1, 1.2, 1.2, 2.5])
             
-            styled_log = display_df.style.apply(style_log_row, axis=1)
-            st.dataframe(styled_log, use_container_width=True, hide_index=True)
+            with t1:
+                st.markdown("##### 📝 Basic Info.")
+                df_b = recent_log[['Standardized_Date', 'Customer Name']].copy()
+                st.dataframe(df_b.style.apply(style_basic, axis=1), use_container_width=True, hide_index=True)
+            
+            with t2:
+                st.markdown("##### ⚖️ Quality Audit")
+                df_q = recent_log[['Quality Status', 'Quality Remarks']].copy()
+                st.dataframe(df_q.style.apply(style_quality, axis=1), use_container_width=True, hide_index=True)
+                
+            with t3:
+                st.markdown("##### 📞 Welcome Call")
+                df_w = recent_log[['Status', 'Welcome call Remarks']].copy()
+                st.dataframe(df_w.style.apply(style_welcome, axis=1), use_container_width=True, hide_index=True)
+                
+            with t4:
+                st.markdown("##### 🚀 Live Status")
+                df_l = recent_log[['LetterStatus', 'CallStatus', 'Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason']].copy()
+                st.dataframe(df_l.style.apply(style_live, axis=1), use_container_width=True, hide_index=True)
+
     except Exception as e: st.error(f"Error: {e}")
