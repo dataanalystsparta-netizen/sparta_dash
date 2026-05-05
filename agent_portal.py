@@ -247,7 +247,7 @@ else:
             # Layout for Logo + Title
             t_col1, t_col2 = st.columns([0.15, 0.85])
             with t_col1:
-                st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d5ac6c503.png", width=65)
+                st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d5ac6c503.png", width=250)
             with t_col2:
                 st.title(f"My Performance Dashboard")
                 
