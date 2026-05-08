@@ -636,7 +636,7 @@ else:
                     if col == 'Standardized_Date':
                         current_style += 'border-left: 3px solid #1E3A8A;'
                     
-                    if col in ['Customer Name', 'Quality Remarks', 'Welcome call Remarks', 'Cancellation Reason']:
+                    if col in ['Customer Name', 'Quality Remarks', 'Welcome call Remarks']:
                         current_style += 'border-right: 3px solid #1E3A8A;'
                     
                     styles[i] = current_style
