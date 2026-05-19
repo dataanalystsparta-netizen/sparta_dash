@@ -157,12 +157,36 @@ def fetch_data():
     df2['Date_Parsed'] = df2['Sale Date'].apply(robust_date_parser)
     df2['Advisor'] = df2['Agent'].astype(str).str.strip().str.title()
 
+    # --- Fetch Incorrect Dispositions Sheet ---
+    df3 = pd.DataFrame()
+    try:
+        df3 = pd.DataFrame(ss.worksheet('Answering Machine').get_all_records())
+        if 'Date' in df3.columns: 
+            df3['Date_Parsed'] = df3['Date'].apply(robust_date_parser)
+        elif 'Call Date' in df3.columns: 
+            df3['Date_Parsed'] = df3['Call Date'].apply(robust_date_parser)
+        elif 'Sale Date' in df3.columns: 
+            df3['Date_Parsed'] = df3['Sale Date'].apply(robust_date_parser)
+        else:
+            df3['Date_Parsed'] = pd.NaT
+
+        if 'Agent' in df3.columns: 
+            df3['Advisor'] = df3['Agent'].astype(str).str.strip().str.title()
+        elif 'Advisor' in df3.columns: 
+            df3['Advisor'] = df3['Advisor'].astype(str).str.strip().str.title()
+            
+        if 'Customer Talk Time' in df3.columns:
+            df3['Customer Talk Time'] = pd.to_numeric(df3['Customer Talk Time'], errors='coerce').fillna(0)
+    except Exception:
+        pass # Sheet might not exist yet
+
     try:
         meta = ss.worksheet('Meta').get_all_values()
         last_sync = meta[0][1]
     except:
         last_sync = "Unknown"
-    return df1, df2, last_sync
+        
+    return df1, df2, df3, last_sync
 
 def map_quality(val):
     s = str(val).lower()
@@ -213,7 +237,7 @@ if "authenticated" not in st.session_state:
 if not st.session_state.authenticated:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta_new_logo2.jpg", width=125)
+        st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d503.png", width=250)
         st.title("Agent Portal")
         st.info("Please enter your access key to view your performance data.")
         user_key = st.text_input("Access Key", type="password")
@@ -238,16 +262,17 @@ else:
             st.rerun()
 
     try:
-        df1, df2, last_sync = fetch_data()
+        df1, df2, df3, last_sync = fetch_data()
         ag1 = df1[df1['Advisor'] == agent].copy()
         ag2 = df2[df2['Advisor'] == agent].copy()
+        ag3 = df3[df3['Advisor'] == agent].copy() if not df3.empty else pd.DataFrame()
         
         col_title, col_time = st.columns([3, 1])
         with col_title:
             # Layout for Logo + Title
             t_col1, t_col2 = st.columns([0.15, 0.85])
             with t_col1:
-                st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta_new_logo2.jpg", width=125)
+                st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/images.jpg", width=65)
             with t_col2:
                 st.title(f"My Performance Dashboard")
                 
@@ -260,6 +285,7 @@ else:
 
         ag1_filtered = ag1[(ag1['Date_Parsed'].dt.date >= start_date) & (ag1['Date_Parsed'].dt.date <= end_date)].copy()
         ag2_filtered = ag2[(ag2['Date_Parsed'].dt.date >= start_date) & (ag2['Date_Parsed'].dt.date <= end_date)].copy()
+        ag3_filtered = ag3[(ag3['Date_Parsed'].dt.date >= start_date) & (ag3['Date_Parsed'].dt.date <= end_date)].copy() if not ag3.empty else pd.DataFrame()
         
         ag1_filtered['Q_Status'] = ag1_filtered['Quality Status'].apply(map_quality)
         ag2_filtered['P_Status'] = ag2_filtered['Status'].apply(map_portal)
@@ -308,11 +334,11 @@ else:
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
                 st.markdown('</div>', unsafe_allow_html=True)
         with b3: 
-            active_g3 = [k for k in group_3 if k[1] > 0]
-            if active_g3:
+            active_g3_kpis = [k for k in group_3 if k[1] > 0]
+            if active_g3_kpis:
                 st.markdown('<div class="kpi-box"><p class="box-label">Welcome Call Status</p>', unsafe_allow_html=True)
-                cols = st.columns(len(active_g3))
-                for i, kpi in enumerate(active_g3):
+                cols = st.columns(len(active_g3_kpis))
+                for i, kpi in enumerate(active_g3_kpis):
                     with cols[i]: render_kpi(kpi[0], kpi[1], kpi[2])
                 st.markdown('</div>', unsafe_allow_html=True)
         with b4: 
@@ -368,10 +394,12 @@ else:
         if view_mode == "Daily":
             ag1_filtered['Period'] = ag1_filtered['Date_Parsed'].dt.date
             ag2_filtered['Period'] = ag2_filtered['Date_Parsed'].dt.date
+            if not ag3_filtered.empty: ag3_filtered['Period'] = ag3_filtered['Date_Parsed'].dt.date
             chart_group_col = 'Date'
         else:
             ag1_filtered['Period'] = ag1_filtered['Date_Parsed'].dt.strftime('%Y-%m')
             ag2_filtered['Period'] = ag2_filtered['Date_Parsed'].dt.strftime('%Y-%m')
+            if not ag3_filtered.empty: ag3_filtered['Period'] = ag3_filtered['Date_Parsed'].dt.strftime('%Y-%m')
             chart_group_col = 'Period'
         
         ca, cb, cc, cd = st.columns(4)
@@ -419,8 +447,8 @@ else:
 
         st.write("---")
         
-        # ---------------- TRENDS & CALENDAR ----------------
-        col_trend, col_cal = st.columns([3, 2])
+        # ---------------- TRENDS & CALENDAR & DISPOSITIONS ----------------
+        col_trend, col_cal, col_disp = st.columns([3, 2, 2])
         with col_trend:
             st.subheader("📈 My Trend")
             if not_ag1_filtered := not ag1_filtered.empty:
@@ -498,6 +526,25 @@ else:
             )
             st.plotly_chart(fig_cal, use_container_width=True)
             st.caption("🟢 Sales | ⚪ No Sales | 🔵 Holiday ")
+
+        with col_disp:
+            st.subheader("⚠️ Incorrect Dispositions")
+            if not ag3_filtered.empty and 'Customer Talk Time' in ag3_filtered.columns and 'Disposition' in ag3_filtered.columns:
+                # Filter for Talk Time > 30 and Disposition = Answering Machine
+                incorrect_apps = ag3_filtered[
+                    (ag3_filtered['Customer Talk Time'] > 30) & 
+                    (ag3_filtered['Disposition'].astype(str).str.contains('Answering Machine', case=False, na=False))
+                ]
+                
+                st.metric("Total Incorrect (Answering Machine > 30s)", len(incorrect_apps))
+                
+                if not incorrect_apps.empty:
+                    period_disp = incorrect_apps.groupby('Period').size().to_frame('Incorrect Calls')
+                    vmax_disp = max(period_disp.max().max(), 1.1)
+                    styled_disp = period_disp.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Reds', vmin=1, vmax=vmax_disp).map(lambda x: 'background-color: transparent' if x == 0 else '')
+                    st.dataframe(styled_disp, use_container_width=True)
+            else:
+                st.info("No 'Answering Machine' data available.")
 
         st.write("---")
 
