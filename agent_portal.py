@@ -531,7 +531,8 @@ else:
             <div class="tips-box">
                 <div class="tips-title">💡 Performance Tips: Correct Call Dispositions and Data Quality</div>
                 <ul class="tips-list">
-                    <li><b>Answering Machines:</b> Do not dispose active customer connections as an "Answering Machine" especially if the Customer Talk Time/connectivity exceeds 30 seconds.</li>
+                    <li><b>Answering Machines:</b> Do not dispose active customer connections as an "Answering Machine" especially if the Customer Talk Time/connectivity exceeds 30 seconds. Use it primarily when you hear a pre-recorded Answering Machine/Voicemail message.</li>
+                    <li><b>Customer Hangup:</b>This disposition should be used when the customer abruptly hangsup. Should be used for active/connected customers. </li>
                     <li><b>No Answer:</b> Dispose as "No Answer" only if the customer does not pick up the call.</li>
                     <li><b>Sky TV packages/Virgin:</b> Any call which indicates an error on the Talk-Talk portal, should be disposed as "Sky TV packages" or "Virgin". They must not be disposed as Answering Machines, Customer Hangup, No Answer, Not Interested etc. These dispositions would reappear in the dialler, and would dilute the quality of the data severely as the probability of the application of these customers is pretty low.</li>
                     <li><b>Wrong Number:</b> Dispose them as "Wrong Number" if there is a mismatch in the data on the dialler and the data provided by the customer.</li>
