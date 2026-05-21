@@ -1,4 +1,4 @@
-#import streamlit as st
+import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
@@ -6,6 +6,7 @@ import datetime
 import plotly.express as px
 import plotly.graph_objects as go 
 import calendar
+import math
 
 st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
 
@@ -618,15 +619,34 @@ else:
                     recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False)
 
             with log_col3:
-                row_limit = st.selectbox("Show records:", [5, 10, 20, 50, 100, "All"], index=2)
-
-            if row_limit != "All":
-                recent_log = recent_log.head(int(row_limit))
+                row_limit = st.selectbox("Show records per page:", [5, 10, 20, 50, 100, "All"], index=2)
 
             valid_layout = [item for item in columns_layout if item[1] in merged_log.columns]
-            
             display_df = recent_log[[item[1] for item in valid_layout]].copy()
             display_df.columns = pd.MultiIndex.from_tuples(valid_layout)
+
+            # Define a container for the table so pagination controls can visually sit beneath it
+            table_container = st.container()
+
+            # --- Pagination Logic ---
+            if row_limit != "All":
+                limit = int(row_limit)
+                total_records = len(display_df)
+                total_pages = max(1, math.ceil(total_records / limit))
+                
+                if total_pages > 1:
+                    # Place pagination UI right below the table container
+                    pag_col1, pag_col2, pag_col3 = st.columns([4, 2, 4])
+                    with pag_col2:
+                        current_page = st.number_input(f"Page (of {total_pages})", min_value=1, max_value=total_pages, value=1, step=1)
+                    
+                    start_idx = (current_page - 1) * limit
+                    end_idx = start_idx + limit
+                    display_df_page = display_df.iloc[start_idx:end_idx]
+                else:
+                    display_df_page = display_df.head(limit)
+            else:
+                display_df_page = display_df
 
             def style_log_row(row):
                 styles = [''] * len(row)
@@ -718,6 +738,8 @@ else:
                     styles[i] = current_style
                 return styles      
             
-            styled_log = display_df.style.apply(style_log_row, axis=1)
-            st.dataframe(styled_log, use_container_width=True, hide_index=True)
+            styled_log = display_df_page.style.apply(style_log_row, axis=1)
+            
+            with table_container:
+                st.dataframe(styled_log, use_container_width=True, hide_index=True)
     except Exception as e: st.error(f"Error: {e}")
