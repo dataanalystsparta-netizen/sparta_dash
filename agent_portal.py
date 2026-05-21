@@ -1,4 +1,4 @@
-#import streamlit as st
+import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
@@ -567,14 +567,15 @@ else:
 
         # ---------------- RECENT APPLICATIONS LOG WITH SECTIONS ----------------
         st.subheader("🔍 Recent Applications Log")
-        if not ag1_filtered.empty:
+        if not ag1.empty:
             ag2_clean = ag2.copy()
             ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
             ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status'})
             ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
             
-            ag1_filtered['CLI_Key'] = ag1_filtered['CLI'].astype(str).str.strip()
-            merged_log = ag1_filtered.merge(
+            ag1_log_base = ag1.copy()
+            ag1_log_base['CLI_Key'] = ag1_log_base['CLI'].astype(str).str.strip()
+            merged_log = ag1_log_base.merge(
                 ag2_unique[['Telephone No.', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status']],
                 left_on='CLI_Key', 
                 right_on='Telephone No.', 
@@ -603,8 +604,8 @@ else:
             with log_col2:
                 if log_filter_type == "By Specific Date Range":
                     ld_col1, ld_col2 = st.columns(2)
-                    log_start = ld_col1.date_input("Log Start Date", start_date, key="log_start_date")
-                    log_end = ld_col2.date_input("Log End Date", end_date, key="log_end_date")
+                    log_start = ld_col1.date_input("Log Start Date", today_date.replace(day=1), key="log_start_date")
+                    log_end = ld_col2.date_input("Log End Date", today_date, key="log_end_date")
                     recent_log = merged_log[(merged_log['Date_Parsed'].dt.date >= log_start) & (merged_log['Date_Parsed'].dt.date <= log_end)].sort_values(by='Date_Parsed', ascending=False)
                 elif log_filter_type == "By Specific Month":
                     unique_months = sorted(merged_log['Date_Parsed'].dt.strftime('%Y-%m').dropna().unique(), reverse=True)
