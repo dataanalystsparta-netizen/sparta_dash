@@ -628,23 +628,42 @@ else:
             # Define a container for the table so pagination controls can visually sit beneath it
             table_container = st.container()
 
-            # --- Pagination Logic ---
+            # --- Interactive Pagination Layout Config ---
+            if "current_page" not in st.session_state:
+                st.session_state.current_page = 1
+
             if row_limit != "All":
                 limit = int(row_limit)
                 total_records = len(display_df)
                 total_pages = max(1, math.ceil(total_records / limit))
                 
+                # Safety check if records shrink from dynamic filtering
+                if st.session_state.current_page > total_pages:
+                    st.session_state.current_page = 1
+                
+                start_idx = (st.session_state.current_page - 1) * limit
+                end_idx = min(start_idx + limit, total_records)
+                display_df_page = display_df.iloc[start_idx:end_idx]
+                
                 if total_pages > 1:
-                    # Place pagination UI right below the table container
-                    pag_col1, pag_col2, pag_col3 = st.columns([4, 2, 4])
+                    st.write("")
+                    pag_col1, pag_col2 = st.columns([1, 1])
+                    with pag_col1:
+                        st.markdown(f"<p style='color: #475569; font-size: 0.85rem; margin-top: 6px;'>Showing {start_idx + 1} to {end_idx} of {total_records} entries</p>", unsafe_allow_html=True)
                     with pag_col2:
-                        current_page = st.number_input(f"Page (of {total_pages})", min_value=1, max_value=total_pages, value=1, step=1)
-                    
-                    start_idx = (current_page - 1) * limit
-                    end_idx = start_idx + limit
-                    display_df_page = display_df.iloc[start_idx:end_idx]
+                        b_col1, b_col2, b_col3 = st.columns([2, 1, 1])
+                        with b_col1:
+                            st.markdown(f"<p style='text-align: right; color: #475569; font-size: 0.85rem; margin-top: 6px;'>Page {st.session_state.current_page} of {total_pages}</p>", unsafe_allow_html=True)
+                        with b_col2:
+                            if st.button("Previous", disabled=(st.session_state.current_page == 1), use_container_width=True, key="prev_pg_action"):
+                                st.session_state.current_page -= 1
+                                st.rerun()
+                        with b_col3:
+                            if st.button("Next", disabled=(st.session_state.current_page == total_pages), use_container_width=True, key="next_pg_action"):
+                                st.session_state.current_page += 1
+                                st.rerun()
                 else:
-                    display_df_page = display_df.head(limit)
+                    display_df_page = display_df
             else:
                 display_df_page = display_df
 
