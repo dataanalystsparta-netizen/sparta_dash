@@ -1,4 +1,4 @@
-#import streamlit as st
+import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
@@ -584,6 +584,7 @@ else:
             )
 
             columns_layout = [
+                ('Basic Info.', 'S.No.'),
                 ('Basic Info.', 'Standardized_Date'),
                 ('Basic Info.', 'Customer Name'),
                 ('Quality Audit', 'Quality Status'),
@@ -618,10 +619,12 @@ else:
                 else:
                     recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False)
 
+            recent_log['S.No.'] = range(1, len(recent_log) + 1)
+
             with log_col3:
                 row_limit = st.selectbox("Show records per page:", [5, 10, 20, 50, 100, "All"], index=2)
 
-            valid_layout = [item for item in columns_layout if item[1] in merged_log.columns]
+            valid_layout = [item for item in columns_layout if item[1] in recent_log.columns]
             display_df = recent_log[[item[1] for item in valid_layout]].copy()
             display_df.columns = pd.MultiIndex.from_tuples(valid_layout)
 
@@ -721,7 +724,7 @@ else:
                     p_bg, p_txt = BG_RED, DARK_RED
                 p_style = f'background-color: {p_bg}; color: {p_txt}; font-weight: bold;' if p_bg else ''
 
-                quality_cols = ['Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
+                quality_cols = ['S.No.', 'Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
                 portal_group = ['Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason']
                 
                 for i, col_tuple in enumerate(row.index):
@@ -748,7 +751,7 @@ else:
                         else:
                             current_style = f'background-color: {wc_bg};' if wc_bg else ''
                     
-                    if col == 'Standardized_Date':
+                    if col == 'S.No.':
                         current_style += 'border-left: 3px solid #1E3A8A;'
                     
                     if col in ['Customer Name', 'Quality Remarks', 'Welcome call Remarks', 'Cancellation Reason']:
