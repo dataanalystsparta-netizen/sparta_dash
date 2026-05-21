@@ -596,18 +596,16 @@ else:
                 ('Live Status', 'Cancellation Reason')
             ]
             
-            # --- CUSTOM MONTH/DATE FILTER IMPLEMENTATION ---
-            log_col1, log_col2 = st.columns([1, 2])
+            # --- CUSTOM DATE RANGE, ALL RECORDS & LIMIT CONTROLS ---
+            log_col1, log_col2, log_col3 = st.columns([1.8, 2.2, 1])
             with log_col1:
-                log_filter_type = st.radio("Log View Filter:", ["Top 20 Recent", "By Specific Date", "By Specific Month"], horizontal=True)
+                log_filter_type = st.radio("Log View Filter:", ["All Applications", "By Specific Date Range", "By Specific Month"], horizontal=True)
             with log_col2:
-                if log_filter_type == "By Specific Date":
-                    unique_dates = sorted(merged_log['Date_Parsed'].dt.date.dropna().unique(), reverse=True)
-                    if unique_dates:
-                        selected_date = st.selectbox("Select Date for Log:", unique_dates)
-                        recent_log = merged_log[merged_log['Date_Parsed'].dt.date == selected_date].sort_values(by='Date_Parsed', ascending=False)
-                    else:
-                        recent_log = merged_log[0:0]
+                if log_filter_type == "By Specific Date Range":
+                    ld_col1, ld_col2 = st.columns(2)
+                    log_start = ld_col1.date_input("Log Start Date", start_date, key="log_start_date")
+                    log_end = ld_col2.date_input("Log End Date", end_date, key="log_end_date")
+                    recent_log = merged_log[(merged_log['Date_Parsed'].dt.date >= log_start) & (merged_log['Date_Parsed'].dt.date <= log_end)].sort_values(by='Date_Parsed', ascending=False)
                 elif log_filter_type == "By Specific Month":
                     unique_months = sorted(merged_log['Date_Parsed'].dt.strftime('%Y-%m').dropna().unique(), reverse=True)
                     if unique_months:
@@ -616,7 +614,13 @@ else:
                     else:
                         recent_log = merged_log[0:0]
                 else:
-                    recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
+                    recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False)
+
+            with log_col3:
+                row_limit = st.selectbox("Show records:", [5, 10, 20, 50, 100, "All"], index=2)
+
+            if row_limit != "All":
+                recent_log = recent_log.head(int(row_limit))
 
             valid_layout = [item for item in columns_layout if item[1] in merged_log.columns]
             
