@@ -526,6 +526,7 @@ else:
 
         # --- REPLACED DISPOSITION TABLE WITH SIMPLE TRADING/DISPOSITION PERFORMANCE TIPS ---
 # --- PERFORMANCE TIPS & DATA QUALITY COMPLIANCE ---
+# --- PERFORMANCE TIPS & DATA QUALITY COMPLIANCE ---
         st.markdown("""
             <div class="tips-box">
                 <div class="tips-title">💡 Performance Tips: Correct Call Dispositions and Data Quality</div>
@@ -542,11 +543,28 @@ else:
                     <li><b>Hang up on bank details:</b> Use this disposition if the customer disconnects when hearing of or attempting any financial details.</li>
                     <li><b>Busy:</b> If the customer is busy.</li>
                     <br>
-                    <li><u><b>Data Accuracy and Quality: The more accurate the disposition you enter, the better quality of the data would appear on the dialler for the entire team. If disposed correctly, the following dispositions would not reappear in the dialler: Dementia, Family Interference, POA, Sky TV Packages, Virgin, Over Age. The following dispositions would reappear frequently on the dialler: Answering Machine, Customer Hangup, Interested, Callback etc.</b></u></li>
+                    <li><b>🚫 Dispositions that WILL NOT reappear in the dialler (if processed correctly):</b>
+                        <ul>
+                            <li>Dementia</li>
+                            <li>Family Interference / POA</li>
+                            <li>Sky TV Packages / Virgin</li>
+                            <li>Over Age</li>
+                        </ul>
+                    </li>
+                    <br>
+                    <li><b>🔄 Dispositions that WILL reappear frequently on the dialler:</b>
+                        <ul>
+                            <li>Answering Machine</li>
+                            <li>Customer Hangup</li>
+                            <li>Interested</li>
+                            <li>Callback</li>
+                        </ul>
+                    </li>
+                    <br>
+                    <li><u><b>Data Accuracy and Quality: The more accurate the disposition you enter, the better quality of the data would appear on the dialler for the entire team.</b></u></li>
                 </ul>
             </div>
         """, unsafe_allow_html=True)
-
         st.write("---")
 
         # ---------------- RECENT APPLICATIONS LOG WITH SECTIONS ----------------
