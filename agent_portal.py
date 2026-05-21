@@ -531,12 +531,12 @@ else:
                 <ul class="tips-list">
                     <li><b>Answering Machines:</b> Do not dispose active customer connections as an "Answering Machine" especially if the Customer Talk Time/connectivity exceeds 30 seconds.</li>
                     <li><b>No Answer:</b> Dispose as "No Answer" only if the customer does not pick up the call</li>
-                    <li><b>Sky TV packages/Virgin:</b>Any call which indicates an error, should be disposed as "Sky TV packages" or "Virgin". They must not be disposed as as Answering Machines, Customer Hangup, No Answer, Not Interested etc. These dispositions would reappear in the dialler, and would dilute the quality of the data severly as the probability of the application of these customers is pretty low. </li>
+                    <li><b>Sky TV packages/Virgin:</b> Any call which indicates an error on the Talk-Talk portal, should be disposed as "Sky TV packages" or "Virgin". They must not be disposed as as Answering Machines, Customer Hangup, No Answer, Not Interested etc. These dispositions would reappear in the dialler, and would dilute the quality of the data severly as the probability of the application of these customers is pretty low. </li>
                     <li><b>Wrong Number:</b> Dispose them as "Wrong Number" if there is a mismatch in the data on the dialler and the data provided by the customer</li>
-                    <li><b>Family Interference/POA:</b>Dispose as Family Interference/POA, if a family member or a 3rd person takes care of the customers finances or other decisions.</li>
-                    <li><b>Dementia:</b>Dispose as Dementia, if the customer seems to have Dementia (seems forgetful of basic details), or seems Vulnerable.</li>
-                    <li><b>Over Age:</b>Dispose as Over Age if the customer is over 85 years old, or was born before 1940.</li>
-                    <li><b>Mobile Number:</b>Any number beginning with "7" should be disposed as a Mobile Number.</li>
+                    <li><b>Family Interference/POA:</b> Dispose as Family Interference/POA, if a family member or a 3rd person takes care of the customers finances or other decisions.</li>
+                    <li><b>Dementia:</b> Dispose as Dementia, if the customer seems to have Dementia (seems forgetful of basic details), or seems Vulnerable.</li>
+                    <li><b>Over Age:</b> Dispose as Over Age if the customer is over 85 years old, or was born before 1940.</li>
+                    <li><b>Mobile Number:</b> Any number beginning with "7" should be disposed as a Mobile Number.</li>
                     <li><b>Social Alarm VOIP:</b> If a customer has a Social Alarm/Medical Alarm/Careline/Lifeline etc, then use the disposition "Social Alarm VOIP"</li>
                     <li><b>Hang up on bank details:</b> Use this disposition if the customer disconnects when hearing of or attempting any financial details.</li>
                     <li><b>Busy:</b> If the customer is busy.</li>
