@@ -135,7 +135,7 @@ st.markdown("""
         line-height: 1.5;
     }
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 ACCESS_KEYS = st.secrets["agent_keys"]
 
@@ -448,7 +448,7 @@ else:
         col_trend, col_cal = st.columns([3, 2])
         with col_trend:
             st.subheader("📈 My Trend")
-            if not_ag1_filtered := not ag1_filtered.empty:
+            if not ag1_filtered.empty:
                 d_apps = ag1_filtered.groupby(chart_group_col).size().to_frame('Total Apps')
                 d_appr = ag1_filtered[ag1_filtered['Q_Status'] == 'Approved'].groupby(chart_group_col).size().to_frame('Approved')
                 d_live = ag2_filtered[ag2_filtered['P_Status'] == 'Live'].groupby(chart_group_col).size().to_frame('Live')
@@ -524,9 +524,6 @@ else:
             st.plotly_chart(fig_cal, use_container_width=True)
             st.caption("🟢 Sales | ⚪ No Sales | 🔵 Holiday ")
 
-        # --- REPLACED DISPOSITION TABLE WITH SIMPLE TRADING/DISPOSITION PERFORMANCE TIPS ---
-# --- PERFORMANCE TIPS & DATA QUALITY COMPLIANCE ---
-# --- PERFORMANCE TIPS & DATA QUALITY COMPLIANCE ---
         st.markdown("""
             <div class="tips-box">
                 <div class="tips-title">💡 Performance Tips: Correct Call Dispositions and Data Quality</div>
@@ -599,7 +596,28 @@ else:
                 ('Live Status', 'Cancellation Reason')
             ]
             
-            recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
+            # --- CUSTOM MONTH/DATE FILTER IMPLEMENTATION ---
+            log_col1, log_col2 = st.columns([1, 2])
+            with log_col1:
+                log_filter_type = st.radio("Log View Filter:", ["Top 20 Recent", "By Specific Date", "By Specific Month"], horizontal=True)
+            with log_col2:
+                if log_filter_type == "By Specific Date":
+                    unique_dates = sorted(merged_log['Date_Parsed'].dt.date.dropna().unique(), reverse=True)
+                    if unique_dates:
+                        selected_date = st.selectbox("Select Date for Log:", unique_dates)
+                        recent_log = merged_log[merged_log['Date_Parsed'].dt.date == selected_date].sort_values(by='Date_Parsed', ascending=False)
+                    else:
+                        recent_log = merged_log[0:0]
+                elif log_filter_type == "By Specific Month":
+                    unique_months = sorted(merged_log['Date_Parsed'].dt.strftime('%Y-%m').dropna().unique(), reverse=True)
+                    if unique_months:
+                        selected_month = st.selectbox("Select Month for Log (YYYY-MM):", unique_months)
+                        recent_log = merged_log[merged_log['Date_Parsed'].dt.strftime('%Y-%m') == selected_month].sort_values(by='Date_Parsed', ascending=False)
+                    else:
+                        recent_log = merged_log[0:0]
+                else:
+                    recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False).head(20)
+
             valid_layout = [item for item in columns_layout if item[1] in merged_log.columns]
             
             display_df = recent_log[[item[1] for item in valid_layout]].copy()
