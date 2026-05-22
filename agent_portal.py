@@ -240,7 +240,7 @@ if "authenticated" not in st.session_state:
 if not st.session_state.authenticated:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d503.png", width=250)
+        st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-telecom-squarelogo-1663578233108%20(1).jpg", width=250)
         st.title("Agent Portal")
         st.info("Please enter your access key to view your performance data.")
         user_key = st.text_input("Access Key", type="password")
@@ -273,7 +273,7 @@ else:
         with col_title:
             t_col1, t_col2 = st.columns([0.15, 0.85])
             with t_col1:
-                st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/images.jpg", width=65)
+                st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-telecom-squarelogo-1663578233108%20(1).jpg", width=65)
             with t_col2:
                 st.title(f"My Performance Dashboard")
                 
