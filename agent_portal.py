@@ -159,6 +159,13 @@ def log_agent_login(agent_name):
     except:
         pass
 
+def robust_date_parser(date_str):
+    date_str = str(date_str).strip()
+    try:
+        if '/' in date_str: return pd.to_datetime(date_str, dayfirst=True)
+        return pd.to_datetime(date_str)
+    except: return pd.NaT
+
 @st.cache_data(ttl=300)
 def fetch_data():
     info = st.secrets["gcp_service_account"]
@@ -173,15 +180,9 @@ def fetch_data():
     df1['Date_Parsed'] = pd.to_datetime(df1['Standardized_Date'], errors='coerce')
     df1['Advisor'] = df1['Advisor'].astype(str).str.strip().str.title()
     
-    df2 = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
-    def robust_date_parser(date_str):
-        date_str = str(date_str).strip()
-        try:
-            if '/' in date_str: return pd.to_datetime(date_str, dayfirst=True)
-            return pd.to_datetime(date_str)
-        except: return pd.NaT
-    df2['Date_Parsed'] = df2['Sale Date'].apply(robust_date_parser)
-    df2['Advisor'] = df2['Agent'].astype(str).str.strip().str.title()
+    df2_raw = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
+    df2_raw['Date_Parsed'] = df2_raw['Sale Date'].apply(robust_date_parser)
+    df2_raw['Advisor'] = df2_raw['Agent'].astype(str).str.strip().str.title()
 
     try:
         meta = ss.worksheet('Meta').get_all_values()
@@ -189,7 +190,7 @@ def fetch_data():
     except:
         last_sync = "Unknown"
         
-    return df1, df2, last_sync
+    return df1, df2_raw, last_sync
 
 def map_quality(val):
     s = str(val).lower()
@@ -265,9 +266,9 @@ else:
             st.rerun()
 
     try:
-        df1, df2, last_sync = fetch_data()
+        df1, df2_raw, last_sync = fetch_data()
         ag1 = df1[df1['Advisor'] == agent].copy()
-        ag2 = df2[df2['Advisor'] == agent].copy()
+        ag2 = df2_raw[df2_raw['Advisor'] == agent].copy()
         
         col_title, col_time = st.columns([3, 1])
         with col_title:
@@ -530,12 +531,6 @@ else:
         # ---------------- RECENT APPLICATIONS LOG WITH SECTIONS ----------------
         st.subheader("🔍 Recent Applications Log")
         if not ag1.empty:
-            get_sparta2 = ss.worksheet('Sparta2')
-            ag2_raw = pd.DataFrame(get_sparta2.get_all_records())
-            ag2_raw['Date_Parsed'] = ag2_raw['Sale Date'].apply(robust_date_parser)
-            ag2_raw['Advisor'] = ag2_raw['Agent'].astype(str).str.strip().str.title()
-            ag2 = ag2_raw[ag2_raw['Advisor'] == agent].copy()
-            
             ag2_clean = ag2.copy()
             ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
             ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status', 'Committed Date': 'Live Date'})
@@ -733,7 +728,7 @@ else:
             with table_container:
                 st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
-        # ---------------- DISPOSITION PERFORMANCE TIPS MOVED HERE ----------------
+        # ---------------- DISPOSITION PERFORMANCE TIPS ----------------
         st.markdown("""
             <div class="tips-box">
                 <div class="tips-title">💡 Performance Tips: Correct Call Dispositions and Data Quality</div>
