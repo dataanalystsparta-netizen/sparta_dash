@@ -444,7 +444,7 @@ else:
                     st.dataframe(styled_port, use_container_width=True)
 
         st.write("---")
-        
+
         # ---------------- TRENDS & CALENDAR WITH DISPOSITION TIPS ----------------
         col_trend, col_cal = st.columns([3, 2])
         with col_trend:
@@ -525,59 +525,26 @@ else:
             st.plotly_chart(fig_cal, use_container_width=True)
             st.caption("🟢 Sales | ⚪ No Sales | 🔵 Holiday ")
 
-        st.markdown("""
-            <div class="tips-box">
-                <div class="tips-title">💡 Performance Tips: Correct Call Dispositions and Data Quality</div>
-                <ul class="tips-list">
-                    <li><b>Answering Machines:</b> Do not dispose active customer connections as an "Answering Machine" especially if the Customer Talk Time/connectivity exceeds 30 seconds. Use it primarily when you hear a pre-recorded Answering Machine/Voicemail message.</li>
-                    <li><b>Customer Hangup:</b>This disposition should be used when the customer abruptly hangsup. Should be used for active/connected customers. </li>
-                    <li><b>No Answer:</b> Dispose as "No Answer" only if the customer does not pick up the call.</li>
-                    <li><b>Sky TV packages/Virgin:</b> Any call which indicates an error on the Talk-Talk portal, should be disposed as "Sky TV packages" or "Virgin". They must not be disposed as Answering Machines, Customer Hangup, No Answer, Not Interested etc. These dispositions would reappear in the dialler, and would dilute the quality of the data severely as the probability of the application of these customers is pretty low.</li>
-                    <li><b>Wrong Number:</b> Dispose them as "Wrong Number" if there is a mismatch in the data on the dialler and the data provided by the customer.</li>
-                    <li><b>Family Interference/POA:</b> Dispose as Family Interference/POA, if a family member or a 3rd person takes care of the customer's finances or other decisions.</li>
-                    <li><b>Dementia:</b> Dispose as Dementia, if the customer seems to have Dementia (seems forgetful of basic details), or seems Vulnerable.</li>
-                    <li><b>Over Age:</b> Dispose as Over Age if the customer is over 85 years old, or was born before 1940.</li>
-                    <li><b>Mobile Number:</b> Any number beginning with "7" should be disposed as a Mobile Number.</li>
-                    <li><b>Social Alarm VOIP:</b> If a customer has a Social Alarm/Medical Alarm/Careline/Lifeline etc, then use the disposition "Social Alarm VOIP".</li>
-                    <li><b>Hang up on bank details:</b> Use this disposition if the customer disconnects when hearing of or attempting any financial details.</li>
-                    <li><b>Busy:</b> If the customer is busy.</li>
-                    <br>
-                    <li><b>🚫 Dispositions that WILL NOT reappear in the dialler (if processed correctly):</b>
-                        <ul>
-                            <li>Dementia</li>
-                            <li>Family Interference / POA</li>
-                            <li>Sky TV Packages / Virgin</li>
-                            <li>Over Age</li>
-                        </ul>
-                    </li>
-                    <br>
-                    <li><b>🔄 Dispositions that WILL reappear frequently on the dialler:</b>
-                        <ul>
-                            <li>Answering Machine</li>
-                            <li>Customer Hangup</li>
-                            <li>Interested</li>
-                            <li>Callback</li>
-                        </ul>
-                    </li>
-                    <br>
-                    <li><u><b>Data Accuracy and Quality: The more accurate the disposition you enter, the better quality of the data would appear on the dialler for the entire team.</b></u></li>
-                </ul>
-            </div>
-        """, unsafe_allow_html=True)
         st.write("---")
 
         # ---------------- RECENT APPLICATIONS LOG WITH SECTIONS ----------------
         st.subheader("🔍 Recent Applications Log")
         if not ag1.empty:
+            get_sparta2 = ss.worksheet('Sparta2')
+            ag2_raw = pd.DataFrame(get_sparta2.get_all_records())
+            ag2_raw['Date_Parsed'] = ag2_raw['Sale Date'].apply(robust_date_parser)
+            ag2_raw['Advisor'] = ag2_raw['Agent'].astype(str).str.strip().str.title()
+            ag2 = ag2_raw[ag2_raw['Advisor'] == agent].copy()
+            
             ag2_clean = ag2.copy()
             ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
-            ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status'})
+            ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status', 'Committed Date': 'Live Date'})
             ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
             
             ag1_log_base = ag1.copy()
             ag1_log_base['CLI_Key'] = ag1_log_base['CLI'].astype(str).str.strip()
             merged_log = ag1_log_base.merge(
-                ag2_unique[['Telephone No.', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status']],
+                ag2_unique[['Telephone No.', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status', 'Live Date']],
                 left_on='CLI_Key', 
                 right_on='Telephone No.', 
                 how='left'
@@ -594,6 +561,7 @@ else:
                 ('Live Status', 'LetterStatus'),
                 ('Live Status', 'CallStatus'),
                 ('Live Status', 'Portal Status'),
+                ('Live Status', 'Live Date'),
                 ('Live Status', 'Comments'),
                 ('Live Status', 'Voice of Customer'),
                 ('Live Status', 'Cancellation Reason')
@@ -725,7 +693,7 @@ else:
                 p_style = f'background-color: {p_bg}; color: {p_txt}; font-weight: bold;' if p_bg else ''
 
                 quality_cols = ['S.No.', 'Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
-                portal_group = ['Portal Status', 'Comments', 'Voice of Customer', 'Cancellation Reason']
+                portal_group = ['Portal Status', 'Live Date', 'Comments', 'Voice of Customer', 'Cancellation Reason']
                 
                 for i, col_tuple in enumerate(row.index):
                     col = col_tuple[1] 
@@ -758,10 +726,53 @@ else:
                         current_style += 'border-right: 3px solid #1E3A8A;'
                     
                     styles[i] = current_style
-                return styles      
+                return styles           
             
             styled_log = display_df_page.style.apply(style_log_row, axis=1)
             
             with table_container:
                 st.dataframe(styled_log, use_container_width=True, hide_index=True)
+
+        # ---------------- DISPOSITION PERFORMANCE TIPS MOVED HERE ----------------
+        st.markdown("""
+            <div class="tips-box">
+                <div class="tips-title">💡 Performance Tips: Correct Call Dispositions and Data Quality</div>
+                <ul class="tips-list">
+                    <li><b>Answering Machines:</b> Do not dispose active customer connections as an "Answering Machine" especially if the Customer Talk Time/connectivity exceeds 30 seconds. Use it primarily when you hear a pre-recorded Answering Machine/Voicemail message.</li>
+                    <li><b>Customer Hangup:</b>This disposition should be used when the customer abruptly hangsup. Should be used for active/connected customers. </li>
+                    <li><b>No Answer:</b> Dispose as "No Answer" only if the customer does not pick up the call.</li>
+                    <li><b>Sky TV packages/Virgin:</b> Any call which indicates an error on the Talk-Talk portal, should be disposed as "Sky TV packages" or "Virgin". They must not be disposed as Answering Machines, Customer Hangup, No Answer, Not Interested etc. These dispositions would reappear in the dialler, and would dilute the quality of the data severely as the probability of the application of these customers is pretty low.</li>
+                    <li><b>Wrong Number:</b> Dispose them as "Wrong Number" if there is a mismatch in the data on the dialler and the data provided by the customer.</li>
+                    <li><b>Family Interference/POA:</b> Dispose as Family Interference/POA, if a family member or a 3rd person takes care of the customer's finances or other decisions.</li>
+                    <li><b>Dementia:</b> Dispose as Dementia, if the customer seems to have Dementia (seems forgetful of basic details), or seems Vulnerable.</li>
+                    <li><b>Over Age:</b> Dispose as Over Age if the customer is over 85 years old, or was born before 1940.</li>
+                    <li><b>Mobile Number:</b> Any number beginning with "7" should be disposed as a Mobile Number.</li>
+                    <li><b>Social Alarm VOIP:</b> If a customer has a Social Alarm/Medical Alarm/Careline/Lifeline etc, then use the disposition "Social Alarm VOIP".</li>
+                    <li><b>Hang up on bank details:</b> Use this disposition if the customer disconnects when hearing of or attempting any financial details.</li>
+                    <li><b>Busy:</b> If the customer is busy.</li>
+                    <br>
+                    <li><b>🚫 Dispositions that WILL NOT reappear in the dialler (if processed correctly):</b>
+                        <ul>
+                            <li>Dementia</li>
+                            <li>Family Interference / POA</li>
+                            <li>Sky TV Packages / Virgin</li>
+                            <li>Over Age</li>
+                        </ul>
+                    </li>
+                    <br>
+                    <li><b>🔄 Dispositions that WILL reappear frequently on the dialler:</b>
+                        <ul>
+                            <li>Answering Machine</li>
+                            <li>Customer Hangup</li>
+                            <li>Interested</li>
+                            <li>Callback</li>
+                        </ul>
+                    </li>
+                    <br>
+                    <li><u><b>Data Accuracy and Quality: The more accurate the disposition you enter, the better quality of the data would appear on the dialler for the entire team.</b></u></li>
+                </ul>
+            </div>
+        """, unsafe_allow_html=True)
+        st.write("---")
+
     except Exception as e: st.error(f"Error: {e}")
