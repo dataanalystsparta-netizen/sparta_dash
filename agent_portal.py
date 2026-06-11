@@ -545,9 +545,13 @@ else:
                 how='left'
             )
 
+            # --- RENAME AND CLEANUP RECENT LOG DATE COLUMNS TO DD-MM-YYYY STRING ---
+            merged_log['Sale Date'] = pd.to_datetime(merged_log['Standardized_Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
+            merged_log['Live Date'] = pd.to_datetime(merged_log['Live Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
+
             columns_layout = [
                 ('Basic Info.', 'S.No.'),
-                ('Basic Info.', 'Standardized_Date'),
+                ('Basic Info.', 'Sale Date'),
                 ('Basic Info.', 'Customer Name'),
                 ('Quality Audit', 'Quality Status'),
                 ('Quality Audit', 'Quality Remarks'),
@@ -687,7 +691,7 @@ else:
                     p_bg, p_txt = BG_RED, DARK_RED
                 p_style = f'background-color: {p_bg}; color: {p_txt}; font-weight: bold;' if p_bg else ''
 
-                quality_cols = ['S.No.', 'Standardized_Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
+                quality_cols = ['S.No.', 'Sale Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
                 portal_group = ['Portal Status', 'Live Date', 'Comments', 'Voice of Customer', 'Cancellation Reason']
                 
                 for i, col_tuple in enumerate(row.index):
