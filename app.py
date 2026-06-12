@@ -8,11 +8,8 @@ import plotly.express as px
 import plotly.graph_objects as go 
 import io
 from fpdf import FPDF
-
-# --- CONFIG & STYLING ---
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
-# --- MASTER AGENT LIST ---
 LIVE_AGENTS = [
    "Anshu","Anjali", "Aman", "Frogh", "Gaurav", "Guru", 
    "Naveen", "Krrish", "Niki", "Manmeet","Gungun","Manmeet",
@@ -80,7 +77,6 @@ def format_with_pct(val_df, total_series):
         ]
     return display_df
 
-# --- PDF FORMATTING ENGINE ---
 def generate_formatted_pdf(start_date, end_date, df_vol, df_qual, df_live):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
@@ -142,7 +138,6 @@ KPI_DEFS = {
    "live_rate": "Conversion rate from Committed applications to confirmed Live records."
 }
 
-# --- NEW: TOOLTIP DEFINITIONS FOR TABLES ---
 TABLE_TOOLTIPS = {
     "Total Applications": "Grand total of all applications logged by the advisor.",
     "Applications": "Number of applications logged for this specific period.",
@@ -154,7 +149,6 @@ TABLE_TOOLTIPS = {
     "Committed": "Applications processed and awaiting final activation."
 }
 
-# --- UI START ---
 try:
     df1, df2, last_sync = fetch_data()
 
@@ -290,7 +284,6 @@ try:
             else:
                 st.info("No live status data available.")
 
-        # --- EXPORT SECTION ---
         st.write("### 📥 Download Team Report")
         e_col1, e_col2, e_col3 = st.columns(3)
         export_vol = final_df[['Total Applications']]
