@@ -10,7 +10,7 @@ import math
 
 st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
 
-# --- IMPROVED UI SECTION ---
+
 st.markdown("""
     <style>
     .block-container { max-width: 98%; padding-top: 1.5rem; }
@@ -595,10 +595,9 @@ else:
             display_df = recent_log[[item[1] for item in valid_layout]].copy()
             display_df.columns = pd.MultiIndex.from_tuples(valid_layout)
 
-            # Define a container for the table so pagination controls can visually sit beneath it
             table_container = st.container()
 
-            # --- Interactive Pagination Layout Config ---
+            # --- Pagination Layout Config ---
             if "current_page" not in st.session_state:
                 st.session_state.current_page = 1
 
@@ -732,7 +731,7 @@ else:
             with table_container:
                 st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
-        # ---------------- DISPOSITION PERFORMANCE TIPS ----------------
+        # ------------ DISPOSITION PERFORMANCE TIPS ---
         st.markdown("""
             <div class="tips-box">
                 <div class="tips-title">💡 Performance Tips: Correct Call Dispositions and Data Quality</div>
