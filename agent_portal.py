@@ -272,7 +272,7 @@ else:
     
     with st.sidebar:
         st.subheader(f"👤 {agent}")
-        st.caption("Sparta Account Executive")
+        st.caption("Sparta Telecom Executive")
         st.divider()
         if st.button("Logout Session", use_container_width=True, type="secondary"):
             st.session_state.authenticated = False
