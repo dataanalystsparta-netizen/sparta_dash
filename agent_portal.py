@@ -139,11 +139,12 @@ def map_wc(status_str):
     return 'Others'
 
 # ==============================================================================
-# 4. SECURE INTEGRATED GATEWAY & DATA INGESTION FLOW
+# 4. ORIGINAL SECURE GATEWAY LOGIN SCREEN
 # ==============================================================================
 st.sidebar.image("https://img.icons8.com/fluent/96/000000/dashboard.png", width=60)
 st.sidebar.title("Navigation & Secure Control")
 
+# Retaining original logic layout for the access credential gating signature
 secure_key = st.sidebar.text_input("Access Control Key Verification", type="password", help="Enter access signature key to enable analytical processing components.")
 
 if not secure_key:
@@ -153,31 +154,28 @@ else:
     st.session_state.authenticated = True
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🗂️ Ingestion Context Data Files")
 
-f_ag1 = st.sidebar.file_uploader("Upload Core Applications Workbook (AG1)", type=['xlsx', 'csv'], help="Source ledger contains sales entries, quality checks, and customer info.")
-f_ag2 = st.sidebar.file_uploader("Upload Live Telephony Portal Ledger (AG2)", type=['xlsx', 'csv'], help="Downstream execution register containing digital circuit setup tracking.")
+# ==============================================================================
+# 5. UNIFIED GOOGLE SHEET DATA INGESTION PIPELINE
+# ==============================================================================
+# Input configuration matching your previous direct Google Sheet connection
+SHEET_ID = "14_u3G-Yd-8q-VqVun7lUorX7wB9R_e82lX9bE2r8E_4"  # Update with your active Sheet ID if different
+AG1_GID = "0"          # GID for tab 1 (AG1)
+AG2_GID = "192843821"  # GID for tab 2 (AG2)
 
-if not f_ag1 or not f_ag2:
-    st.warning("⚡ Pipeline Awaiting Input Data: Upload both corporate application workbooks in the sidebar to activate the dashboard engines.")
-    st.stop()
-
-# Dynamic Parser Engine with Strict Fallbacks
-@st.cache_data(show_spinner="Parsing analytical business data frames...")
-def process_source_ledgers(file_ag1, file_ag2):
-    if file_ag1.name.endswith('.csv'):
-        ag1 = pd.read_csv(file_ag1)
-    else:
-        ag1 = pd.read_excel(file_ag1)
-        
-    if file_ag2.name.endswith('.csv'):
-        ag2 = pd.read_csv(file_ag2)
-    else:
-        ag2 = pd.read_excel(file_ag2)
+@st.cache_data(show_spinner="Connecting to corporate Google Sheet matrices...")
+def fetch_and_process_sheet_data(sheet_id, ag1_gid, ag2_gid):
+    # Formulate explicit export URLs for both target spreadsheet frames
+    url_ag1 = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={ag1_gid}"
+    url_ag2 = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={ag2_gid}"
+    
+    ag1 = pd.read_csv(url_ag1)
+    ag2 = pd.read_csv(url_ag2)
         
     ag1.columns = [str(c).strip() for c in ag1.columns]
     ag2.columns = [str(c).strip() for c in ag2.columns]
     
+    # Precise Universal Robust DateTime Ingestion Strategy
     for df in [ag1, ag2]:
         date_col = next((c for c in df.columns if 'date' in c.lower()), None)
         if date_col:
@@ -187,6 +185,7 @@ def process_source_ledgers(file_ag1, file_ag2):
             df['Date_Parsed'] = pd.to_datetime(today_date)
             df['Standardized_Date'] = today_date
             
+    # Strict Logical Mapping Extensions
     q_col = next((c for c in ag1.columns if 'quality status' in c.lower() or 'q_status' in c.lower() or 'status' in c.lower()), None)
     if q_col:
         ag1['Q_Status'] = ag1[q_col].apply(map_quality)
@@ -207,6 +206,7 @@ def process_source_ledgers(file_ag1, file_ag2):
     else:
         ag1['WC_Clean'] = 'Others'
         
+    # Align structural layout expectations for log views
     if 'Quality Remarks' not in ag1.columns:
         rmk_col = next((c for c in ag1.columns if 'remark' in c.lower() or 'comment' in c.lower()), 'Quality Remarks')
         ag1['Quality Remarks'] = ag1[rmk_col] if rmk_col in ag1.columns else ''
@@ -229,10 +229,11 @@ def process_source_ledgers(file_ag1, file_ag2):
     return ag1, ag2, bool(wc_col_found)
 
 try:
-    ag1, ag2, wc_col = process_source_ledgers(f_ag1, f_ag2)
+    # Trigger active fetching directly via live streaming URLs
+    ag1, ag2, wc_col = fetch_and_process_sheet_data(SHEET_ID, AG1_GID, AG2_GID)
     
     # ==============================================================================
-    # 5. ENTERPRISE GLOBAL FILTER CONTROLS
+    # 6. ENTERPRISE GLOBAL FILTER CONTROLS
     # ==============================================================================
     st.sidebar.subheader("📅 Temporal Filter Configurations")
     min_d = min(ag1['Date_Parsed'].min(), ag2['Date_Parsed'].min())
@@ -257,7 +258,7 @@ try:
     """, unsafe_allow_html=True)
     
     # ==============================================================================
-    # 6. PERFORMANCE CARD CONTAINER LAYOUT (RESPONSIVE BLOCKS)
+    # 7. PERFORMANCE CARD CONTAINER LAYOUT (RESPONSIVE BLOCKS)
     # ==============================================================================
     total_apps = len(ag1_filtered)
     total_ag2 = len(ag2_filtered)
@@ -295,7 +296,7 @@ try:
     """, unsafe_allow_html=True)
 
     # ==============================================================================
-    # 7. AUTOMATED INSIGHT GENERATION ENGINE (PART 2 SEGMENT)
+    # 8. AUTOMATED INSIGHT GENERATION ENGINE
     # ==============================================================================
     flags_html = ""
     
@@ -342,7 +343,7 @@ try:
     st.markdown("---")
 
     # ==============================================================================
-    # 8. MACRO MATRIX DATA BREAKDOWN (DAILY / MONTHLY METRIC TABLES)
+    # 9. MACRO MATRIX DATA BREAKDOWN (DAILY / MONTHLY METRIC TABLES)
     # ==============================================================================
     st.subheader("📅 Interval Data Aggregations Matrix")
     ag1_filtered['Date'] = ag1_filtered['Date_Parsed'].dt.date
@@ -430,7 +431,7 @@ try:
     st.markdown("---")
 
     # ==============================================================================
-    # 9. GRAPHICAL HISTORICAL TRENDS & SYSTEM DYNAMICS HEATMAP
+    # 10. GRAPHICAL HISTORICAL TRENDS & SYSTEM DYNAMICS HEATMAP
     # ==============================================================================
     col_trend, col_cal = st.columns([3, 2])
     
@@ -538,7 +539,7 @@ try:
     st.markdown("---")
 
     # ==============================================================================
-    # 10. MULTI-INDEX MERGED RECENT APPLICATIONS AUDIT LOG
+    # 11. MULTI-INDEX MERGED RECENT APPLICATIONS AUDIT LOG
     # ==============================================================================
     st.subheader("🔍 Integrated Recent Applications Verification Log")
     if not ag1.empty:
@@ -738,7 +739,7 @@ try:
             st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
     # ==============================================================================
-    # 11. CORPORATE DISPOSITION PERFORMANCE CALLOUT MATRIX
+    # 12. CORPORATE DISPOSITION PERFORMANCE CALLOUT MATRIX
     # ==============================================================================
     st.markdown("""
         <div class="tips-box">
