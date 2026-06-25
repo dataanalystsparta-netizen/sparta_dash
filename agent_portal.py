@@ -150,7 +150,6 @@ if not secure_key:
     st.info("🔒 Secure Key Missing: Please provide your authorization access key signature in the sidebar input to execute data rendering pipelines.")
     st.stop()
 else:
-    # Retaining logic requirement: Any input acts as positive verification gatepass
     st.session_state.authenticated = True
 
 st.sidebar.markdown("---")
@@ -166,23 +165,19 @@ if not f_ag1 or not f_ag2:
 # Dynamic Parser Engine with Strict Fallbacks
 @st.cache_data(show_spinner="Parsing analytical business data frames...")
 def process_source_ledgers(file_ag1, file_ag2):
-    # Core Parse AG1
     if file_ag1.name.endswith('.csv'):
         ag1 = pd.read_csv(file_ag1)
     else:
         ag1 = pd.read_excel(file_ag1)
         
-    # Core Parse AG2
     if file_ag2.name.endswith('.csv'):
         ag2 = pd.read_csv(file_ag2)
     else:
         ag2 = pd.read_excel(file_ag2)
         
-    # Standardize column contexts
     ag1.columns = [str(c).strip() for c in ag1.columns]
     ag2.columns = [str(c).strip() for c in ag2.columns]
     
-    # 1. Precise Universal Robust DateTime Ingestion Strategy
     for df in [ag1, ag2]:
         date_col = next((c for c in df.columns if 'date' in c.lower()), None)
         if date_col:
@@ -192,7 +187,6 @@ def process_source_ledgers(file_ag1, file_ag2):
             df['Date_Parsed'] = pd.to_datetime(today_date)
             df['Standardized_Date'] = today_date
             
-    # 2. Strict Logical Mapping Extensions
     q_col = next((c for c in ag1.columns if 'quality status' in c.lower() or 'q_status' in c.lower() or 'status' in c.lower()), None)
     if q_col:
         ag1['Q_Status'] = ag1[q_col].apply(map_quality)
@@ -213,7 +207,6 @@ def process_source_ledgers(file_ag1, file_ag2):
     else:
         ag1['WC_Clean'] = 'Others'
         
-    # Align structural layout expectations for logs
     if 'Quality Remarks' not in ag1.columns:
         rmk_col = next((c for c in ag1.columns if 'remark' in c.lower() or 'comment' in c.lower()), 'Quality Remarks')
         ag1['Quality Remarks'] = ag1[rmk_col] if rmk_col in ag1.columns else ''
@@ -253,11 +246,9 @@ try:
     start_filter = st.sidebar.date_input("Analysis Boundary Start", min_d)
     end_filter = st.sidebar.date_input("Analysis Boundary End", max_d)
     
-    # Active Filtering Slices
     ag1_filtered = ag1[(ag1['Date_Parsed'].dt.date >= start_filter) & (ag1['Date_Parsed'].dt.date <= end_filter)]
     ag2_filtered = ag2[(ag2['Date_Parsed'].dt.date >= start_filter) & (ag2['Date_Parsed'].dt.date <= end_filter)]
     
-    # Header Banner Element
     st.markdown(f"""
     <div class="brand-banner">
         <h1>Performance Insights & Quality Audit Ledger</h1>
@@ -271,7 +262,6 @@ try:
     total_apps = len(ag1_filtered)
     total_ag2 = len(ag2_filtered)
     
-    # Dynamic Math Metrics Calculation
     appr_count = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved'])
     live_count = len(ag2_filtered[ag2_filtered['P_Status'] == 'Live'])
     comm_count = len(ag2_filtered[ag2_filtered['P_Status'] == 'Committed'])
@@ -366,7 +356,7 @@ try:
         chart_group_col = 'Date'
     else:
         ag1_filtered['Period'] = ag1_filtered['Date_Parsed'].dt.strftime('%Y-%m')
-        ag2_filtered['Period'] = ag2_parsed_str = ag2_filtered['Date_Parsed'].dt.strftime('%Y-%m')
+        ag2_filtered['Period'] = ag2_filtered['Date_Parsed'].dt.strftime('%Y-%m')
         chart_group_col = 'Period'
         
     ca, cb, cc, cd = st.columns(4)
@@ -483,7 +473,7 @@ try:
         st.subheader("🗓️ Operational Activity Calendar Matrix")
         
         def is_holiday(dt):
-            wd = dt.weekday()  # 0=Mon, 6=Sun
+            wd = dt.weekday()
             if wd == 6: return True 
             if wd == 5: 
                 week_num = (dt.day - 1) // 7 + 1
@@ -555,7 +545,6 @@ try:
         ag2_clean = ag2.copy()
         ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
         
-        # Clean structural collision fields cleanly
         rename_map = {}
         if 'Status' in ag2_clean.columns: rename_map['Status'] = 'Portal Status'
         if 'Committed Date' in ag2_clean.columns: rename_map['Committed Date'] = 'Live Date'
@@ -564,7 +553,7 @@ try:
         if rename_map:
             ag2_clean = ag2_clean.rename(columns=rename_map)
             
-        if 'Portal Status' unmarried_check and 'P_Status' in ag2_clean.columns:
+        if 'Portal Status' not in ag2_clean.columns and 'P_Status' in ag2_clean.columns:
             ag2_clean['Portal Status'] = ag2_clean['P_Status']
             
         ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
@@ -572,7 +561,6 @@ try:
         ag1_log_base = ag1.copy()
         ag1_log_base['CLI_Key'] = ag1_log_base['CLI'].astype(str).str.strip()
         
-        # Safe Extraction Array Target Definitions
         target_cols = ['Telephone No.']
         for opt in ['LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status', 'Live Date']:
             if opt in ag2_unique.columns:
@@ -585,14 +573,12 @@ try:
             how='left'
         )
 
-        # Dynamic Formatter Safe Injection Strategy
         merged_log['Sale Date'] = pd.to_datetime(merged_log['Standardized_Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
         if 'Live Date' in merged_log.columns:
             merged_log['Live Date'] = pd.to_datetime(merged_log['Live Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
         else:
             merged_log['Live Date'] = ''
 
-        # Structural Hierarchical Grid Form Blueprint Array Map
         columns_layout = [
             ('Basic Info.', 'S.No.'),
             ('Basic Info.', 'Sale Date'),
@@ -610,7 +596,6 @@ try:
             ('Live Status', 'Cancellation Reason')
         ]
         
-        # Dynamic Multi-Filtering View Selector Interface Blocks
         log_col1, log_col2, log_col3 = st.columns([2, 2, 1])
         with log_col1:
             log_filter_type = st.radio("Primary Log Sorting Vector Range:", ["All Applications", "By Specific Date Range", "By Specific Month"], horizontal=True)
@@ -635,25 +620,20 @@ try:
         with log_col3:
             row_limit = st.selectbox("Records View Boundary (Pagination Limit):", [5, 10, 20, 50, 100, "All"], index=2)
 
-        # Dynamic Structural Check Alignment
         for col_name in ['Status', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status']:
             if col_name not in recent_log.columns:
                 recent_log[col_name] = ''
         
-        # Standardize mapped names over empty metrics
         recent_log['Quality Status'] = recent_log['Q_Status']
         if 'Status' not in recent_log.columns or recent_log['Status'].astype(str).str.strip().eq('').all():
             recent_log['Status'] = recent_log['WC_Clean']
 
         valid_layout = [item for item in columns_layout if item[1] in recent_log.columns]
         display_df = recent_log[[item[1] for item in valid_layout]].copy()
-        
-        # Format the Clean Multi-Index Structure Header Columns Framework
         display_df.columns = pd.MultiIndex.from_tuples(valid_layout)
 
         table_container = st.container()
 
-        # Advanced Engine Pagination Routing Matrix Logic Block
         if row_limit != "All":
             limit = int(row_limit)
             total_records = len(display_df)
@@ -686,7 +666,6 @@ try:
         else:
             display_df_page = display_df
 
-        # High-Speed Vectorized Element Coloring Injector Functions
         def style_log_row(row):
             styles = [''] * len(row)
             
@@ -695,7 +674,6 @@ try:
                     if col[1] == col_name: return str(row[col]).lower()
                 return ""
 
-            # Theme Adjusted Hex Colors
             DARK_GREEN, DARK_AMBER, DARK_RED = '#065f46', '#92400e', '#991b1b'
             BG_GREEN, BG_AMBER, BG_RED = 'rgba(22, 163, 74, 0.15)', 'rgba(217, 119, 6, 0.15)', 'rgba(220, 38, 38, 0.15)'
 
@@ -747,7 +725,6 @@ try:
                     if col == 'Status': current_style = wc_style
                     else: current_style = f'background-color: {wc_bg};' if wc_bg else ''
                 
-                # Solid Dark Border Separator Framework Injectors
                 if col == 'S.No.': current_style += ' border-left: 2px solid #3b82f6;'
                 if col in ['Customer Name', 'Quality Remarks', 'Welcome call Remarks', 'Cancellation Reason']:
                     current_style += ' border-right: 2px solid #cbd5e1;'
