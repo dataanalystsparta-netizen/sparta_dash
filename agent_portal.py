@@ -369,9 +369,12 @@ else:
             
         with m_col2:
             st.markdown(f'<div class="kpi-container-card"><div class="kpi-section-title">🛡️ QA Audit</div>', unsafe_allow_html=True)
+            # FIXED: Safe Pandas bitwise evaluation avoiding truth value ambiguities
+            cancelled_count = len(ag1_filtered[(ag1_filtered['Q_Status'] == 'Cancelled') | (ag1_filtered['Q_Status'] == 'Rejected')])
+            
             q_metrics = [("Approved", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved'])),
                          ("Rework", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rework'])),
-                         ("Cancelled", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled'] or ag1_filtered[ag1_filtered['Q_Status'] == 'Rejected']))]
+                         ("Cancelled", cancelled_count)]
             q_cols = st.columns(3)
             for i, (lbl, val) in enumerate(q_metrics):
                 with q_cols[i]: render_modern_pill(lbl, val, total_apps)
@@ -728,4 +731,3 @@ else:
 
     except Exception as e: 
         st.error(f"Operational Pipeline Fault: {e}")
-    
