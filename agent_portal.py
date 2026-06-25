@@ -254,7 +254,7 @@ if not st.session_state.authenticated:
         with st.container(border=True):
             st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-telecom-squarelogo-1663578233108%20(1).jpg", width=70)
             st.title("Sparta Agent Portal")
-            st.markdown("Enter your organizational credentials below to securely sync your metric performance ledgers.")
+           
             
             user_key = st.text_input("Access Key", type="password", help="Case-insensitive access key sequence.")
             if st.button("Authenticate Dashboard", use_container_width=True, type="primary"):
