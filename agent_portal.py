@@ -9,143 +9,153 @@ import calendar
 import math
 
 # ==========================================
-# 1. GLOBAL PREMIUM THEMING & CONFIGURATION
+# 1. DYNAMIC THEME ENGINE CONFIGURATION
 # ==========================================
-st.set_page_config(page_title="Sparta Analytics", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sparta Analytics Engine", layout="wide", initial_sidebar_state="expanded")
 
-# Injecting an ultra-modern corporate design system
-st.markdown("""
+# Inject Theme variables into session state early
+if "active_theme" not in st.session_state:
+    st.session_state.active_theme = "Enterprise Light"
+
+# Theme definitions mapping palette choices
+THEMES = {
+    "Enterprise Light": {
+        "bg_color": "#F8FAFC",
+        "card_bg": "#FFFFFF",
+        "border_color": "#E2E8F0",
+        "text_main": "#0F172A",
+        "text_muted": "#64748B",
+        "sidebar_bg": "#1E293B",
+        "chart_grid": "#E2E8F0"
+    },
+    "Midnight Slate": {
+        "bg_color": "#0F172A",
+        "card_bg": "#1E293B",
+        "border_color": "#334155",
+        "text_main": "#F1F5F9",
+        "text_muted": "#94A3B8",
+        "sidebar_bg": "#0F172A",
+        "chart_grid": "#334155"
+    },
+    "Cyber Dark": {
+        "bg_color": "#050505",
+        "card_bg": "#111111",
+        "border_color": "#222222",
+        "text_main": "#FFFFFF",
+        "text_muted": "#888888",
+        "sidebar_bg": "#0B0B0B",
+        "chart_grid": "#222222"
+    }
+}
+
+cfg = THEMES[st.session_state.active_theme]
+
+# Inject clean global layout rules based on selected theme
+st.markdown(f"""
     <style>
-    /* Global Canvas Styling */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
     
-    html, body, [data-testid="stAppViewContainer"] {
+    html, body, [data-testid="stAppViewContainer"] {{
         font-family: 'Inter', sans-serif;
-        background-color: #0F172A; /* Slate 900 Deep Dark */
-        color: #F1F5F9;
-    }
+        background-color: {cfg["bg_color"]} !important;
+        color: {cfg["text_main"]} !important;
+    }}
     
-    .block-container { 
-        max-width: 95%; 
-        padding: 2rem 2rem; 
-    }
+    .block-container {{ 
+        max-width: 96%; 
+        padding: 1.5rem 2rem; 
+    }}
     
-    /* Sidebar Overhaul */
-    [data-testid="stSidebar"] {
-        background-color: #1E293B !important; /* Slate 800 */
-        border-right: 1px solid #334155;
-    }
+    /* Sidebar Layout Styling */
+    [data-testid="stSidebar"] {{
+        background-color: {cfg["sidebar_bg"]} !important;
+        border-right: 1px solid {cfg["border_color"]};
+    }}
     
-    /* Glassmorphic Metric Containers */
-    .kpi-container-card {
-        background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
-        border: 1px solid #334155;
-        border-radius: 16px;
-        padding: 24px;
-        height: 100%;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
-    }
-    
-    .kpi-section-title {
-        font-size: 0.8rem;
-        font-weight: 700;
-        color: #94A3B8;
-        text-transform: uppercase;
-        letter-spacing: 1.5px;
-        margin-bottom: 16px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    
-    /* Elegant Metric Cards */
-    .metric-pill {
-        background: #1E293B;
-        border: 1px solid #475569;
+    /* Premium Minimalistic Workspace Cards */
+    .kpi-container-card {{
+        background-color: {cfg["card_bg"]};
+        border: 1px solid {cfg["border_color"]};
         border-radius: 12px;
-        padding: 14px;
-        text-align: center;
-        box-shadow: inset 0 1px 0 0 rgba(255,255,255,0.05);
-        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    }
+        padding: 20px;
+        height: 100%;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    }}
     
-    .metric-pill:hover {
-        border-color: #3B82F6;
-        transform: translateY(-2px);
-        box-shadow: 0 12px 20px -8px rgba(59, 130, 246, 0.4);
-    }
-    
-    .metric-label {
-        font-size: 0.7rem;
-        font-weight: 600;
-        color: #94A3B8;
-        text-transform: uppercase;
-        margin-bottom: 6px;
-    }
-    
-    .metric-value {
-        font-size: 1.6rem;
-        font-weight: 800;
-        color: #FFFFFF;
-        line-height: 1.1;
-    }
-    
-    .metric-percentage {
+    .kpi-section-title {{
         font-size: 0.75rem;
         font-weight: 700;
-        margin-top: 6px;
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 20px;
-    }
-    
-    /* Live Status Highlight Board */
-    .insight-scroll-board {
-        display: flex;
-        gap: 16px;
-        overflow-x: auto;
-        padding: 8px 0px 16px 0px;
-    }
-    
-    .insight-status-node {
-        background: #1E293B;
-        border-top: 4px solid #3B82F6;
-        border-radius: 12px;
-        padding: 16px;
-        min-width: 280px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    }
-    
-    /* Modernized Tips Callout */
-    .compliance-tips-panel {
-        background: linear-gradient(180deg, #1E1B4B 0%, #0F172A 100%); /* Deep Indigo Blend */
-        border-left: 5px solid #6366F1;
-        border-right: 1px solid #312E81;
-        border-top: 1px solid #312E81;
-        border-bottom: 1px solid #312E81;
-        padding: 24px;
-        border-radius: 12px;
-        margin-top: 24px;
-    }
-    
-    .compliance-title {
-        font-size: 1rem;
-        font-weight: 700;
-        color: #E0E7FF;
+        color: {cfg["text_muted"]};
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
         margin-bottom: 12px;
-        letter-spacing: 0.5px;
-    }
+    }}
     
-    /* Streamlit Object Modifiers */
-    div[data-testid="stContainer"] {
-        background-color: #1E293B;
-        border: 1px solid #334155 !important;
+    /* Metric Pill System */
+    .metric-pill {{
+        background-color: {cfg["bg_color"]};
+        border: 1px solid {cfg["border_color"]};
+        border-radius: 8px;
+        padding: 12px;
+        text-align: center;
+    }}
+    
+    .metric-label {{
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: {cfg["text_muted"]};
+        text-transform: uppercase;
+        margin-bottom: 4px;
+    }}
+    
+    .metric-value {{
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: {cfg["text_main"]};
+    }}
+    
+    .metric-percentage {{
+        font-size: 0.75rem;
+        font-weight: 700;
+        margin-top: 4px;
+        display: inline-block;
+        padding: 1px 6px;
         border-radius: 12px;
-    }
+    }}
     
-    .stRadio[data-testid="stWidgetPropagate"] label {
-        color: #94A3B8 !important;
-    }
+    /* Live Insight Banner Items */
+    .insight-scroll-board {{
+        display: flex;
+        gap: 14px;
+        overflow-x: auto;
+        padding: 4px 0px 12px 0px;
+    }}
+    
+    .insight-status-node {{
+        background-color: {cfg["card_bg"]};
+        border: 1px solid {cfg["border_color"]};
+        border-left: 4px solid #3B82F6;
+        border-radius: 8px;
+        padding: 14px;
+        min-width: 260px;
+    }}
+    
+    /* Compliance Operations Banner */
+    .compliance-tips-panel {{
+        background-color: {cfg["card_bg"]};
+        border: 1px solid {cfg["border_color"]};
+        border-left: 4px solid #6366F1;
+        padding: 20px;
+        border-radius: 8px;
+        margin-top: 20px;
+    }}
+    
+    /* Native Form Overrides */
+    div[data-testid="stContainer"] {{
+        background-color: {cfg["card_bg"]};
+        border: 1px solid {cfg["border_color"]} !important;
+        border-radius: 8px;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -206,7 +216,6 @@ def fetch_data():
         
     return df1, df2_raw, last_sync
 
-# Data Normalization Transformers
 def map_quality(val):
     s = str(val).lower()
     if any(x in s for x in ['appr', 'pass']): return 'Approved'
@@ -230,27 +239,26 @@ def map_wc(val):
     if any(x in s for x in ['can', 'rej']): return 'Cancelled'
     return 'Others'
 
-# Unified Micro-Metric Rendering Engine
 def render_modern_pill(label, value, total, is_total=False):
     percent = (value / total * 100) if total > 0 else 0
     
     if is_total:
-        color_class = "background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3);"
+        color_class = "background: rgba(59, 130, 246, 0.1); color: #2563EB; border: 1px solid rgba(59, 130, 246, 0.2);"
         pct_html = ""
     elif label in ["Approved", "WC Done", "Live"]:
-        color_class = "background: rgba(16, 185, 129, 0.12); color: #34D399;"
+        color_class = "background: rgba(16, 185, 129, 0.1); color: #16A34A;"
         pct_html = f'<span class="metric-percentage" style="{color_class}">{percent:.1f}%</span>'
     elif label in ["Rework", "WC Pending", "WC Paperwork", "Committed"]:
-        color_class = "background: rgba(245, 158, 11, 0.12); color: #FBBF24;"
+        color_class = "background: rgba(245, 158, 11, 0.1); color: #D97706;"
         pct_html = f'<span class="metric-percentage" style="{color_class}">{percent:.1f}%</span>'
     else:
-        color_class = "background: rgba(239, 68, 68, 0.12); color: #F87171;"
+        color_class = "background: rgba(239, 68, 68, 0.1); color: #DC2626;"
         pct_html = f'<span class="metric-percentage" style="{color_class}">{percent:.1f}%</span>'
 
     st.markdown(f"""
         <div class="metric-pill">
             <div class="metric-label">{label}</div>
-            <div class="metric-value">{value:,}</div>
+            <div class="metric-value" style="color: {cfg['text_main']};">{value:,}</div>
             {pct_html}
         </div>
     """, unsafe_allow_html=True)
@@ -273,8 +281,8 @@ if not st.session_state.authenticated:
         with st.container():
             st.markdown("<div style='padding: 30px;'>", unsafe_allow_html=True)
             st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-telecom-squarelogo-1663578233108%20(1).jpg", width=60)
-            st.markdown("<h2 style='color:white; margin-top:15px; font-weight:800;'>Sparta Engine</h2>", unsafe_allow_html=True)
-            st.markdown("<p style='color:#94A3B8; font-size:0.9rem;'>Enterprise Performance Ecosystem</p>", unsafe_allow_html=True)
+            st.markdown(f"<h2 style='color:{cfg['text_main']}; margin-top:15px; font-weight:800;'>Sparta Engine</h2>", unsafe_allow_html=True)
+            st.markdown(f"<p style='color:{cfg['text_muted']}; font-size:0.9rem;'>Enterprise Performance Ecosystem</p>", unsafe_allow_html=True)
             st.write("")
             
             user_key = st.text_input("Security Access Key", type="password")
@@ -297,7 +305,7 @@ else:
     
     with st.sidebar:
         st.markdown(f"<div style='padding: 10px 0px;'><h3 style='color:white; font-weight:700; margin:0;'>{agent}</h3>"
-                    f"<p style='color:#64748B; font-size:0.8rem; margin:0;'>Account Executive</p></div>", unsafe_allow_html=True)
+                    f"<p style='color:#94A3B8; font-size:0.8rem; margin:0;'>Account Executive</p></div>", unsafe_allow_html=True)
         st.divider()
         if st.button("Terminate Session", use_container_width=True, type="secondary"):
             st.session_state.authenticated = False
@@ -310,19 +318,29 @@ else:
         ag1 = df1[df1['Advisor'] == agent].copy()
         ag2 = df2_raw[df2_raw['Advisor'] == agent].copy()
         
-        # Header Status Bar Layout
-        col_title, col_time = st.columns([3, 1])
+        # --- TOP LEVEL THEME SELECTOR & HEADER BAR ---
+        col_title, col_theme, col_time = st.columns([2.5, 1.2, 1.3])
         with col_title:
-            st.markdown(f"<h1 style='font-weight: 800; letter-spacing: -1px; color: white; margin:0;'>Performance Analytics</h1>"
-                        f"<p style='color: #64748B; margin: 0;'>Operational tracking matrix for {agent}</p>", unsafe_allow_html=True)
+            st.markdown(f"<h1 style='font-weight: 800; letter-spacing: -1px; color: {cfg['text_main']}; margin:0;'>Performance Analytics</h1>"
+                        f"<p style='color: {cfg['text_muted']}; margin: 0;'>Operational tracking matrix for {agent}</p>", unsafe_allow_html=True)
+        with col_theme:
+            chosen_theme = st.selectbox(
+                "Interface Theme", 
+                options=["Enterprise Light", "Midnight Slate", "Cyber Dark"], 
+                index=list(THEMES.keys()).index(st.session_state.active_theme),
+                key="theme_switcher"
+            )
+            if chosen_theme != st.session_state.active_theme:
+                st.session_state.active_theme = chosen_theme
+                st.rerun()
         with col_time:
-            st.markdown(f"<div style='text-align: right; background: #1E293B; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px;'>"
-                        f"<span style='color: #64748B; font-size: 0.75rem; block-display: true;'>LIVE HUB ENGINE SYNC</span><br>"
-                        f"<b style='color: #34D399; font-size: 0.85rem;'>{last_sync}</b></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: right; background: {cfg['card_bg']}; border: 1px solid {cfg['border_color']}; padding: 8px 16px; border-radius: 8px;'>"
+                        f"<span style='color: {cfg['text_muted']}; font-size: 0.75rem;'>LIVE HUB ENGINE SYNC</span><br>"
+                        f"<b style='color: #10B981; font-size: 0.85rem;'>{last_sync}</b></div>", unsafe_allow_html=True)
         
         st.write("")
         
-        # Dynamic Time Windows Filter Card
+        # Filter Window Cards
         with st.container():
             c_a, c_b, _ = st.columns([1.2, 1.2, 2.6])
             start_date = c_a.date_input("Performance window start", today_date.replace(day=1))
@@ -337,22 +355,20 @@ else:
         if wc_col: 
             ag1_filtered['WC_Clean'] = ag1_filtered[wc_col].apply(map_wc)
 
-        # ---------------- COMPACT CONSOLIDATED KPI DASHBOARD ----------------
+        # Four Tier Core KPI Dashboard Grid
         total_apps = len(ag1_filtered)
         total_ag2 = len(ag2_filtered)
         
         st.write("")
-        
-        # Four Tier Executive Metrics Wall
         m_col1, m_col2, m_col3, m_col4 = st.columns([1.1, 2.3, 2.3, 2.3])
         
         with m_col1:
-            st.markdown('<div class="kpi-container-card"><div class="kpi-section-title">📊 Overview</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="kpi-container-card"><div class="kpi-section-title">📊 Overview</div>', unsafe_allow_html=True)
             render_modern_pill("Total Apps", total_apps, total_apps, is_total=True)
             st.markdown('</div>', unsafe_allow_html=True)
             
         with m_col2:
-            st.markdown('<div class="kpi-container-card"><div class="kpi-section-title">🛡️ QA Audit</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="kpi-container-card"><div class="kpi-section-title">🛡️ QA Audit</div>', unsafe_allow_html=True)
             q_metrics = [("Approved", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved'])),
                          ("Rework", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rework'])),
                          ("Cancelled", len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled'] or ag1_filtered[ag1_filtered['Q_Status'] == 'Rejected']))]
@@ -362,7 +378,7 @@ else:
             st.markdown('</div>', unsafe_allow_html=True)
             
         with m_col3:
-            st.markdown('<div class="kpi-container-card"><div class="kpi-section-title">📞 Welcome Call</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="kpi-container-card"><div class="kpi-section-title">📞 Welcome Call</div>', unsafe_allow_html=True)
             if wc_col:
                 wc_metrics = [("WC Done", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Done'])),
                               ("WC Pending", len(ag1_filtered[ag1_filtered['WC_Clean'] == 'Pending'])),
@@ -375,7 +391,7 @@ else:
             st.markdown('</div>', unsafe_allow_html=True)
             
         with m_col4:
-            st.markdown('<div class="kpi-container-card"><div class="kpi-section-title">⚡ Gateway Status</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="kpi-container-card"><div class="kpi-section-title">⚡ Gateway Status</div>', unsafe_allow_html=True)
             l_denom = total_ag2 if total_ag2 > 0 else total_apps
             l_metrics = [("Live", len(ag2_filtered[ag2_filtered['P_Status'] == 'Live'])),
                          ("Committed", len(ag2_filtered[ag2_filtered['P_Status'] == 'Committed'])),
@@ -385,26 +401,26 @@ else:
                 with l_cols[i]: render_modern_pill(lbl, val, l_denom)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # ---------------- STRATEGIC SYSTEM HIGHLIGHT NODES ----------------
+        # Dynamic System Insight Banner
         flags_html = ""
         if total_apps > 0:
             q_appr = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved']) / total_apps
             q_can = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Cancelled']) / total_apps
             q_rew = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Rework']) / total_apps
 
-            if q_appr > 0.60: flags_html += '<div class="insight-status-node" style="border-color:#10B981;"><p class="metric-label">Quality Core</p><p style="color:#10B981; font-weight:700; margin:4px 0;">Premium Approval Margin</p><p style="color:#94A3B8; font-size:0.75rem; margin:0;">Compliance velocity tracking well above targets.</p></div>'
-            elif q_appr < 0.60: flags_html += '<div class="insight-status-node" style="border-color:#EF4444;"><p class="metric-label">Quality Core</p><p style="color:#EF4444; font-weight:700; margin:4px 0;">Velocity Deficit</p><p style="color:#94A3B8; font-size:0.75rem; margin:0;">Review quality checkpoints to reduce script drops.</p></div>'
-            if q_can > 0.35: flags_html += '<div class="insight-status-node" style="border-color:#F59E0B;"><p class="metric-label">Auditing</p><p style="color:#F59E0B; font-weight:700; margin:4px 0;">High Cancellation Outliers</p><p style="color:#94A3B8; font-size:0.75rem; margin:0;">Monitor post-call stabilization parameters closely.</p></div>'
-            if q_rew > 0.30: flags_html += '<div class="insight-status-node" style="border-color:#3B82F6;"><p class="metric-label">Process Tracking</p><p style="color:#3B82F6; font-weight:700; margin:4px 0;">Rework Pipeline Spikes</p><p style="color:#94A3B8; font-size:0.75rem; margin:0;">Ensure secondary validation keys are populated cleanly.</p></div>'
+            if q_appr > 0.60: flags_html += f'<div class="insight-status-node" style="border-left-color:#10B981; background-color:{cfg["card_bg"]};"><p class="metric-label">Quality Core</p><p style="color:#10B981; font-weight:700; margin:4px 0;">Premium Approval Margin</p><p style="color:{cfg["text_muted"]}; font-size:0.75rem; margin:0;">Compliance tracking cleanly above targets.</p></div>'
+            elif q_appr < 0.60: flags_html += f'<div class="insight-status-node" style="border-left-color:#EF4444; background-color:{cfg["card_bg"]};"><p class="metric-label">Quality Core</p><p style="color:#EF4444; font-weight:700; margin:4px 0;">Velocity Deficit</p><p style="color:{cfg["text_muted"]}; font-size:0.75rem; margin:0;">Review quality benchmarks to optimize metrics.</p></div>'
+            if q_can > 0.35: flags_html += f'<div class="insight-status-node" style="border-left-color:#F59E0B; background-color:{cfg["card_bg"]};"><p class="metric-label">Auditing</p><p style="color:#F59E0B; font-weight:700; margin:4px 0;">High Cancellation Outliers</p><p style="color:{cfg["text_muted"]}; font-size:0.75rem; margin:0;">Monitor post-call stabilization parameters closely.</p></div>'
+            if q_rew > 0.30: flags_html += f'<div class="insight-status-node" style="border-left-color:#3B82F6; background-color:{cfg["card_bg"]};"><p class="metric-label">Process Tracking</p><p style="color:#3B82F6; font-weight:700; margin:4px 0;">Rework Pipeline Spikes</p><p style="color:{cfg["text_muted"]}; font-size:0.75rem; margin:0;">Ensure validation secondary markers are clear.</p></div>'
 
         if flags_html:
             st.write("")
-            st.markdown("<h3 style='color:white; font-size:1rem !important; font-weight:700;'>🎯 Real-Time Insight Targets</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='color:{cfg['text_main']}; font-size:1rem !important; font-weight:700;'>🎯 Real-Time Insight Targets</h3>", unsafe_allow_html=True)
             st.markdown(f'<div class="insight-scroll-board">{flags_html}</div>', unsafe_allow_html=True)
 
-        # ---------------- MATRIC HISTORICAL MATRIX MATRICES ----------------
+        # Data Distribution Matrix Grids
         st.write("")
-        st.markdown("<h3 style='color:white; font-size:1.1rem !important; font-weight:700; margin-bottom:15px;'>📅 Data Distribution Grids</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='color:{cfg['text_main']}; font-size:1.1rem !important; font-weight:700; margin-bottom:15px;'>📅 Data Distribution Grids</h3>", unsafe_allow_html=True)
         
         ag1_filtered['Date'] = ag1_filtered['Date_Parsed'].dt.date
         ag2_filtered['Date'] = ag2_filtered['Date_Parsed'].dt.date
@@ -418,40 +434,38 @@ else:
             ag1_filtered['Period'] = ag1_filtered['Date_Parsed'].dt.strftime('%Y-%m')
             ag2_filtered['Period'] = ag2_filtered['Date_Parsed'].dt.strftime('%Y-%m')
             chart_group_col = 'Period'
-        
-        grid_css = "color-scheme: dark; border: 1px solid #334155; border-radius: 8px;"
-        
+            
         ca, cb, cc, cd = st.columns(4)
         with ca:
-            st.markdown("<p style='color:#94A3B8; font-size:0.8rem; font-weight:600;'>VOLUME MATRIX</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='color:{cfg['text_muted']}; font-size:0.8rem; font-weight:600;'>VOLUME MATRIX</p>", unsafe_allow_html=True)
             if not ag1_filtered.empty:
                 period_apps = ag1_filtered.groupby('Period').size().to_frame('Total Apps')
                 st.dataframe(period_apps.style.background_gradient(cmap='Blues'), use_container_width=True)
         with cb:
-            st.markdown("<p style='color:#94A3B8; font-size:0.8rem; font-weight:600;'>QUALITY AUDIT EVALS</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='color:{cfg['text_muted']}; font-size:0.8rem; font-weight:600;'>QUALITY AUDIT EVALS</p>", unsafe_allow_html=True)
             if not ag1_filtered.empty:
                 period_qual = ag1_filtered.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
                 period_qual = period_qual.reindex(columns=['Approved', 'Rework', 'Cancelled', 'Rejected'], fill_value=0)
                 st.dataframe(period_qual.style.background_gradient(cmap='Purples'), use_container_width=True)
         with cc:
-            st.markdown("<p style='color:#94A3B8; font-size:0.8rem; font-weight:600;'>WELCOME CALL ENGINE</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='color:{cfg['text_muted']}; font-size:0.8rem; font-weight:600;'>WELCOME CALL ENGINE</p>", unsafe_allow_html=True)
             if wc_col and not ag1_filtered.empty:
                 period_wc = ag1_filtered.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
                 period_wc = period_wc.reindex(columns=['Done', 'Pending', 'Paperwork', 'Cancelled'], fill_value=0)
                 st.dataframe(period_wc.style.background_gradient(cmap='Teal'), use_container_width=True)
         with cd:
-            st.markdown("<p style='color:#94A3B8; font-size:0.8rem; font-weight:600;'>GATEWAY CONVERSIONS</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='color:{cfg['text_muted']}; font-size:0.8rem; font-weight:600;'>GATEWAY CONVERSIONS</p>", unsafe_allow_html=True)
             if not ag2_filtered.empty:
                 period_port = ag2_filtered.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
                 period_port = period_port.reindex(columns=['Live', 'Committed', 'Cancelled'], fill_value=0)
                 st.dataframe(period_port.style.background_gradient(cmap='YlOrBr'), use_container_width=True)
 
-        # ---------------- DARK HIGH-CONTRAST CHART PLOTS ----------------
+        # Plotly Trend & Calendar Modules
         st.write("")
         col_trend, col_cal = st.columns([3, 2])
         
         with col_trend:
-            st.markdown("<h3 style='color:white; font-size:1.1rem !important; font-weight:700;'>📈 Conversion Vector Trend</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='color:{cfg['text_main']}; font-size:1.1rem !important; font-weight:700;'>📈 Conversion Vector Trend</h3>", unsafe_allow_html=True)
             if not ag1_filtered.empty:
                 d_apps = ag1_filtered.groupby(chart_group_col).size().to_frame('Total Apps')
                 d_appr = ag1_filtered[ag1_filtered['Q_Status'] == 'Approved'].groupby(chart_group_col).size().to_frame('Approved')
@@ -460,22 +474,22 @@ else:
                 i_comb[chart_group_col] = i_comb[chart_group_col].astype(str)
                 
                 fig = go.Figure()
-                fig.add_trace(go.Bar(x=i_comb[chart_group_col], y=i_comb['Total Apps'], name="Submissions", marker_color='#1E3A8A', marker_line=dict(color='#3B82F6', width=1.5)))
+                fig.add_trace(go.Bar(x=i_comb[chart_group_col], y=i_comb['Total Apps'], name="Submissions", marker_color='#3B82F6', opacity=0.3))
                 fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Approved'], name="QA Passed", line=dict(color='#10B981', width=3, shape='spline')))
                 fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Live'], name="Live In Portal", line=dict(color='#F59E0B', width=3, shape='spline')))
                 
                 fig.update_layout(
                     paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                     hovermode="x unified", margin=dict(l=0, r=0, t=20, b=0),
-                    font=dict(color='#94A3B8'),
-                    xaxis=dict(showgrid=True, gridcolor='#1E293B'),
-                    yaxis=dict(showgrid=True, gridcolor='#1E293B'),
+                    font=dict(color=cfg['text_muted']),
+                    xaxis=dict(showgrid=True, gridcolor=cfg['chart_grid']),
+                    yaxis=dict(showgrid=True, gridcolor=cfg['chart_grid']),
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
         with col_cal:
-            st.markdown("<h3 style='color:white; font-size:1.1rem !important; font-weight:700;'>🗓️ Production Velocity Radar</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='color:{cfg['text_main']}; font-size:1.1rem !important; font-weight:700;'>🗓️ Production Velocity Radar</h3>", unsafe_allow_html=True)
             
             def is_holiday(dt):
                 wd = dt.weekday()
@@ -513,38 +527,38 @@ else:
                 customdata=working_days['HoverText'],
                 hovertemplate="%{customdata}<extra></extra>",
                 texttemplate="%{text}",
-                colorscale=[[0, '#1E293B'], [0.2, '#064E3B'], [1, '#10B981']],
-                showscale=False, xgap=4, ygap=4
+                colorscale=[[0, cfg['card_bg']], [0.2, '#D1FAE5'], [1, '#10B981']],
+                showscale=False, xgap=3, ygap=3
             ))
 
             holidays = cal_df[cal_df['Type'] == 'Holiday']
             fig_cal.add_trace(go.Scatter(
                 x=holidays['Weekday'], y=holidays['WeekNum'], mode='markers+text',
-                marker=dict(symbol='square', size=32, color='#334155'),
+                marker=dict(symbol='square', size=28, color='#E2E8F0' if st.session_state.active_theme == "Enterprise Light" else '#334155'),
                 text=holidays['Day'], 
                 customdata=holidays['HoverText'],
                 hovertemplate="%{customdata}<extra></extra>",
-                textfont=dict(color='#64748B', size=10),
+                textfont=dict(color=cfg['text_muted'], size=9),
                 showlegend=False
             ))
 
             fig_cal.update_layout(
-                height=260, margin=dict(l=0, r=0, t=10, b=10),
+                height=240, margin=dict(l=0, r=0, t=10, b=10),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 xaxis=dict(side="top", categoryorder='array', categoryarray=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], showgrid=False),
                 yaxis=dict(autorange="reversed", showgrid=False, zeroline=False, showticklabels=False),
             )
             st.plotly_chart(fig_cal, use_container_width=True)
 
-        # ---------------- HIGH LEVEL AUDIT RECORD LOG LEDGER ----------------
+        # Unified Audit Inspection Log Ledger
         st.write("")
-        st.markdown("<h3 style='color:white; font-size:1.1rem !important; font-weight:700;'>🔍 Records Query Inspection Ledger</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='color:{cfg['text_main']}; font-size:1.1rem !important; font-weight:700;'>🔍 Records Query Inspection Ledger</h3>", unsafe_allow_html=True)
         
         if not ag1.empty:
-            ag2_clean = ag2.copy()
-            ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
-            ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status', 'Committed Date': 'Live Date'})
-            ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
+            制造_df2 = ag2.copy()
+            制造_df2['Telephone No.'] = 制造_df2['Telephone No.'].astype(str).str.strip()
+            制造_df2 = 制造_df2.rename(columns={'Status': 'Portal Status', 'Committed Date': 'Live Date'})
+            ag2_unique = 制造_df2.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
             
             ag1_log_base = ag1.copy()
             ag1_log_base['CLI_Key'] = ag1_log_base['CLI'].astype(str).str.strip()
@@ -597,7 +611,6 @@ else:
 
             table_container = st.container()
 
-            # Dynamic Interactive Pagination Core
             if row_limit != "All":
                 limit = int(row_limit)
                 total_records = len(display_df)
@@ -612,10 +625,10 @@ else:
                 if total_pages > 1:
                     st.write("")
                     p_c1, p_c2 = st.columns([1, 1])
-                    p_c1.markdown(f"<p style='color:#94A3B8; font-size:0.8rem;'>Showing {start_idx + 1} to {end_idx} of {total_records} indices</p>", unsafe_allow_html=True)
+                    p_c1.markdown(f"<p style='color:{cfg['text_muted']}; font-size:0.8rem;'>Showing {start_idx + 1} to {end_idx} of {total_records} records</p>", unsafe_allow_html=True)
                     with p_c2:
                         b_col1, b_col2, b_col3 = st.columns([2, 1, 1])
-                        b_col1.markdown(f"<p style='text-align: right; color:#94A3B8; font-size:0.8rem; margin-top:6px;'>Page {st.session_state.current_page} / {total_pages}</p>", unsafe_allow_html=True)
+                        b_col1.markdown(f"<p style='text-align: right; color:{cfg['text_muted']}; font-size:0.8rem; margin-top:6px;'>Page {st.session_state.current_page} / {total_pages}</p>", unsafe_allow_html=True)
                         if b_col2.button("Prev", disabled=(st.session_state.current_page == 1), use_container_width=True, key="p_prev_btn"):
                             st.session_state.current_page -= 1
                             st.rerun()
@@ -627,7 +640,7 @@ else:
             else:
                 display_df_page = display_df
 
-            # Advanced Stylized Multi-Tier Row Coloring Matrix Engine
+            # Advanced Multi-Theme Preserving Table Styling Core
             def style_premium_row(row):
                 styles = [''] * len(row)
                 
@@ -636,11 +649,17 @@ else:
                         if col[1] == col_name: return str(row[col]).lower()
                     return ""
 
-                # Sleek dark color schemes for rows
-                BG_GREEN  = 'background-color: #064E3B; color: #34D399;' # Deep Emerald
-                BG_AMBER  = 'background-color: #78350F; color: #FBBF24;' # Deep Amber
-                BG_RED    = 'background-color: #7F1D1D; color: #F87171;' # Deep Crimson
-                BG_BLUE   = 'background-color: #1E3A8A; color: #60A5FA;' # Deep Cobalt
+                # Light environment colors vs Dark environment colors adaptive matrix
+                if st.session_state.active_theme == "Enterprise Light":
+                    BG_GREEN  = 'background-color: #DCFCE7; color: #166534;'
+                    BG_AMBER  = 'background-color: #FEF3C7; color: #92400E;'
+                    BG_RED    = 'background-color: #FEE2E2; color: #991B1B;'
+                    BG_BLUE   = 'background-color: #DBEAFE; color: #1E40AF;'
+                else:
+                    BG_GREEN  = 'background-color: #064E3B; color: #34D399;'
+                    BG_AMBER  = 'background-color: #78350F; color: #FBBF24;'
+                    BG_RED    = 'background-color: #7F1D1D; color: #F87171;'
+                    BG_BLUE   = 'background-color: #1E3A8A; color: #60A5FA;'
 
                 q_val = get_val('Quality Status')
                 q_style = ''
@@ -670,7 +689,7 @@ else:
                 
                 for i, col_tuple in enumerate(row.index):
                     col = col_tuple[1] 
-                    cell_css = "border-bottom: 1px solid #1E293B;"
+                    cell_css = f"border-bottom: 1px solid {cfg['border_color']};"
                     
                     if col == 'LetterStatus': cell_css += BG_BLUE
                     elif col == 'CallStatus': cell_css += c_style
@@ -681,32 +700,27 @@ else:
                     else:
                         cell_css += wc_style if col == 'Status' else (wc_style.split(';')[0] + ';') if wc_style else ''
                     
-                    # Section dividers structural borders
-                    if col == 'S.No.': cell_css += 'border-left: 4px solid #3B82F6;'
+                    if col == 'S.No.': cell_css += 'border-left: 3px solid #3B82F6;'
                     if col in ['Customer Name', 'Quality Remarks', 'Welcome call Remarks', 'Cancellation Reason']:
-                        cell_css += 'border-right: 4px solid #3B82F6;'
+                        cell_css += 'border-right: 3px solid #3B82F6;'
                     
                     styles[i] = cell_css
                 return styles           
             
             styled_log = display_df_page.style.apply(style_premium_row, axis=1)
-            
             with table_container:
                 st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
-        # ------------ PERFORMANCE TIPS PANEL ---
-        st.markdown("""
+        # Operational Tips Compliance Rules
+        st.markdown(f"""
             <div class="compliance-tips-panel">
-                <div class="compliance-title">💡 Operational Compliance Dispositions Protocol</div>
-                <ul style="margin:0; padding-left:20px; color:#C7D2FE; font-size:0.85rem; line-height:1.6;">
-                    <li><b>Answering Machines:</b> Use strictly for automated voice recordings. Do not deploy this tag if Talk Time exceeds 30 seconds.</li>
-                    <li><b>Customer Hangup:</b> Primary tag for abrupt line disconnections with an active, talking user.</li>
-                    <li><b>Sky TV packages/Virgin:</b> Compulsory assignment if an activation block surfaces on the Talk-Talk master portal. Do not mask as "Not Interested". Masking these preserves bad records and breaks dialer data velocity.</li>
-                    <li><b>Social Alarm VOIP:</b> Critical flag to deployment if client maintains a working Careline/Lifeline/Medical tracking module.</li>
-                    <li><b>Over Age:</b> Restrict configuration criteria exclusively to prospects born prior to 1940 or older than 85 years old.</li>
-                    <br>
-                    <li><b>⛔ Permanent Drop Pools (Will not cycle back to dialer):</b> Dementia, Family Interference/POA, Sky TV/Virgin, Over Age.</li>
-                    <li><b>🔄 Volatile In-Flight Cycles (Will cycle back frequently):</b> Answering Machine, Customer Hangup, Callbacks, General Interested.</li>
+                <div style="font-size: 0.9rem; font-weight: 700; color: {cfg['text_main']}; margin-bottom: 8px;">💡 Operational Compliance Dispositions Protocol</div>
+                <ul style="margin:0; padding-left:20px; color:{cfg['text_muted']}; font-size:0.85rem; line-height:1.6;">
+                    <li><b>Answering Machines:</b> Use strictly for automated recordings. Do not drop if Talk Time crosses 30 seconds.</li>
+                    <li><b>Customer Hangup:</b> Primary tag for immediate drops while agent is currently speaking.</li>
+                    <li><b>Sky TV packages/Virgin:</b> Mandatory assignment if activation check surfaces on Talk-Talk loop portals.</li>
+                    <li><b>Social Alarm VOIP:</b> Critical flag to deploy if customer maintains working medical tracking hubs.</li>
+                    <li><b>Over Age:</b> Restrict parameters strictly to customers born before 1940 or older than 85.</li>
                 </ul>
             </div>
         """, unsafe_allow_html=True)
@@ -714,3 +728,4 @@ else:
 
     except Exception as e: 
         st.error(f"Operational Pipeline Fault: {e}")
+    
