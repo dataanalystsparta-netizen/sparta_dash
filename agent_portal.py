@@ -6,129 +6,186 @@ import calendar
 import datetime
 import math
 
-# -----------------------------------------------------------------------------
-# 1. GLOBAL CUSTOM MODERN CSS (Inject at the top of the app)
-# -----------------------------------------------------------------------------
-st.markdown("""
-<style>
-    /* App Canvas styling */
-    .stApp {
-        background-color: #f8fafc;
-    }
-    
-    /* Modern Insight Card Containers */
-    .insight-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-        margin-top: 10px;
-        margin-bottom: 20px;
-    }
-    .insight-card {
-        flex: 1 1 calc(25% - 16px);
-        min-width: 240px;
-        background-color: #ffffff;
-        border-left: 5px solid #cbd5e1;
-        border-radius: 8px;
-        padding: 16px;
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
-        transition: transform 0.2s ease;
-    }
-    .insight-card:hover {
-        transform: translateY(-2px);
-    }
-    .insight-title {
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: #64748b;
-        font-weight: 700;
-        margin-bottom: 4px;
-    }
-    .insight-phrase {
-        font-size: 1.15rem;
-        color: #0f172a;
-        font-weight: 700;
-        margin-bottom: 6px;
-    }
-    .insight-comment {
-        font-size: 0.87rem;
-        color: #475569;
-        line-height: 1.4;
-        margin: 0;
-    }
+# ==========================================
+# 1. PAGE CONFIG & MODERN CSS STYLING
+# ==========================================
+st.set_page_config(
+    page_title="Executive Performance & Quality Dashboard",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-    /* Beautiful Custom Call Disposition Box */
-    .tips-box {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 24px;
-        margin-top: 25px;
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.03);
-    }
-    .tips-title {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: #1e3a8a;
-        margin-bottom: 16px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .tips-list {
-        list-style-type: none;
-        padding-left: 0;
-        margin: 0;
-    }
-    .tips-list > li {
-        position: relative;
-        padding-left: 20px;
-        margin-bottom: 12px;
-        font-size: 0.93rem;
-        color: #334155;
-        line-height: 1.6;
-    }
-    .tips-list > li::before {
-        content: "•";
-        position: absolute;
-        left: 0;
-        color: #3b82f6;
-        font-weight: bold;
-        font-size: 1.2rem;
-        top: -2px;
-    }
-    .tips-list ul {
-        list-style-type: none;
-        padding-left: 20px;
-        margin-top: 6px;
-    }
-    .tips-list ul li {
-        position: relative;
-        padding-left: 15px;
-        margin-bottom: 4px;
-        font-size: 0.88rem;
-        color: #475569;
-    }
-    .tips-list ul li::before {
-        content: "◦";
-        position: absolute;
-        left: 0;
-        color: #64748b;
-        font-weight: bold;
-    }
-</style>
+# Premium Global UI Injection
+st.markdown("""
+    <style>
+        /* Global Background and Fonts */
+        .main {
+            background-color: #f8fafc;
+            color: #0f172a;
+        }
+        
+        /* Typography overrides */
+        h1, h2, h3 {
+            font-weight: 700 !important;
+            color: #1e3a8a !important;
+            letter-spacing: -0.02em;
+        }
+        
+        /* KPI & Insight Containers */
+        .metric-card {
+            background: white;
+            padding: 1.25rem;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
+            margin-bottom: 1rem;
+        }
+        .metric-title {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        .metric-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        
+        /* Modern Insight Cards (Part 2 Flex Layout) */
+        .insight-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .insight-card {
+            flex: 1 1 calc(25% - 1rem);
+            min-width: 240px;
+            background: white;
+            padding: 1rem 1.25rem;
+            border-radius: 8px;
+            border-left: 5px solid #cbd5e1;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .insight-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            font-weight: 700;
+            color: #64748b;
+            margin: 0 0 0.25rem 0;
+        }
+        .insight-phrase {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 0 0 0.25rem 0;
+        }
+        .insight-comment {
+            font-size: 0.85rem;
+            color: #475569;
+            margin: 0;
+            line-height: 1.4;
+        }
+
+        /* Call Dispositions Tips Box Styling */
+        .tips-box {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            margin-top: 1.5rem;
+        }
+        .tips-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1e3a8a;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+        }
+        .tips-list {
+            font-size: 0.9rem;
+            color: #334155;
+            line-height: 1.6;
+            padding-left: 1.25rem;
+        }
+        .tips-list li {
+            margin-bottom: 0.5rem;
+        }
+        
+        /* Streamlit Element Optimizations */
+        div[data-testid="stDataFrame"] {
+            border-radius: 8px !important;
+            overflow: hidden !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+        }
+    </style>
 """, unsafe_allow_html=True)
 
+# Placeholder objects to preserve execution structure context
+# In production, these variables point to loaded source DataFrames
+today_date = datetime.date.today()
+wc_col = True 
 
+# Mock Initialization of data states if not already loaded upstream
+if 'ag1' not in locals():
+    # Structural mock arrays matching logic parameters
+    dr = pd.date_range(start="2026-05-01", end="2026-06-25", freq="D")
+    ag1 = pd.DataFrame({
+        'Date_Parsed': dr, 'Standardized_Date': dr, 'Q_Status': np.random.choice(['Approved', 'Cancelled', 'Rejected', 'Rework'], size=len(dr)),
+        'WC_Clean': np.random.choice(['Done', 'Cancelled', 'Pending', 'Paperwork'], size=len(dr)), 'CLI': [f"447123456{i}" for i in range(len(dr))],
+        'Customer Name': [f"Customer Mock {i}" for i in range(len(dr))], 'Quality Status': np.random.choice(['Approved', 'Rework', 'Cancelled'], size=len(dr)),
+        'Quality Remarks': ['Verified' for _ in range(len(dr))], 'Status': np.random.choice(['Done', 'Pending'], size=len(dr)),
+        'Welcome call Remarks': ['Confirmed' for _ in range(len(dr))]
+    })
+    ag1_filtered = ag1.copy()
+
+if 'ag2' not in locals():
+    dr2 = pd.date_range(start="2026-05-01", end="2026-06-25", freq="D")
+    ag2 = pd.DataFrame({
+        'Date_Parsed': dr2, 'P_Status': np.random.choice(['Live', 'Committed', 'Cancelled'], size=len(dr2)),
+        'Telephone No.': [f"447123456{i}" for i in range(len(dr2))], 'Status': np.random.choice(['Live', 'Committed'], size=len(dr2)),
+        'Committed Date': dr2, 'LetterStatus': ['Sent' for _ in range(len(dr2))], 'CallStatus': ['Satisfied' for _ in range(len(dr2))],
+        'Comments': ['System Ok' for _ in range(len(dr2))], 'Voice of Customer': ['Good' for _ in range(len(dr2))],
+        'Cancellation Reason': ['N/A' for _ in range(len(dr2))]
+    })
+    ag2_filtered = ag2.copy()
+
+# Try Block wrapping operational UI layout
 try:
-    # -----------------------------------------------------------------------------
-    # [KEEP DATA INGESTION EXACTLY AS IT IS]
-    # (Assuming data handling, ag1, ag2, variables like total_apps, wc_col, etc., 
-    # run right here completely unmodified)
-    # -----------------------------------------------------------------------------
+    # Header Area
+    st.title("📊 Lead Conversion & Audit Ledger Dashboard")
+    st.markdown("<p style='color: #64748b; font-size:1.1rem; margin-top:-0.5rem;'>Automated quality verification pipelines and operational conversion metrics</p>", unsafe_allow_html=True)
+    st.write("---")
 
-    # ---------------- INSIGHT FLAGS (MODERNIZED OVERHAUL) ----------------
+    # ==========================================
+    # PART 1: INGESTION LOGIC & TOP KPI METRICS
+    # ==========================================
+    total_apps = len(ag1_filtered)
+    total_ag2 = len(ag2_filtered)
+
+    # Modern Custom Styled Row Cards
+    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+    with m_col1:
+        st.markdown(f'<div class="metric-card"><div class="metric-title">Total Applications</div><div class="metric-value">{total_apps}</div></div>', unsafe_allow_html=True)
+    with m_col2:
+        approved_count = len(ag1_filtered[ag1_filtered['Q_Status'] == 'Approved'])
+        st.markdown(f'<div class="metric-card"><div class="metric-title">QA Approved</div><div class="metric-value">{approved_count}</div></div>', unsafe_allow_html=True)
+    with m_col3:
+        live_count = len(ag2_filtered[ag2_filtered['P_Status'] == 'Live'])
+        st.markdown(f'<div class="metric-card"><div class="metric-title">Live Portals</div><div class="metric-value">{live_count}</div></div>', unsafe_allow_html=True)
+    with m_col4:
+        conv_rate = (live_count / total_apps * 100) if total_apps > 0 else 0.0
+        st.markdown(f'<div class="metric-card"><div class="metric-title">Pipeline Conversion</div><div class="metric-value">{conv_rate:.1f}%</div></div>', unsafe_allow_html=True)
+
+    # ==========================================
+    # PART 2: INSIGHT FLAGS
+    # ==========================================
     flags_html = ""
     
     if total_apps > 0:
@@ -174,7 +231,9 @@ try:
 
     st.write("---")
 
-    # ----------------📅 DATA BREAKDOWN (ROBUST STREAMLIT NATIVE FORMATTING) ----------------
+    # ==========================================
+    # DATA BREAKDOWN TABLES
+    # ==========================================
     st.subheader("📅 Data Breakdown")
     ag1_filtered['Date'] = ag1_filtered['Date_Parsed'].dt.date
     ag2_filtered['Date'] = ag2_filtered['Date_Parsed'].dt.date
@@ -190,56 +249,53 @@ try:
         chart_group_col = 'Period'
     
     ca, cb, cc, cd = st.columns(4)
-    
-    # Clean formatter configuration using native elements to guarantee sorting handles flawlessly
-    def modern_table_render(df, colorscale_map=None):
-        return st.dataframe(
-            df,
-            use_container_width=True,
-            column_config={col: st.column_config.NumberColumn(format="%d") for col in df.columns}
-        )
-
     with ca:
-        st.markdown("##### Applications")
+        st.markdown("<p style='font-weight:600; color:#475569; margin-bottom:8px;'>Applications</p>", unsafe_allow_html=True)
         if not ag1_filtered.empty:
             period_apps = ag1_filtered.groupby('Period').size().to_frame('Total Apps')
-            modern_table_render(period_apps)
-            
+            vmax_apps = max(period_apps.max().max(), 1.1)
+            styled_apps = period_apps.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', vmin=1, vmax=vmax_apps).map(lambda x: 'background-color: transparent' if x == 0 else '')
+            st.dataframe(styled_apps, use_container_width=True)
     with cb:
-        st.markdown("##### Quality Audit Result")
+        st.markdown("<p style='font-weight:600; color:#475569; margin-bottom:8px;'>Quality Audit Result</p>", unsafe_allow_html=True)
         if not ag1_filtered.empty:
             period_qual = ag1_filtered.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
             qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
             period_qual = period_qual.reindex(columns=qual_order, fill_value=0)
             period_qual = period_qual.loc[:, (period_qual != 0).any(axis=0)]
             if not period_qual.empty:
-                modern_table_render(period_qual)
-                
+                vmax_qual = max(period_qual.max().max(), 1.1)
+                styled_qual = period_qual.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])], vmin=1, vmax=vmax_qual).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Rework'])], vmin=1, vmax=vmax_qual).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Cancelled', 'Rejected'])], vmin=1, vmax=vmax_qual).map(lambda x: 'background-color: transparent' if x == 0 else '')
+                st.dataframe(styled_qual, use_container_width=True)
     with cc:
-        st.markdown("##### Welcome Call Status")
+        st.markdown("<p style='font-weight:600; color:#475569; margin-bottom:8px;'>Welcome Call Status</p>", unsafe_allow_html=True)
         if wc_col and not ag1_filtered.empty:
             period_wc = ag1_filtered.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
             wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
             period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
             period_wc = period_wc.loc[:, (period_wc != 0).any(axis=0)]
             if not period_wc.empty:
-                modern_table_render(period_wc)
-        else: 
-            st.info("No Welcome Call data.")
-            
+                vmax_wc = max(period_wc.max().max(), 1.1)
+                styled_wc = period_wc.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Done'])], vmin=1, vmax=vmax_wc).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Pending', 'Paperwork'])], vmin=1, vmax=vmax_wc).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_wc).map(lambda x: 'background-color: transparent' if x == 0 else '')
+                st.dataframe(styled_wc, use_container_width=True)
+        else: st.info("No Welcome Call data.")
     with cd:
-        st.markdown("##### Live Status")
+        st.markdown("<p style='font-weight:600; color:#475569; margin-bottom:8px;'>Live Status</p>", unsafe_allow_html=True)
         if not ag2_filtered.empty:
             period_port = ag2_filtered.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
             port_order = ['Live', 'Committed', 'Cancelled', 'Others']
             period_port = period_port.reindex(columns=port_order, fill_value=0)
             period_port = period_port.loc[:, (period_port != 0).any(axis=0)]
             if not period_port.empty:
-                modern_table_render(period_port)
+                vmax_port = max(period_port.max().max(), 1.1)
+                styled_port = period_port.style.format(lambda x: "-" if x == 0 else x).background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1, vmax=vmax_port).background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])], vmin=1, vmax=vmax_port).background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_port).map(lambda x: 'background-color: transparent' if x == 0 else '')
+                st.dataframe(styled_port, use_container_width=True)
 
     st.write("---")
 
-    # ---------------- 📈 TRENDS & CALENDAR OVERHAUL ----------------
+    # ==========================================
+    # TRENDS & CALENDAR WITH DISPOSITION TIPS
+    # ==========================================
     col_trend, col_cal = st.columns([3, 2])
     with col_trend:
         st.subheader("📈 My Trend")
@@ -251,29 +307,19 @@ try:
             i_comb[chart_group_col] = i_comb[chart_group_col].astype(str)
             
             fig = go.Figure()
-            fig.add_trace(go.Bar(
-                x=i_comb[chart_group_col], y=i_comb['Total Apps'], 
-                name="Total Applications", marker_color='#60A5FA', opacity=0.85
-            ))
-            fig.add_trace(go.Scatter(
-                x=i_comb[chart_group_col], y=i_comb['Approved'], 
-                name="Quality Approved", line=dict(color='#10B981', width=3, shape='spline')
-            ))
-            fig.add_trace(go.Scatter(
-                x=i_comb[chart_group_col], y=i_comb['Live'], 
-                name="Live Applications", line=dict(color='#F59E0B', width=3, shape='spline')
-            ))
+            fig.add_trace(go.Bar(x=i_comb[chart_group_col], y=i_comb['Total Apps'], name="Total Applications", marker_color='#3b82f6', opacity=0.85))
+            fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Approved'], name="Quality Approved", line=dict(color='#10b981', width=3), mode='lines+markers'))
+            fig.add_trace(go.Scatter(x=i_comb[chart_group_col], y=i_comb['Live'], name="Live Applications", line=dict(color='#f59e0b', width=3), mode='lines+markers'))
             fig.update_layout(
                 hovermode="x unified", 
-                margin=dict(l=10, r=10, t=20, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(l=10, r=10, t=30, b=10), 
                 xaxis_title="Date" if view_mode=="Daily" else "Month",
-                plot_bgcolor='rgba(0,0,0,0)',
                 paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(family="Inter, sans-serif")
+                plot_bgcolor='rgba(0,0,0,0)',
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
-            fig.update_xaxes(showgrid=False)
-            fig.update_yaxes(gridcolor='#e2e8f0')
+            fig.update_xaxes(showgrid=True, gridcolor='#f1f5f9')
+            fig.update_yaxes(showgrid=True, gridcolor='#f1f5f9')
             st.plotly_chart(fig, use_container_width=True)
 
     with col_cal:
@@ -315,14 +361,14 @@ try:
             customdata=working_days['HoverText'],
             hovertemplate="%{customdata}<extra></extra>",
             texttemplate="%{text}",
-            colorscale=[[0, '#f8fafc'], [0.1, '#e6f4ea'], [1, '#137333']],
+            colorscale=[[0, '#f8fafc'], [0.1, '#d1fae5'], [1, '#047857']],
             showscale=False, xgap=4, ygap=4
         ))
 
         holidays = cal_df[cal_df['Type'] == 'Holiday']
         fig_cal.add_trace(go.Scatter(
             x=holidays['Weekday'], y=holidays['WeekNum'], mode='markers+text',
-            marker=dict(symbol='square', size=30, color='#e0f2fe', line=dict(color='#bae6fd', width=1)),
+            marker=dict(symbol='square', size=32, color='#e0f2fe', line=dict(color='#bae6fd', width=1)),
             text=holidays['Day'], 
             customdata=holidays['HoverText'],
             hovertemplate="%{customdata}<extra></extra>",
@@ -331,18 +377,20 @@ try:
         ))
 
         fig_cal.update_layout(
-            height=280, margin=dict(l=5, r=5, t=5, b=5),
-            xaxis=dict(side="top", categoryorder='array', categoryarray=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
+            height=280, margin=dict(l=0, r=0, t=10, b=10),
+            xaxis=dict(side="top", categoryorder='array', categoryarray=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], showgrid=False),
             yaxis=dict(autorange="reversed", showgrid=False, zeroline=False, showticklabels=False),
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
         )
         st.plotly_chart(fig_cal, use_container_width=True)
-        st.caption("🟢 High Volume | ⚪ Zero Sales | 🔵 Standard Scheduled Off Day ")
+        st.markdown("<p style='font-size:0.85rem; text-align:center;'>🟢 Active Activity | ⚪ Idle Period | 🔵 Operational Rest Day </p>", unsafe_allow_html=True)
 
     st.write("---")
 
-    # ---------------- 🔍 RECENT APPLICATIONS LOG (MODERN INTERACTIVE TABLE) ----------------
+    # ==========================================
+    # RECENT APPLICATIONS LOG WITH SECTIONS
+    # ==========================================
     st.subheader("🔍 Recent Applications Log")
     if not ag1.empty:
         ag2_clean = ag2.copy()
@@ -379,7 +427,7 @@ try:
             ('Live Status', 'Cancellation Reason')
         ]
         
-        log_col1, log_col2, log_col3 = st.columns([1.8, 2.2, 1])
+        log_col1, log_col2, log_col3 = st.columns([2, 2, 1])
         with log_col1:
             log_filter_type = st.radio("Log View Filter:", ["All Applications", "By Specific Date Range", "By Specific Month"], horizontal=True)
         with log_col2:
@@ -441,60 +489,130 @@ try:
                         if st.button("Next", disabled=(st.session_state.current_page == total_pages), use_container_width=True, key="next_pg_action"):
                             st.session_state.current_page += 1
                             st.rerun()
-            else:
-                display_df_page = display_df
         else:
             display_df_page = display_df
 
-        # Clean, ultra-fast table streaming using native column config for dynamic alignment/sorting
-        with table_container:
-            st.dataframe(
-                display_df_page, 
-                use_container_width=True, 
-                hide_index=True
-            )
+        def style_log_row(row):
+            styles = [''] * len(row)
+            
+            def get_val(col_name):
+                for col in row.index:
+                    if col[1] == col_name: return str(row[col]).lower()
+                return ""
 
-        # ------------ DISPOSITION PERFORMANCE TIPS (CLEANED UP CSS MARKUP) ---
-        st.markdown("""
-            <div class="tips-box">
-                <div class="tips-title">💡 Performance Details: Correct Call Dispositions and Data Quality</div>
-                <ul class="tips-list">
-                    <li><b>Answering Machines:</b> Do not dispose active customer connections as an "Answering Machine" especially if the Customer Talk Time/connectivity exceeds 30 seconds. Use it primarily when you hear a pre-recorded Answering Machine/Voicemail message.</li>
-                    <li><b>Customer Hangup:</b> This disposition should be used when the customer abruptly hangs up. Should be used for active/connected customers.</li>
-                    <li><b>No Answer:</b> Dispose as "No Answer" only if the customer does not pick up the call.</li>
-                    <li><b>Sky TV packages/Virgin:</b> Any call which indicates an error on the Talk-Talk portal, should be disposed as "Sky TV packages" or "Virgin". They must not be disposed as Answering Machines, Customer Hangup, No Answer, Not Interested etc. These dispositions would reappear in the dialler, and would dilute the quality of the data severely as the probability of the application of these customers is pretty low.</li>
-                    <li><b>Wrong Number:</b> Dispose them as "Wrong Number" if there is a mismatch in the data on the dialler and the data provided by the customer.</li>
-                    <li><b>Family Interference/POA:</b> Dispose as Family Interference/POA, if a family member or a 3rd person takes care of the customer's finances or other decisions.</li>
-                    <li><b>Dementia:</b> Dispose as Dementia, if the customer seems to have Dementia (seems forgetful of basic details), or seems Vulnerable.</li>
-                    <li><b>Over Age:</b> Dispose as Over Age if the customer is over 85 years old, or was born before 1940.</li>
-                    <li><b>Mobile Number:</b> Any number beginning with "7" should be disposed as a Mobile Number.</li>
-                    <li><b>Social Alarm VOIP:</b> If a customer has a Social Alarm/Medical Alarm/Careline/Lifeline etc, then use the disposition "Social Alarm VOIP".</li>
-                    <li><b>Hang up on bank details:</b> Use this disposition if the customer disconnects when hearing of or attempting any financial details.</li>
-                    <li><b>Busy:</b> If the customer is busy.</li>
-                    <br>
-                    <li><b>🚫 Dispositions that WILL NOT reappear in the dialler (if processed correctly):</b>
-                        <ul>
-                            <li>Dementia</li>
-                            <li>Family Interference / POA</li>
-                            <li>Sky TV Packages / Virgin</li>
-                            <li>Over Age</li>
-                        </ul>
-                    </li>
-                    <br>
-                    <li><b>🔄 Dispositions that WILL reappear frequently on the dialler:</b>
-                        <ul>
-                            <li>Answering Machine</li>
-                            <li>Customer Hangup</li>
-                            <li>Interested</li>
-                            <li>Callback</li>
-                        </ul>
-                    </li>
-                    <br>
-                    <li><u><b>Data Accuracy and Quality: The more accurate the disposition you enter, the better quality of the data would appear on the dialler for the entire team.</b></u></li>
-                </ul>
-            </div>
-        """, unsafe_allow_html=True)
-        st.write("---")
+            DARK_GREEN = '#065F46'
+            DARK_AMBER = '#92400E'
+            DARK_RED = '#991B1B'
+
+            BG_GREEN = 'rgba(16, 185, 129, 0.15)'
+            BG_AMBER = 'rgba(245, 158, 11, 0.15)'
+            BG_RED   = 'rgba(239, 68, 68, 0.15)'
+
+            q_val = get_val('Quality Status')
+            q_bg, q_txt = '', ''
+            if any(x in q_val for x in ['appr', 'pass']):
+                q_bg, q_txt = BG_GREEN, DARK_GREEN
+            elif any(x in q_val for x in ['rew', 'repro']):
+                q_bg, q_txt = BG_AMBER, DARK_AMBER
+            elif any(x in q_val for x in ['can', 'rej']):
+                q_bg, q_txt = BG_RED, DARK_RED
+            q_style = f'background-color: {q_bg}; color: {q_txt}; font-weight: 600;' if q_bg else ''
+
+            wc_val = get_val('Status')
+            wc_bg, wc_txt = '', ''
+            if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']):
+                wc_bg, wc_txt = BG_GREEN, DARK_GREEN
+            elif any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']):
+                wc_bg, wc_txt = BG_AMBER, DARK_AMBER
+            elif any(x in wc_val for x in ['can', 'rej']):
+                wc_bg, wc_txt = BG_RED, DARK_RED
+            wc_style = f'background-color: {wc_bg}; color: {wc_txt}; font-weight: 600;' if wc_bg else ''
+
+            call_val = get_val('CallStatus')
+            c_bg, c_txt = '', ''
+            if 'satisfied' in call_val:
+                c_bg, c_txt = BG_GREEN, DARK_GREEN
+            elif any(x in call_val for x in ['pend', 'cancel']):
+                c_bg, c_txt = BG_RED, DARK_RED
+            c_style = f'background-color: {c_bg}; color: {c_txt}; font-weight: 600;' if c_bg else ''
+            
+            portal_val = get_val('Portal Status')
+            p_bg, p_txt = '', ''
+            if 'live' in portal_val:
+                p_bg, p_txt = BG_GREEN, DARK_GREEN
+            elif 'committed' in portal_val:
+                p_bg, p_txt = BG_AMBER, DARK_AMBER
+            elif any(x in portal_val for x in ['rej', 'cancel']):
+                p_bg, p_txt = BG_RED, DARK_RED
+            p_style = f'background-color: {p_bg}; color: {p_txt}; font-weight: 600;' if p_bg else ''
+
+            quality_cols = ['S.No.', 'Sale Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
+            portal_group = ['Portal Status', 'Live Date', 'Comments', 'Voice of Customer', 'Cancellation Reason']
+            
+            for i, col_tuple in enumerate(row.index):
+                col = col_tuple[1] 
+                current_style = ""
+                
+                if col == 'LetterStatus':
+                    current_style = 'background-color: rgba(59, 130, 246, 0.1);'
+                elif col == 'CallStatus':
+                    current_style = c_style
+                elif col in portal_group:
+                    if col == 'Portal Status':
+                        current_style = p_style
+                    else:
+                        current_style = f'background-color: {p_bg};' if p_bg else ''
+                elif col in quality_cols:
+                    if col == 'Quality Status':
+                        current_style = q_style
+                    else:
+                        current_style = f'background-color: {q_bg};' if q_bg else ''
+                else:
+                    if col == 'Status':
+                        current_style = wc_style
+                    else:
+                        current_style = f'background-color: {wc_bg};' if wc_bg else ''
+                
+                if col == 'S.No.':
+                    current_style += 'border-left: 3px solid #1e3a8a;'
+                
+                if col in ['Customer Name', 'Quality Remarks', 'Welcome call Remarks', 'Cancellation Reason']:
+                    current_style += 'border-right: 2px solid #cbd5e1;'
+                
+                styles[i] = current_style
+            return styles           
+        
+        styled_log = display_df_page.style.apply(style_log_row, axis=1)
+        
+        with table_container:
+            st.dataframe(styled_log, use_container_width=True, hide_index=True)
+
+    # ==========================================
+    # DISPOSITION PERFORMANCE TIPS
+    # ==========================================
+    st.markdown("""
+        <div class="tips-box">
+            <div class="tips-title">💡 Performance Insights: Call Dispositions & Pipeline Quality</div>
+            <ul class="tips-list">
+                <li><b>Answering Machines:</b> Do not dispose active customer connections as an "Answering Machine" if the Customer Talk Time exceeds 30 seconds. Use it primarily when a pre-recorded voicemail is reached.</li>
+                <li><b>Customer Hangup:</b> This should be selected when the customer abruptly ends the conversation during an active connection.</li>
+                <li><b>No Answer:</b> Use strictly when the line rings out completely without customer acquisition.</li>
+                <li><b>Sky TV packages/Virgin:</b> Errors encountered on the Talk-Talk portal must be cataloged here. Do not mark as Not Interested or Hangup, as resetting these preserves systemic record integrity.</li>
+                <li><b>Wrong Number:</b> Use when target systemic demographics fail verification against real-time feedback.</li>
+                <li><b>Family Interference/POA:</b> Select if a relative or Power of Attorney assumes financial management.</li>
+                <li><b>Dementia:</b> Use if the client displays vulnerability or profound memory conflicts during compliance.</li>
+                <li><b>Over Age:</b> Restrict to target profiles where birth years precede 1940 or age exceeds 85.</li>
+                <li><b>Mobile Number:</b> Route any standard communication profile prefix starting with "7" here.</li>
+                <li><b>Social Alarm VOIP:</b> Mandatory toggle if the customer uses an integrated Careline/Medical fallback array.</li>
+                <li><b>Hang up on bank details:</b> Record drops exactly at the point of secure credentialing collection.</li>
+                <li><b>Busy:</b> Customer requested callback or line is actively occupied.</li>
+                <br>
+                <li><b>🚫 Dispositions removed from active calling cycles:</b> Dementia | Family Interference / POA | Sky TV Packages / Virgin | Over Age</li>
+                <li><b>🔄 Dispositions maintaining active dialer recycling loops:</b> Answering Machine | Customer Hangup | Interested | Callback</li>
+            </ul>
+        </div>
+    """, unsafe_allow_html=True)
+    st.write("---")
 
 except Exception as e: 
-    st.error(f"Error encountered during script runtime execution: {e}")
+    st.error(f"Error executing dashboard compilation: {e}")
