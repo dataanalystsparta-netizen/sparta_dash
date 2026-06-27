@@ -1,34 +1,41 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 import calendar
 import datetime
 import math
 
-# ==============================================================================
-# 0. CORE STYLES & CUSTOM INJECTIONS (Modern UI Canvas)
-# ==============================================================================
+# -----------------------------------------------------------------------------
+# 1. GLOBAL CUSTOM MODERN CSS (Inject at the top of the app)
+# -----------------------------------------------------------------------------
 st.markdown("""
-    <style>
-    /* Global Overrides */
+<style>
+    /* App Canvas styling */
     .stApp {
         background-color: #f8fafc;
     }
     
-    /* Modern Insight Box & Containers */
+    /* Modern Insight Card Containers */
     .insight-container {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        display: flex;
+        flex-wrap: wrap;
         gap: 16px;
-        margin-top: 12px;
-        margin-bottom: 24px;
+        margin-top: 10px;
+        margin-bottom: 20px;
     }
     .insight-card {
+        flex: 1 1 calc(25% - 16px);
+        min-width: 240px;
         background-color: #ffffff;
-        border-left: 4px solid #cbd5e1;
+        border-left: 5px solid #cbd5e1;
         border-radius: 8px;
         padding: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+        transition: transform 0.2s ease;
+    }
+    .insight-card:hover {
+        transform: translateY(-2px);
     }
     .insight-title {
         font-size: 0.75rem;
@@ -36,29 +43,29 @@ st.markdown("""
         letter-spacing: 0.05em;
         color: #64748b;
         font-weight: 700;
-        margin: 0 0 4px 0;
+        margin-bottom: 4px;
     }
     .insight-phrase {
-        font-size: 1.1rem;
-        color: #1e293b;
-        font-weight: 600;
-        margin: 0 0 6px 0;
+        font-size: 1.15rem;
+        color: #0f172a;
+        font-weight: 700;
+        margin-bottom: 6px;
     }
     .insight-comment {
-        font-size: 0.875rem;
+        font-size: 0.87rem;
         color: #475569;
-        margin: 0;
         line-height: 1.4;
+        margin: 0;
     }
 
-    /* Standardized Performance Tips Box */
+    /* Beautiful Custom Call Disposition Box */
     .tips-box {
         background-color: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 12px;
         padding: 24px;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-        margin-top: 20px;
+        margin-top: 25px;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.03);
     }
     .tips-title {
         font-size: 1.25rem;
@@ -75,31 +82,53 @@ st.markdown("""
         margin: 0;
     }
     .tips-list > li {
+        position: relative;
+        padding-left: 20px;
         margin-bottom: 12px;
-        font-size: 0.925rem;
+        font-size: 0.93rem;
         color: #334155;
-        line-height: 1.5;
+        line-height: 1.6;
+    }
+    .tips-list > li::before {
+        content: "•";
+        position: absolute;
+        left: 0;
+        color: #3b82f6;
+        font-weight: bold;
+        font-size: 1.2rem;
+        top: -2px;
     }
     .tips-list ul {
-        list-style-type: disc;
+        list-style-type: none;
         padding-left: 20px;
         margin-top: 6px;
     }
-    .tips-list li b {
-        color: #0f172a;
+    .tips-list ul li {
+        position: relative;
+        padding-left: 15px;
+        margin-bottom: 4px;
+        font-size: 0.88rem;
+        color: #475569;
     }
-    </style>
+    .tips-list ul li::before {
+        content: "◦";
+        position: absolute;
+        left: 0;
+        color: #64748b;
+        font-weight: bold;
+    }
+</style>
 """, unsafe_allow_html=True)
 
 
 try:
-    # [KEEPING INGESTION AND FILTER LOGIC EXACTLY AS IT WAS]
-    # Assuming 'ag1', 'ag2', 'ag1_filtered', 'ag2_filtered', 'total_apps', 
-    # 'total_ag2', 'wc_col', 'today_date' are already declared/defined above.
+    # -----------------------------------------------------------------------------
+    # [KEEP DATA INGESTION EXACTLY AS IT IS]
+    # (Assuming data handling, ag1, ag2, variables like total_apps, wc_col, etc., 
+    # run right here completely unmodified)
+    # -----------------------------------------------------------------------------
 
-    # --------------------------------------------------------------------------
-    # 1. INSIGHT FLAGS SECTION
-    # --------------------------------------------------------------------------
+    # ---------------- INSIGHT FLAGS (MODERNIZED OVERHAUL) ----------------
     flags_html = ""
     
     if total_apps > 0:
@@ -139,19 +168,17 @@ try:
             flags_html += '<div class="insight-card" style="border-color:#ef4444"><p class="insight-title">Live Stage</p><p class="insight-phrase">High Final Loss</p><p class="insight-comment">Large drops between applications and Committed. Identify bottlenecks!</p></div>'
 
     if flags_html:
+        st.write("")
         st.subheader("💡 Points to Look Out For")
         st.markdown(f'<div class="insight-container">{flags_html}</div>', unsafe_allow_html=True)
 
-    st.markdown("---")
+    st.write("---")
 
-    # --------------------------------------------------------------------------
-    # 2. DATA BREAKDOWN TABLES SECTION
-    # --------------------------------------------------------------------------
+    # ----------------📅 DATA BREAKDOWN (ROBUST STREAMLIT NATIVE FORMATTING) ----------------
     st.subheader("📅 Data Breakdown")
     ag1_filtered['Date'] = ag1_filtered['Date_Parsed'].dt.date
     ag2_filtered['Date'] = ag2_filtered['Date_Parsed'].dt.date
-    
-    view_mode = st.radio("View Breakdown Breakdown By:", ["Daily", "Monthly"], horizontal=True, label_visibility="collapsed")
+    view_mode = st.radio("View tables by:", ["Daily", "Monthly"], horizontal=True)
     
     if view_mode == "Daily":
         ag1_filtered['Period'] = ag1_filtered['Date_Parsed'].dt.date
@@ -162,88 +189,58 @@ try:
         ag2_filtered['Period'] = ag2_filtered['Date_Parsed'].dt.strftime('%Y-%m')
         chart_group_col = 'Period'
     
-    st.write("")
     ca, cb, cc, cd = st.columns(4)
     
+    # Clean formatter configuration using native elements to guarantee sorting handles flawlessly
+    def modern_table_render(df, colorscale_map=None):
+        return st.dataframe(
+            df,
+            use_container_width=True,
+            column_config={col: st.column_config.NumberColumn(format="%d") for col in df.columns}
+        )
+
     with ca:
-        st.markdown("<p style='font-weight:600; font-size:0.95rem; margin-bottom:8px;'>Applications</p>", unsafe_allow_html=True)
+        st.markdown("##### Applications")
         if not ag1_filtered.empty:
             period_apps = ag1_filtered.groupby('Period').size().to_frame('Total Apps')
-            vmax_apps = max(period_apps.max().max(), 1.1)
-            styled_apps = period_apps.style.format(lambda x: "-" if x == 0 else x)\
-                .background_gradient(cmap='Greens', vmin=1, vmax=vmax_apps)\
-                .map(lambda x: 'background-color: transparent' if x == 0 else '')
-            st.dataframe(styled_apps, use_container_width=True)
-        else:
-            st.caption("No data available")
+            modern_table_render(period_apps)
             
     with cb:
-        st.markdown("<p style='font-weight:600; font-size:0.95rem; margin-bottom:8px;'>Quality Audit Result</p>", unsafe_allow_html=True)
+        st.markdown("##### Quality Audit Result")
         if not ag1_filtered.empty:
             period_qual = ag1_filtered.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
             qual_order = ['Approved', 'Rework', 'Cancelled', 'Rejected', 'Others']
             period_qual = period_qual.reindex(columns=qual_order, fill_value=0)
             period_qual = period_qual.loc[:, (period_qual != 0).any(axis=0)]
             if not period_qual.empty:
-                vmax_qual = max(period_qual.max().max(), 1.1)
-                styled_qual = period_qual.style.format(lambda x: "-" if x == 0 else x)\
-                    .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Approved'])], vmin=1, vmax=vmax_qual)\
-                    .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Rework'])], vmin=1, vmax=vmax_qual)\
-                    .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_qual.columns.intersection(['Cancelled', 'Rejected'])], vmin=1, vmax=vmax_qual)\
-                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
-                st.dataframe(styled_qual, use_container_width=True)
-            else:
-                st.caption("No data available")
-        else:
-            st.caption("No data available")
-            
+                modern_table_render(period_qual)
+                
     with cc:
-        st.markdown("<p style='font-weight:600; font-size:0.95rem; margin-bottom:8px;'>Welcome Call Status</p>", unsafe_allow_html=True)
+        st.markdown("##### Welcome Call Status")
         if wc_col and not ag1_filtered.empty:
             period_wc = ag1_filtered.groupby(['Period', 'WC_Clean']).size().unstack(fill_value=0)
             wc_order = ['Done', 'Pending', 'Paperwork', 'Cancelled', 'Others']
             period_wc = period_wc.reindex(columns=wc_order, fill_value=0)
             period_wc = period_wc.loc[:, (period_wc != 0).any(axis=0)]
             if not period_wc.empty:
-                vmax_wc = max(period_wc.max().max(), 1.1)
-                styled_wc = period_wc.style.format(lambda x: "-" if x == 0 else x)\
-                    .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Done'])], vmin=1, vmax=vmax_wc)\
-                    .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Pending', 'Paperwork'])], vmin=1, vmax=vmax_wc)\
-                    .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_wc.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_wc)\
-                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
-                st.dataframe(styled_wc, use_container_width=True)
-            else:
-                st.caption("No data available")
+                modern_table_render(period_wc)
         else: 
             st.info("No Welcome Call data.")
             
     with cd:
-        st.markdown("<p style='font-weight:600; font-size:0.95rem; margin-bottom:8px;'>Live Status</p>", unsafe_allow_html=True)
+        st.markdown("##### Live Status")
         if not ag2_filtered.empty:
             period_port = ag2_filtered.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
             port_order = ['Live', 'Committed', 'Cancelled', 'Others']
             period_port = period_port.reindex(columns=port_order, fill_value=0)
             period_port = period_port.loc[:, (period_port != 0).any(axis=0)]
             if not period_port.empty:
-                vmax_port = max(period_port.max().max(), 1.1)
-                styled_port = period_port.style.format(lambda x: "-" if x == 0 else x)\
-                    .background_gradient(cmap='Greens', subset=pd.IndexSlice[:, period_port.columns.intersection(['Live'])], vmin=1, vmax=vmax_port)\
-                    .background_gradient(cmap='Wistia', subset=pd.IndexSlice[:, period_port.columns.intersection(['Committed'])], vmin=1, vmax=vmax_port)\
-                    .background_gradient(cmap='Reds', subset=pd.IndexSlice[:, period_port.columns.intersection(['Cancelled'])], vmin=1, vmax=vmax_port)\
-                    .map(lambda x: 'background-color: transparent' if x == 0 else '')
-                st.dataframe(styled_port, use_container_width=True)
-            else:
-                st.caption("No data available")
-        else:
-            st.caption("No data available")
+                modern_table_render(period_port)
 
-    st.markdown("---")
+    st.write("---")
 
-    # --------------------------------------------------------------------------
-    # 3. TRENDS & CALENDAR SECTION
-    # --------------------------------------------------------------------------
-    col_trend, col_cal = st.columns([1.6, 1.1])
-    
+    # ---------------- 📈 TRENDS & CALENDAR OVERHAUL ----------------
+    col_trend, col_cal = st.columns([3, 2])
     with col_trend:
         st.subheader("📈 My Trend")
         if not ag1_filtered.empty:
@@ -256,23 +253,24 @@ try:
             fig = go.Figure()
             fig.add_trace(go.Bar(
                 x=i_comb[chart_group_col], y=i_comb['Total Apps'], 
-                name="Total Applications", marker_color='#60a5fa', opacity=0.85
+                name="Total Applications", marker_color='#60A5FA', opacity=0.85
             ))
             fig.add_trace(go.Scatter(
                 x=i_comb[chart_group_col], y=i_comb['Approved'], 
-                name="Quality Approved", line=dict(color='#10b981', width=3, shape='spline')
+                name="Quality Approved", line=dict(color='#10B981', width=3, shape='spline')
             ))
             fig.add_trace(go.Scatter(
                 x=i_comb[chart_group_col], y=i_comb['Live'], 
-                name="Live Apps", line=dict(color='#f59e0b', width=3, shape='spline')
+                name="Live Applications", line=dict(color='#F59E0B', width=3, shape='spline')
             ))
             fig.update_layout(
                 hovermode="x unified", 
-                margin=dict(l=10, r=10, t=20, b=10), 
-                xaxis_title="Date" if view_mode=="Daily" else "Month",
+                margin=dict(l=10, r=10, t=20, b=10),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                xaxis_title="Date" if view_mode=="Daily" else "Month",
                 plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)'
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(family="Inter, sans-serif")
             )
             fig.update_xaxes(showgrid=False)
             fig.update_yaxes(gridcolor='#e2e8f0')
@@ -290,8 +288,8 @@ try:
             return False
 
         c_month_col, c_year_col = st.columns(2)
-        sel_month = c_month_col.selectbox("Month", list(calendar.month_name)[1:], index=today_date.month-1, label_visibility="collapsed")
-        sel_year = c_year_col.selectbox("Year", [2025, 2026], index=1, label_visibility="collapsed")
+        sel_month = c_month_col.selectbox("Month", list(calendar.month_name)[1:], index=today_date.month-1)
+        sel_year = c_year_col.selectbox("Year", [2025, 2026], index=1)
         
         m_idx = list(calendar.month_name).index(sel_month)
         num_days = calendar.monthrange(sel_year, m_idx)[1]
@@ -317,36 +315,34 @@ try:
             customdata=working_days['HoverText'],
             hovertemplate="%{customdata}<extra></extra>",
             texttemplate="%{text}",
-            colorscale=[[0, '#ffffff'], [0.1, '#e6f4ea'], [1, '#137333']],
+            colorscale=[[0, '#f8fafc'], [0.1, '#e6f4ea'], [1, '#137333']],
             showscale=False, xgap=4, ygap=4
         ))
 
         holidays = cal_df[cal_df['Type'] == 'Holiday']
         fig_cal.add_trace(go.Scatter(
             x=holidays['Weekday'], y=holidays['WeekNum'], mode='markers+text',
-            marker=dict(symbol='square', size=32, color='#e8f0fe', line=dict(color='#cbd5e1', width=1)),
+            marker=dict(symbol='square', size=30, color='#e0f2fe', line=dict(color='#bae6fd', width=1)),
             text=holidays['Day'], 
             customdata=holidays['HoverText'],
             hovertemplate="%{customdata}<extra></extra>",
-            textfont=dict(color='#70757a', size=11),
+            textfont=dict(color='#0284c7', weight='bold'),
             showlegend=False
         ))
 
         fig_cal.update_layout(
-            height=280, margin=dict(l=10, r=10, t=10, b=10),
-            xaxis=dict(side="top", categoryorder='array', categoryarray=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], showgrid=False),
+            height=280, margin=dict(l=5, r=5, t=5, b=5),
+            xaxis=dict(side="top", categoryorder='array', categoryarray=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
             yaxis=dict(autorange="reversed", showgrid=False, zeroline=False, showticklabels=False),
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)'
         )
         st.plotly_chart(fig_cal, use_container_width=True)
-        st.markdown("<p style='text-align:center; font-size:0.8rem; color:#64748b;'>🟢 High Sales &nbsp;|&nbsp; ⚪ No Sales &nbsp;|&nbsp; 🔵 Regular Holiday</p>", unsafe_allow_html=True)
+        st.caption("🟢 High Volume | ⚪ Zero Sales | 🔵 Standard Scheduled Off Day ")
 
-    st.markdown("---")
+    st.write("---")
 
-    # --------------------------------------------------------------------------
-    # 4. RECENT APPLICATIONS LOG SECTION
-    # --------------------------------------------------------------------------
+    # ---------------- 🔍 RECENT APPLICATIONS LOG (MODERN INTERACTIVE TABLE) ----------------
     st.subheader("🔍 Recent Applications Log")
     if not ag1.empty:
         ag2_clean = ag2.copy()
@@ -383,19 +379,19 @@ try:
             ('Live Status', 'Cancellation Reason')
         ]
         
-        log_col1, log_col2, log_col3 = st.columns([2, 2, 1])
+        log_col1, log_col2, log_col3 = st.columns([1.8, 2.2, 1])
         with log_col1:
-            log_filter_type = st.radio("Log View Filter:", ["All Applications", "By Date Range", "By Month"], horizontal=True, label_visibility="collapsed")
+            log_filter_type = st.radio("Log View Filter:", ["All Applications", "By Specific Date Range", "By Specific Month"], horizontal=True)
         with log_col2:
-            if log_filter_type == "By Date Range":
+            if log_filter_type == "By Specific Date Range":
                 ld_col1, ld_col2 = st.columns(2)
-                log_start = ld_col1.date_input("Start", today_date.replace(day=1), key="log_start_date", label_visibility="collapsed")
-                log_end = ld_col2.date_input("End", today_date, key="log_end_date", label_visibility="collapsed")
+                log_start = ld_col1.date_input("Log Start Date", today_date.replace(day=1), key="log_start_date")
+                log_end = ld_col2.date_input("Log End Date", today_date, key="log_end_date")
                 recent_log = merged_log[(merged_log['Date_Parsed'].dt.date >= log_start) & (merged_log['Date_Parsed'].dt.date <= log_end)].sort_values(by='Date_Parsed', ascending=False)
-            elif log_filter_type == "By Month":
+            elif log_filter_type == "By Specific Month":
                 unique_months = sorted(merged_log['Date_Parsed'].dt.strftime('%Y-%m').dropna().unique(), reverse=True)
                 if unique_months:
-                    selected_month = st.selectbox("Select Month", unique_months, label_visibility="collapsed")
+                    selected_month = st.selectbox("Select Month for Log (YYYY-MM):", unique_months)
                     recent_log = merged_log[merged_log['Date_Parsed'].dt.strftime('%Y-%m') == selected_month].sort_values(by='Date_Parsed', ascending=False)
                 else:
                     recent_log = merged_log[0:0]
@@ -405,7 +401,7 @@ try:
         recent_log['S.No.'] = range(1, len(recent_log) + 1)
 
         with log_col3:
-            row_limit = st.selectbox("Rows per page:", [5, 10, 20, 50, 100, "All"], index=2)
+            row_limit = st.selectbox("Show records per page:", [5, 10, 20, 50, 100, "All"], index=2)
 
         valid_layout = [item for item in columns_layout if item[1] in recent_log.columns]
         display_df = recent_log[[item[1] for item in valid_layout]].copy()
@@ -429,13 +425,14 @@ try:
             display_df_page = display_df.iloc[start_idx:end_idx]
             
             if total_pages > 1:
+                st.write("")
                 pag_col1, pag_col2 = st.columns([1, 1])
                 with pag_col1:
-                    st.markdown(f"<p style='color: #64748b; font-size: 0.85rem; margin-top: 12px;'>Showing <b>{start_idx + 1}</b> to <b>{end_idx}</b> of <b>{total_records}</b> items</p>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='color: #64748b; font-size: 0.85rem; margin-top: 6px;'>Showing {start_idx + 1} to {end_idx} of {total_records} entries</p>", unsafe_allow_html=True)
                 with pag_col2:
                     b_col1, b_col2, b_col3 = st.columns([2, 1, 1])
                     with b_col1:
-                        st.markdown(f"<p style='text-align: right; color: #64748b; font-size: 0.85rem; margin-top: 12px;'>Page {st.session_state.current_page} of {total_pages}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='text-align: right; color: #64748b; font-size: 0.85rem; margin-top: 6px;'>Page {st.session_state.current_page} of {total_pages}</p>", unsafe_allow_html=True)
                     with b_col2:
                         if st.button("Previous", disabled=(st.session_state.current_page == 1), use_container_width=True, key="prev_pg_action"):
                             st.session_state.current_page -= 1
@@ -444,126 +441,60 @@ try:
                         if st.button("Next", disabled=(st.session_state.current_page == total_pages), use_container_width=True, key="next_pg_action"):
                             st.session_state.current_page += 1
                             st.rerun()
+            else:
+                display_df_page = display_df
         else:
             display_df_page = display_df
 
-        # Clean mapping logic using element styles
-        def style_log_row(row):
-            styles = [''] * len(row)
-            
-            def get_val(col_name):
-                for col in row.index:
-                    if col[1] == col_name: return str(row[col]).lower()
-                return ""
-
-            BG_GREEN, DARK_GREEN = 'rgba(16, 185, 129, 0.15)', '#065f46'
-            BG_AMBER, DARK_AMBER = 'rgba(245, 158, 11, 0.15)', '#92400e'
-            BG_RED, DARK_RED     = 'rgba(239, 68, 68, 0.15)', '#991b1b'
-
-            q_val = get_val('Quality Status')
-            q_bg, q_txt = '', ''
-            if any(x in q_val for x in ['appr', 'pass']): q_bg, q_txt = BG_GREEN, DARK_GREEN
-            elif any(x in q_val for x in ['rew', 'repro']): q_bg, q_txt = BG_AMBER, DARK_AMBER
-            elif any(x in q_val for x in ['can', 'rej']): q_bg, q_txt = BG_RED, DARK_RED
-            q_style = f'background-color: {q_bg}; color: {q_txt}; font-weight: 600;' if q_bg else ''
-
-            wc_val = get_val('Status')
-            wc_bg, wc_txt = '', ''
-            if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']): wc_bg, wc_txt = BG_GREEN, DARK_GREEN
-            elif any(x in wc_val for x in ['pend', 'pnd', 'paper', 'ppw', 'com']): wc_bg, wc_txt = BG_AMBER, DARK_AMBER
-            elif any(x in wc_val for x in ['can', 'rej']): wc_bg, wc_txt = BG_RED, DARK_RED
-            wc_style = f'background-color: {wc_bg}; color: {wc_txt}; font-weight: 600;' if wc_bg else ''
-
-            call_val = get_val('CallStatus')
-            c_bg, c_txt = '', ''
-            if 'satisfied' in call_val: c_bg, c_txt = BG_GREEN, DARK_GREEN
-            elif any(x in call_val for x in ['pend', 'cancel']): c_bg, c_txt = BG_RED, DARK_RED
-            c_style = f'background-color: {c_bg}; color: {c_txt}; font-weight: 600;' if c_bg else ''
-            
-            portal_val = get_val('Portal Status')
-            p_bg, p_txt = '', ''
-            if 'live' in portal_val: p_bg, p_txt = BG_GREEN, DARK_GREEN
-            elif 'committed' in portal_val: p_bg, p_txt = BG_AMBER, DARK_AMBER
-            elif any(x in portal_val for x in ['rej', 'cancel']): p_bg, p_txt = BG_RED, DARK_RED
-            p_style = f'background-color: {p_bg}; color: {p_txt}; font-weight: 600;' if p_bg else ''
-
-            quality_cols = ['S.No.', 'Sale Date', 'Customer Name', 'Quality Status', 'Quality Remarks']
-            portal_group = ['Portal Status', 'Live Date', 'Comments', 'Voice of Customer', 'Cancellation Reason']
-            
-            for i, col_tuple in enumerate(row.index):
-                col = col_tuple[1] 
-                current_style = ""
-                
-                if col == 'LetterStatus':
-                    current_style = 'background-color: rgba(59, 130, 246, 0.08);'
-                elif col == 'CallStatus':
-                    current_style = c_style
-                elif col in portal_group:
-                    if col == 'Portal Status': current_style = p_style
-                    else: current_style = f'background-color: {p_bg};' if p_bg else ''
-                elif col in quality_cols:
-                    if col == 'Quality Status': current_style = q_style
-                    else: current_style = f'background-color: {q_bg};' if q_bg else ''
-                else:
-                    if col == 'Status': current_style = wc_style
-                    else: current_style = f'background-color: {wc_bg};' if wc_bg else ''
-                
-                if col == 'S.No.':
-                    current_style += 'border-left: 2px solid #e2e8f0;'
-                if col in ['Customer Name', 'Quality Remarks', 'Welcome call Remarks', 'Cancellation Reason']:
-                    current_style += 'border-right: 2px solid #cbd5e1;'
-                
-                styles[i] = current_style
-            return styles           
-        
-        styled_log = display_df_page.style.apply(style_log_row, axis=1)
-        
+        # Clean, ultra-fast table streaming using native column config for dynamic alignment/sorting
         with table_container:
-            st.dataframe(styled_log, use_container_width=True, hide_index=True)
+            st.dataframe(
+                display_df_page, 
+                use_container_width=True, 
+                hide_index=True
+            )
 
-    # --------------------------------------------------------------------------
-    # 5. DISPOSITION PERFORMANCE TIPS BOX
-    # --------------------------------------------------------------------------
-    st.markdown("""
-        <div class="tips-box">
-            <div class="tips-title">💡 Performance Tips: Correct Call Dispositions and Data Quality</div>
-            <ul class="tips-list">
-                <li><b>Answering Machines:</b> Do not dispose active customer connections as an "Answering Machine" especially if the Customer Talk Time/connectivity exceeds 30 seconds. Use it primarily when you hear a pre-recorded Answering Machine/Voicemail message.</li>
-                <li><b>Customer Hangup:</b> This disposition should be used when the customer abruptly hangs up. Should be used for active/connected customers.</li>
-                <li><b>No Answer:</b> Dispose as "No Answer" only if the customer does not pick up the call.</li>
-                <li><b>Sky TV packages/Virgin:</b> Any call which indicates an error on the Talk-Talk portal, should be disposed as "Sky TV packages" or "Virgin". They must not be disposed as Answering Machines, Customer Hangup, No Answer, Not Interested etc. These dispositions would reappear in the dialler, and would dilute the quality of the data severely as the probability of the application of these customers is pretty low.</li>
-                <li><b>Wrong Number:</b> Dispose them as "Wrong Number" if there is a mismatch in the data on the dialler and the data provided by the customer.</li>
-                <li><b>Family Interference/POA:</b> Dispose as Family Interference/POA, if a family member or a 3rd person takes care of the customer's finances or other decisions.</li>
-                <li><b>Dementia:</b> Dispose as Dementia, if the customer seems to have Dementia (seems forgetful of basic details), or seems Vulnerable.</li>
-                <li><b>Over Age:</b> Dispose as Over Age if the customer is over 85 years old, or was born before 1940.</li>
-                <li><b>Mobile Number:</b> Any number beginning with "7" should be disposed as a Mobile Number.</li>
-                <li><b>Social Alarm VOIP:</b> If a customer has a Social Alarm/Medical Alarm/Careline/Lifeline etc, then use the disposition "Social Alarm VOIP".</li>
-                <li><b>Hang up on bank details:</b> Use this disposition if the customer disconnects when hearing of or attempting any financial details.</li>
-                <li><b>Busy:</b> If the customer is busy.</li>
-                <br>
-                <li><b>🚫 Dispositions that WILL NOT reappear in the dialler (if processed correctly):</b>
-                    <ul>
-                        <li>Dementia</li>
-                        <li>Family Interference / POA</li>
-                        <li>Sky TV Packages / Virgin</li>
-                        <li>Over Age</li>
-                    </ul>
-                </li>
-                <br>
-                <li><b>🔄 Dispositions that WILL reappear frequently on the dialler:</b>
-                    <ul>
-                        <li>Answering Machine</li>
-                        <li>Customer Hangup</li>
-                        <li>Interested</li>
-                        <li>Callback</li>
-                    </ul>
-                </li>
-                <br>
-                <li><u><b>Data Accuracy and Quality: The more accurate the disposition you enter, the better quality of the data would appear on the dialler for the entire team.</b></u></li>
-            </ul>
-        </div>
-    """, unsafe_allow_html=True)
-    st.markdown("---")
+        # ------------ DISPOSITION PERFORMANCE TIPS (CLEANED UP CSS MARKUP) ---
+        st.markdown("""
+            <div class="tips-box">
+                <div class="tips-title">💡 Performance Details: Correct Call Dispositions and Data Quality</div>
+                <ul class="tips-list">
+                    <li><b>Answering Machines:</b> Do not dispose active customer connections as an "Answering Machine" especially if the Customer Talk Time/connectivity exceeds 30 seconds. Use it primarily when you hear a pre-recorded Answering Machine/Voicemail message.</li>
+                    <li><b>Customer Hangup:</b> This disposition should be used when the customer abruptly hangs up. Should be used for active/connected customers.</li>
+                    <li><b>No Answer:</b> Dispose as "No Answer" only if the customer does not pick up the call.</li>
+                    <li><b>Sky TV packages/Virgin:</b> Any call which indicates an error on the Talk-Talk portal, should be disposed as "Sky TV packages" or "Virgin". They must not be disposed as Answering Machines, Customer Hangup, No Answer, Not Interested etc. These dispositions would reappear in the dialler, and would dilute the quality of the data severely as the probability of the application of these customers is pretty low.</li>
+                    <li><b>Wrong Number:</b> Dispose them as "Wrong Number" if there is a mismatch in the data on the dialler and the data provided by the customer.</li>
+                    <li><b>Family Interference/POA:</b> Dispose as Family Interference/POA, if a family member or a 3rd person takes care of the customer's finances or other decisions.</li>
+                    <li><b>Dementia:</b> Dispose as Dementia, if the customer seems to have Dementia (seems forgetful of basic details), or seems Vulnerable.</li>
+                    <li><b>Over Age:</b> Dispose as Over Age if the customer is over 85 years old, or was born before 1940.</li>
+                    <li><b>Mobile Number:</b> Any number beginning with "7" should be disposed as a Mobile Number.</li>
+                    <li><b>Social Alarm VOIP:</b> If a customer has a Social Alarm/Medical Alarm/Careline/Lifeline etc, then use the disposition "Social Alarm VOIP".</li>
+                    <li><b>Hang up on bank details:</b> Use this disposition if the customer disconnects when hearing of or attempting any financial details.</li>
+                    <li><b>Busy:</b> If the customer is busy.</li>
+                    <br>
+                    <li><b>🚫 Dispositions that WILL NOT reappear in the dialler (if processed correctly):</b>
+                        <ul>
+                            <li>Dementia</li>
+                            <li>Family Interference / POA</li>
+                            <li>Sky TV Packages / Virgin</li>
+                            <li>Over Age</li>
+                        </ul>
+                    </li>
+                    <br>
+                    <li><b>🔄 Dispositions that WILL reappear frequently on the dialler:</b>
+                        <ul>
+                            <li>Answering Machine</li>
+                            <li>Customer Hangup</li>
+                            <li>Interested</li>
+                            <li>Callback</li>
+                        </ul>
+                    </li>
+                    <br>
+                    <li><u><b>Data Accuracy and Quality: The more accurate the disposition you enter, the better quality of the data would appear on the dialler for the entire team.</b></u></li>
+                </ul>
+            </div>
+        """, unsafe_allow_html=True)
+        st.write("---")
 
 except Exception as e: 
-    st.error(f"Error executing dashboard UI components: {e}")
+    st.error(f"Error encountered during script runtime execution: {e}")
