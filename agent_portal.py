@@ -187,7 +187,12 @@ def fetch_data():
         stream=True
     )
     
-    response.raise_for_status()
+    st.write("Status Code:", response.status_code)
+    
+    if response.status_code != 200:
+        st.write("Response Text:")
+        st.code(response.text)
+        response.raise_for_status()
     # ============================================================
     # READ EXCEL
     # ============================================================
