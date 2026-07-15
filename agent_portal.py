@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
 import datetime
 import plotly.express as px
 import plotly.graph_objects as go 
 import calendar
 import math
+import requests
+from io import BytesIO
+
 
 st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
 
@@ -165,32 +166,106 @@ def robust_date_parser(date_str):
         if '/' in date_str: return pd.to_datetime(date_str, dayfirst=True)
         return pd.to_datetime(date_str)
     except: return pd.NaT
-
+#############################################################################
 @st.cache_data(ttl=300)
 def fetch_data():
-    info = st.secrets["gcp_service_account"]
-    creds = Credentials.from_service_account_info(info, scopes=[
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
-    ])
-    client = gspread.authorize(creds)
-    ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
-    
-    df1 = pd.DataFrame(ss.worksheet('Sparta').get_all_records())
-    df1['Date_Parsed'] = pd.to_datetime(df1['Standardized_Date'], errors='coerce')
-    df1['Advisor'] = df1['Advisor'].astype(str).str.strip().str.title()
-    
-    df2_raw = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
-    df2_raw['Date_Parsed'] = df2_raw['Sale Date'].apply(robust_date_parser)
-    df2_raw['Advisor'] = df2_raw['Agent'].astype(str).str.strip().str.title()
 
-    try:
-        meta = ss.worksheet('Meta').get_all_values()
-        last_sync = meta[0][1]
-    except:
-        last_sync = "Unknown"
-        
-    return df1, df2_raw, last_sync
+    # ============================================================
+    # API DETAILS
+    # ============================================================
+    API_URL = "https://spartacrm.fastranking.cloud/api/dashboard/dashboard-data"
+    API_TOKEN = "0596a65a-c28c-4663-8605-0a387121a67a"
+
+    headers = {
+        "Authorization": f"Bearer {API_TOKEN}"
+    }
+
+    # ============================================================
+    # DOWNLOAD EXCEL
+    # ============================================================
+    response = requests.get(API_URL, headers=headers)
+    response.raise_for_status()
+
+    # ============================================================
+    # READ EXCEL
+    # ============================================================
+    df = pd.read_excel(BytesIO(response.content))
+
+    # ============================================================
+    # RENAME COLUMNS
+    # ============================================================
+    df = df.rename(columns={
+
+        # Basic
+        "Advisor (Created Username)": "Advisor",
+        "Phone Number": "CLI",
+        "Customer Name": "Customer Name",
+        "Sale Date": "Standardized_Date",
+
+        # Quality
+        "Quality Status": "Quality Status",
+        "Quality Remarks (Quality Comments)": "Quality Remarks",
+
+        # Welcome Call
+        "Welcome Call Status": "Status",
+        "Welcome Call Remarks (Welcome Comments)": "Welcome call Remarks",
+
+        # Portal / Live
+        "Committed (Live) Status (Onboarding Status)": "Portal Status",
+        "LetterStatus (Dispatch Status)": "LetterStatus",
+        "Confirmation Status": "CallStatus",
+        "Confirmation Comment": "Comments",
+        "Cancellation/Rejection Reason - Onboarding": "Cancellation Reason"
+
+    })
+
+    # ============================================================
+    # CREATE MISSING COLUMNS
+    # ============================================================
+
+    # Sparta columns
+    df["Sale Date"] = df["Standardized_Date"]
+
+    # Sparta2 columns
+    df["Telephone No."] = df["CLI"]
+    df["Status"] = df["Portal Status"]
+
+    # Columns that no longer exist
+    df["Voice of Customer"] = ""
+    df["Committed Date"] = pd.NaT
+
+    # ============================================================
+    # DATE PARSING
+    # ============================================================
+    df["Date_Parsed"] = pd.to_datetime(
+        df["Standardized_Date"],
+        dayfirst=True,
+        errors="coerce"
+    )
+
+    df["Advisor"] = (
+        df["Advisor"]
+        .astype(str)
+        .str.strip()
+        .str.title()
+    )
+
+    # ============================================================
+    # KEEP THE REST OF THE DASHBOARD HAPPY
+    # ============================================================
+    df1 = df.copy()
+    df2 = df.copy()
+
+    last_sync = datetime.datetime.now().strftime("%d-%m-%Y %H:%M")
+
+    return df1, df2, last_sync
+
+
+
+
+
+
+
 
 def map_quality(val):
     s = str(val).lower()
