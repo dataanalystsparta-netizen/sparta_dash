@@ -177,15 +177,17 @@ def fetch_data():
     API_TOKEN = "0596a65a-c28c-4663-8605-0a387121a67a"
 
     headers = {
-        "Authorization": f"Bearer {API_TOKEN}"
+        "Authorization": f"Bearer {API_TOKEN}",
+        "Accept": "application/octet-stream"
     }
-
-    # ============================================================
-    # DOWNLOAD EXCEL
-    # ============================================================
-    response = requests.get(API_URL, headers=headers)
+    
+    response = requests.get(
+        API_URL,
+        headers=headers,
+        stream=True
+    )
+    
     response.raise_for_status()
-
     # ============================================================
     # READ EXCEL
     # ============================================================
