@@ -636,21 +636,47 @@ else:
             merged_log['Sale Date'] = pd.to_datetime(merged_log['Standardized_Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
             merged_log['Live Date'] = pd.to_datetime(merged_log['Live Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
 
+
+
+            recent_log = df1.copy()
+            
+            recent_log["Sale Date"] = (
+                pd.to_datetime(
+                    recent_log["Standardized_Date"],
+                    errors="coerce",
+                    dayfirst=True
+                )
+                .dt.strftime("%d-%m-%Y")
+                .fillna("")
+            )
+
+
+            
             columns_layout = [
-                ('Basic Info.', 'S.No.'),
-                ('Basic Info.', 'Sale Date'),
-                ('Basic Info.', 'Customer Name'),
-                ('Quality Audit', 'Quality Status'),
-                ('Quality Audit', 'Quality Remarks'),
-                ('Welcome Call', 'Welcome Call Status'),
-                ('Welcome Call', 'Welcome call Remarks'),
-                ('Live Status', 'LetterStatus'),
-                ('Live Status', 'CallStatus'),
-                ('Live Status', 'Portal Status'),
-                ('Live Status', 'Live Date'),
-                ('Live Status', 'Comments'),
-                ('Live Status', 'Voice of Customer'),
-                ('Live Status', 'Cancellation Reason')
+            
+                ("Basic Info", "Sale Date"),
+                ("Basic Info", "Customer Name"),
+            
+                ("Quality Audit", "Quality Status"),
+                ("Quality Audit", "Quality Remarks"),
+                ("Quality Audit", "Cancellation Reason - quality"),
+            
+                ("Welcome Call", "Welcome Call Status"),
+                ("Welcome Call", "Welcome call Remarks"),
+                ("Welcome Call", "Cancellation Reason - welcome"),
+            
+                ("Provisioning", "Provisioning Status"),
+                ("Provisioning", "Provisioning Remarks (Provisioning Comments)"),
+                ("Provisioning", "Cancellation/Rejection Reason - Provisioning"),
+            
+                ("Live Status", "Portal Status"),
+                ("Live Status", "LetterStatus (Dispatch Status)"),
+                ("Live Status", "Confirmation Status"),
+                ("Live Status", "Confirmation Comment"),
+                ("Live Status", "Cancellation/Rejection Reason - Dispatch"),
+                ("Live Status", "Cancellation/Rejection Reason - Confirmation"),
+                ("Live Status", "Cancellation/Rejection Reason - Onboarding"),
+                ("Live Status", "Cancellation/Rejection Reason - Potential Opportunity"),
             ]
             
             # --- CUSTOM DATE RANGE, ALL RECORDS & LIMIT CONTROLS ---
