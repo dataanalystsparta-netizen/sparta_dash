@@ -8,11 +8,7 @@ import math
 import requests
 from io import BytesIO
 
-st.write(
-    recent_log[
-        ["Welcome Call Status", "Welcome call Remarks"]
-    ].head(20)
-)
+
 st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
 
 
@@ -653,6 +649,12 @@ else:
                 .dt.strftime("%d-%m-%Y")
                 .fillna("")
             )
+
+            st.write(
+                        recent_log[
+                            ["Welcome Call Status", "Welcome call Remarks"]
+                        ].head(20)
+                    )
 
 
             
