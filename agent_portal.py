@@ -651,10 +651,10 @@ else:
             )
 
             st.write(
-                        recent_log[
-                            ["Welcome Call Status", "Welcome call Remarks"]
-                        ].head(20)
-                    )
+                recent_log[
+                    ["Welcome Call Status", "Welcome call Remarks"]
+                ].head(20)
+            )
 
 
             
