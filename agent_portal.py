@@ -617,20 +617,7 @@ else:
 
         # ---------------- RECENT APPLICATIONS LOG WITH SECTIONS ----------------
         st.subheader("🔍 Recent Applications Log")
-        if not ag1.empty:
-            ag2_clean = ag2.copy()
-            ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
-            ag2_clean = ag2_clean.rename(columns={'Welcome Call Status': 'Portal Status', 'Committed Date': 'Live Date'})
-            ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
-            
-            ag1_log_base = ag1.copy()
-            ag1_log_base['CLI_Key'] = ag1_log_base['CLI'].astype(str).str.strip()
-            merged_log = ag1_log_base.merge(
-                ag2_unique[['Telephone No.', 'Welcome Call Status','LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status', 'Live Date']],
-                left_on='CLI_Key', 
-                right_on='Telephone No.', 
-                how='left'
-            )
+
 
             # --- RENAME AND CLEANUP RECENT LOG DATE COLUMNS TO DD-MM-YYYY STRING ---
             merged_log['Sale Date'] = pd.to_datetime(merged_log['Standardized_Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
@@ -692,19 +679,50 @@ else:
             with log_col2:
                 if log_filter_type == "By Specific Date Range":
                     ld_col1, ld_col2 = st.columns(2)
-                    log_start = ld_col1.date_input("Log Start Date", today_date.replace(day=1), key="log_start_date")
-                    log_end = ld_col2.date_input("Log End Date", today_date, key="log_end_date")
-                    recent_log = merged_log[(merged_log['Date_Parsed'].dt.date >= log_start) & (merged_log['Date_Parsed'].dt.date <= log_end)].sort_values(by='Date_Parsed', ascending=False)
+                
+                    log_start = ld_col1.date_input(
+                        "Log Start Date",
+                        today_date.replace(day=1),
+                        key="log_start_date"
+                    )
+                
+                    log_end = ld_col2.date_input(
+                        "Log End Date",
+                        today_date,
+                        key="log_end_date"
+                    )
+                
+                    recent_log = recent_log[
+                        (recent_log["Date_Parsed"].dt.date >= log_start) &
+                        (recent_log["Date_Parsed"].dt.date <= log_end)
+                    ].sort_values("Date_Parsed", ascending=False)
+                
                 elif log_filter_type == "By Specific Month":
-                    unique_months = sorted(merged_log['Date_Parsed'].dt.strftime('%Y-%m').dropna().unique(), reverse=True)
+                
+                    unique_months = sorted(
+                        recent_log["Date_Parsed"]
+                        .dt.strftime("%Y-%m")
+                        .dropna()
+                        .unique(),
+                        reverse=True
+                    )
+                
                     if unique_months:
-                        selected_month = st.selectbox("Select Month for Log (YYYY-MM):", unique_months)
-                        recent_log = merged_log[merged_log['Date_Parsed'].dt.strftime('%Y-%m') == selected_month].sort_values(by='Date_Parsed', ascending=False)
-                    else:
-                        recent_log = merged_log[0:0]
+                        selected_month = st.selectbox(
+                            "Select Month for Log (YYYY-MM):",
+                            unique_months
+                        )
+                
+                        recent_log = recent_log[
+                            recent_log["Date_Parsed"].dt.strftime("%Y-%m") == selected_month
+                        ].sort_values("Date_Parsed", ascending=False)
+                
                 else:
-                    recent_log = merged_log.sort_values(by='Date_Parsed', ascending=False)
-
+                
+                    recent_log = recent_log.sort_values(
+                        "Date_Parsed",
+                        ascending=False
+                    )
             recent_log['S.No.'] = range(1, len(recent_log) + 1)
 
             with log_col3:
