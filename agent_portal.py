@@ -378,7 +378,7 @@ else:
         ag1_filtered['Q_Status'] = ag1_filtered['Quality Status'].apply(map_quality)
         ag2_filtered['P_Status'] = ag2_filtered['Status'].apply(map_portal)
         wc_col = "Welcome Call Status"
-        if wc_col: ag1_filtered['WC_Clean'] = ag1_filtered[wc_col].apply(map_wc)
+        ag1_filtered['WC_Clean'] = ag1_filtered[wc_col].apply(map_wc)
 
         # ---------------- CATEGORISED KPI BOXES ----------------
         total_apps = len(ag1_filtered)
