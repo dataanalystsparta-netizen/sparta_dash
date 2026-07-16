@@ -197,7 +197,6 @@ def fetch_data():
     df["Committed Date"] = pd.NaT
 
     df["Live Date"] = pd.NaT
-    df["Welcome call Remarks"] = (df["Welcome Call Remarks (Welcome Comments)"])
 
 
   
