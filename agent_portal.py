@@ -5,9 +5,6 @@ import plotly.express as px
 import plotly.graph_objects as go 
 import calendar
 import math
-
-
-
 st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
 
 
@@ -141,11 +138,11 @@ st.markdown("""
 ACCESS_KEYS = st.secrets["agent_keys"]
 
 def log_agent_login(agent_name):
-        try:
-            log_sheet = ss.worksheet('Logs')
-        except gspread.WorksheetNotFound:
-            log_sheet = ss.add_worksheet(title="Logs", rows="1000", cols="3")
-            log_sheet.append_row(["Timestamp", "Agent Name", "Action"])
+    try:
+        log_sheet = ss.worksheet('Logs')
+    except gspread.WorksheetNotFound:
+        log_sheet = ss.add_worksheet(title="Logs", rows="1000", cols="3")
+        log_sheet.append_row(["Timestamp", "Agent Name", "Action"])
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_sheet.append_row([timestamp, agent_name, "Login"])
     except:
