@@ -857,3 +857,6 @@ else:
         st.write("---")
 
     except Exception as e: st.error(f"Error: {e}")
+
+
+st.write(df.columns.tolist())
