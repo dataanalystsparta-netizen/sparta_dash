@@ -377,7 +377,7 @@ else:
         
         ag1_filtered['Q_Status'] = ag1_filtered['Quality Status'].apply(map_quality)
         ag2_filtered['P_Status'] = ag2_filtered['Status'].apply(map_portal)
-        wc_col = 'Status' if 'Status' in ag1_filtered.columns else 'Welcome call Status' if 'Welcome call Status' in ag1_filtered.columns else None
+        wc_col = "Welcome Call Status"
         if wc_col: ag1_filtered['WC_Clean'] = ag1_filtered[wc_col].apply(map_wc)
 
         # ---------------- CATEGORISED KPI BOXES ----------------
