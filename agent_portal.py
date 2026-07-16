@@ -626,7 +626,7 @@ else:
             ag1_log_base = ag1.copy()
             ag1_log_base['CLI_Key'] = ag1_log_base['CLI'].astype(str).str.strip()
             merged_log = ag1_log_base.merge(
-                ag2_unique[['Telephone No.', 'LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status', 'Live Date']],
+                ag2_unique[['Telephone No.', 'Welcome Call Status','LetterStatus', 'CallStatus', 'Comments', 'Voice of Customer', 'Cancellation Reason', 'Portal Status', 'Live Date']],
                 left_on='CLI_Key', 
                 right_on='Telephone No.', 
                 how='left'
@@ -642,7 +642,7 @@ else:
                 ('Basic Info.', 'Customer Name'),
                 ('Quality Audit', 'Quality Status'),
                 ('Quality Audit', 'Quality Remarks'),
-                ('Welcome Call', 'Status'),
+                ('Welcome Call', 'Welcome Call Status'),
                 ('Welcome Call', 'Welcome call Remarks'),
                 ('Live Status', 'LetterStatus'),
                 ('Live Status', 'CallStatus'),
@@ -749,7 +749,7 @@ else:
                     q_bg, q_txt = BG_RED, DARK_RED
                 q_style = f'background-color: {q_bg}; color: {q_txt}; font-weight: bold;' if q_bg else ''
 
-                wc_val = get_val('Status')
+                wc_val = get_val('Welcome Call Status')
                 wc_bg, wc_txt = '', ''
                 if any(x in wc_val for x in ['done', 'pass', 'comp', 'live']):
                     wc_bg, wc_txt = BG_GREEN, DARK_GREEN
@@ -799,7 +799,7 @@ else:
                         else:
                             current_style = f'background-color: {q_bg};' if q_bg else ''
                     else:
-                        if col == 'Status':
+                        if col == 'Welcome Call Status':
                             current_style = wc_style
                         else:
                             current_style = f'background-color: {wc_bg};' if wc_bg else ''
