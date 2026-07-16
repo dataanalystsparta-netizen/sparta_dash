@@ -170,80 +170,54 @@ def robust_date_parser(date_str):
 @st.cache_data(ttl=300)
 def fetch_data():
 
-    # ============================================================
-    # API DETAILS
-    # ============================================================
-    API_URL = "https://spartacrm.fastranking.cloud/api/dashboard/dashboard-data"
-    API_TOKEN = "0596a65a-c28c-4663-8605-0a387121a67a"
-
-    headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
-        "Accept": "application/octet-stream"
-    }
-    
-    response = requests.get(
-        API_URL,
-        headers=headers,
-        stream=True
+    CSV_URL = (
+        "https://raw.githubusercontent.com/"
+        "dataanalystsparta-netizen/"
+        "dashboard-excel-sync/main/dashboard-data.csv"
     )
-    
-    st.write("Status Code:", response.status_code)
-    
-    if response.status_code != 200:
-        st.write("Response Text:")
-        st.code(response.text)
-        response.raise_for_status()
-    # ============================================================
-    # READ EXCEL
-    # ============================================================
-    df = pd.read_excel(BytesIO(response.content))
 
-    # ============================================================
-    # RENAME COLUMNS
-    # ============================================================
+    df = pd.read_csv(CSV_URL)
+
+    # --------------------------------------------------
+    # Rename columns to match the old dashboard
+    # --------------------------------------------------
     df = df.rename(columns={
 
         # Basic
         "Advisor (Created Username)": "Advisor",
         "Phone Number": "CLI",
-        "Customer Name": "Customer Name",
         "Sale Date": "Standardized_Date",
 
         # Quality
-        "Quality Status": "Quality Status",
         "Quality Remarks (Quality Comments)": "Quality Remarks",
 
-        # Welcome Call
-        "Welcome Call Status": "Status",
+        # Welcome
+        "Welcome Call Status": "Welcome Call Status",
         "Welcome Call Remarks (Welcome Comments)": "Welcome call Remarks",
 
-        # Portal / Live
+        # Live / Portal
         "Committed (Live) Status (Onboarding Status)": "Portal Status",
-        "LetterStatus (Dispatch Status)": "LetterStatus",
-        "Confirmation Status": "CallStatus",
-        "Confirmation Comment": "Comments",
-        "Cancellation/Rejection Reason - Onboarding": "Cancellation Reason"
 
     })
 
-    # ============================================================
-    # CREATE MISSING COLUMNS
-    # ============================================================
+    # --------------------------------------------------
+    # Create columns expected by the dashboard
+    # --------------------------------------------------
 
-    # Sparta columns
     df["Sale Date"] = df["Standardized_Date"]
 
-    # Sparta2 columns
     df["Telephone No."] = df["CLI"]
+
     df["Status"] = df["Portal Status"]
 
-    # Columns that no longer exist
     df["Voice of Customer"] = ""
+
     df["Committed Date"] = pd.NaT
 
-    # ============================================================
-    # DATE PARSING
-    # ============================================================
+    # --------------------------------------------------
+    # Dates
+    # --------------------------------------------------
+
     df["Date_Parsed"] = pd.to_datetime(
         df["Standardized_Date"],
         dayfirst=True,
@@ -257,15 +231,17 @@ def fetch_data():
         .str.title()
     )
 
-    # ============================================================
-    # KEEP THE REST OF THE DASHBOARD HAPPY
-    # ============================================================
+    # --------------------------------------------------
+    # Return exactly what the dashboard expects
+    # --------------------------------------------------
+
     df1 = df.copy()
     df2 = df.copy()
 
     last_sync = datetime.datetime.now().strftime("%d-%m-%Y %H:%M")
 
     return df1, df2, last_sync
+
 
 
 
