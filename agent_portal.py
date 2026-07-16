@@ -5,8 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go 
 import calendar
 import math
-import requests
-from io import BytesIO
+
 
 
 st.set_page_config(page_title="Sparta Agent Portal", layout="wide")
@@ -142,14 +141,6 @@ st.markdown("""
 ACCESS_KEYS = st.secrets["agent_keys"]
 
 def log_agent_login(agent_name):
-    try:
-        info = st.secrets["gcp_service_account"]
-        creds = Credentials.from_service_account_info(info, scopes=[
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive'
-        ])
-        client = gspread.authorize(creds)
-        ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
         try:
             log_sheet = ss.worksheet('Logs')
         except gspread.WorksheetNotFound:
@@ -160,12 +151,6 @@ def log_agent_login(agent_name):
     except:
         pass
 
-def robust_date_parser(date_str):
-    date_str = str(date_str).strip()
-    try:
-        if '/' in date_str: return pd.to_datetime(date_str, dayfirst=True)
-        return pd.to_datetime(date_str)
-    except: return pd.NaT
 #############################################################################
 @st.cache_data(ttl=300)
 def fetch_data():
@@ -176,7 +161,7 @@ def fetch_data():
         "dashboard-excel-sync/main/dashboard-data.csv"
     )
 
-    df = pd.read_csv(CSV_URL)
+    df = pd.read_csv(CSV_URL).fillna("")
 
     # --------------------------------------------------
     # Rename columns to match the old dashboard
@@ -213,7 +198,6 @@ def fetch_data():
     df["Voice of Customer"] = ""
 
     df["Committed Date"] = pd.NaT
-    df["Portal Status"] = df["Committed (Live) Status (Onboarding Status)"]
 
     df["Live Date"] = pd.NaT
     df["Welcome call Remarks"] = (df["Welcome Call Remarks (Welcome Comments)"])
