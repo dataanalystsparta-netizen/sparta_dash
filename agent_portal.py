@@ -350,6 +350,10 @@ else:
 
     try:
         df1, df2_raw, last_sync = fetch_data()
+
+        st.write(df1.columns.tolist())
+
+        
         ag1 = df1[df1['Advisor'] == agent].copy()
         ag2 = df2_raw[df2_raw['Advisor'] == agent].copy()
         
@@ -859,4 +863,4 @@ else:
     except Exception as e: st.error(f"Error: {e}")
 
 
-st.write(df.columns.tolist())
+
