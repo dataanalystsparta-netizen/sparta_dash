@@ -620,7 +620,7 @@ else:
         if not ag1.empty:
             ag2_clean = ag2.copy()
             ag2_clean['Telephone No.'] = ag2_clean['Telephone No.'].astype(str).str.strip()
-            ag2_clean = ag2_clean.rename(columns={'Status': 'Portal Status', 'Committed Date': 'Live Date'})
+            ag2_clean = ag2_clean.rename(columns={'Welcome Call Status': 'Portal Status', 'Committed Date': 'Live Date'})
             ag2_unique = ag2_clean.sort_values('Date_Parsed').drop_duplicates('Telephone No.', keep='last')
             
             ag1_log_base = ag1.copy()
