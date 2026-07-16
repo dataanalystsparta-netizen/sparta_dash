@@ -214,6 +214,15 @@ def fetch_data():
 
     df["Committed Date"] = pd.NaT
 
+
+    df["LetterStatus"] = df["LetterStatus (Dispatch Status)"]
+
+    df["CallStatus"] = df["Confirmation Status"]
+
+    df["Comments"] = df["Confirmation Comment"]
+
+    df["Cancellation Reason"] = df["Cancellation/Rejection Reason - Onboarding"]
+
     # --------------------------------------------------
     # Dates
     # --------------------------------------------------
