@@ -17,14 +17,92 @@ LIVE_AGENTS = [
 ]
 
 st.markdown("""
-   <style>
-   .block-container { max-width: 98%; padding-top: 5rem; }
-    h3 { margin-bottom: 0.5rem !important; font-size: 1.2rem !important; color: #1E3A8A; }
-   .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
-   [data-testid="stMetricValue"] { font-size: 1.6rem !important; }
-   [data-testid="stMetricLabel"] { font-size: 0.85rem !important; white-space: nowrap; }
-   </style>
-   """, unsafe_allow_html=True)
+<style>
+
+.block-container{
+    max-width:98%;
+    padding-top:4rem;
+}
+
+/* Dashboard title */
+h3{
+    margin-bottom:.5rem !important;
+    color:#1E3A8A;
+}
+
+/* Last updated */
+.last-updated{
+    font-size:.8rem;
+    color:gray;
+    text-align:right;
+}
+
+/* KPI Section Heading */
+
+.kpi-header{
+    background:#0F172A;
+    color:white;
+    padding:10px 16px;
+    border-radius:10px;
+    font-size:20px;
+    font-weight:600;
+    margin-top:12px;
+    margin-bottom:8px;
+}
+
+/* Hide Streamlit metric arrows */
+
+[data-testid="stMetricDelta"]{
+    display:none;
+}
+
+/* Better metric cards */
+
+[data-testid="metric-container"]{
+
+    background:#FFFFFF;
+
+    border-radius:12px;
+
+    border:1px solid #E5E7EB;
+
+    padding:12px;
+
+    box-shadow:0 2px 8px rgba(0,0,0,.08);
+
+    transition:.2s;
+}
+
+[data-testid="metric-container"]:hover{
+
+    transform:translateY(-2px);
+
+    box-shadow:0 6px 14px rgba(0,0,0,.12);
+
+}
+
+[data-testid="stMetricLabel"]{
+
+    text-align:center;
+
+    font-size:15px;
+
+    font-weight:600;
+
+}
+
+[data-testid="stMetricValue"]{
+
+    text-align:center;
+
+    font-size:32px;
+
+    font-weight:700;
+
+}
+
+</style>
+""", unsafe_allow_html=True)
 
 @st.cache_data(ttl=300)
 def fetch_data():
@@ -252,13 +330,7 @@ try:
 
         with st.container(border=True):
             tm1, tm2, tm3, tm4, tm5, tm6, tm7 = st.columns(7)
-            kpi_card(
-                title="Applications",
-                value=f"{team_apps:,}",
-                subtitle="Total applications",
-                icon="📝",
-                accent="#2563EB"
-            )
+            tm1.metric("📝 Tot. Applications",f"{team_apps:,}",help=KPI_DEFS["total_apps"])
             tm2.metric("✅ Quality Approv.", f"{team_approved:,}", help=KPI_DEFS["qual_approved"])
             tm3.metric("📈 Approv. Rate", team_approv_rate, help=KPI_DEFS["approv_rate"])
             tm4.metric("📦 Commit. Apps", f"{team_committed:,}", help=KPI_DEFS["commit_apps"])
