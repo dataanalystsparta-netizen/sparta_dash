@@ -227,42 +227,50 @@ TABLE_TOOLTIPS = {
 }
 
 ###################################################################################################
-def kpi_card(title, value, subtitle="", icon="📊", accent="#2563EB"):
+def kpi_card(title, value, pct="", icon="📊", accent="#2563EB"):
     st.markdown(
         f"""
         <div style="
-            background:white;
-            border-radius:14px;
-            padding:18px;
-            border-top:6px solid {accent};
-            box-shadow:0 3px 10px rgba(0,0,0,.12);
-            height:120px;
+            background:#FFFFFF;
+            border-radius:12px;
+            border-top:5px solid {accent};
+            padding:14px;
+            box-shadow:0 2px 8px rgba(0,0,0,.08);
+            text-align:center;
+            height:105px;
+            margin-bottom:8px;
         ">
-            <div style="font-size:15px;color:#666;">
+
+            <div style="
+                font-size:14px;
+                color:#6B7280;
+                font-weight:600;
+            ">
                 {icon} {title}
             </div>
 
             <div style="
-                font-size:34px;
+                font-size:30px;
                 font-weight:700;
                 color:#111827;
                 margin-top:8px;
+                line-height:1;
             ">
                 {value}
             </div>
 
             <div style="
-                color:#888;
                 font-size:13px;
-                margin-top:8px;
+                color:#9CA3AF;
+                margin-top:6px;
             ">
-                {subtitle}
+                {pct}
             </div>
+
         </div>
         """,
         unsafe_allow_html=True
     )
-
 
 ##########################################################################################
 
@@ -321,83 +329,136 @@ try:
             active_advisors_team = all_advisors
 
         team_apps = len(f1_team)
-        team_approved = len(f1_team[f1_team['Q_Status'] == 'Approved'])
-        team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
-        team_committed = len(f2_team)
-        team_commit_rate = f"{(team_committed / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
-        team_live = len(f2_team[f2_team['P_Status'] == 'Live'])
-        team_live_rate = f"{(team_live / team_committed * 100):.1f}%" if team_committed > 0 else "0.0%"
-         
-        with st.container():
 
-            # ---------------- Applications ----------------
+        # ---------------- QUALITY ----------------
 
-            st.markdown(
-                '<div class="kpi-header">📝 Applications</div>',
-                unsafe_allow_html=True
-            )
+        team_approved = len(f1_team[f1_team["Q_Status"]=="Approved"])
+        team_reworked = len(f1_team[f1_team["Q_Status"]=="Rework"])
+        team_cancelled = len(f1_team[f1_team["Q_Status"]=="Cancelled"])
+        team_pending = len(f1_team[f1_team["Q_Status"]=="Others"])
 
-            c1 = st.columns(1)
+        # ---------------- WELCOME ----------------
 
-            with c1[0]:
-                st.metric(
-                    "Total Applications",
+        wc = (
+            f1_team["Status"]
+            .astype(str)
+            .str.lower()
+            .str.strip()
+        )
+
+        team_wc_done = wc.str.contains("done").sum()
+        team_wc_cancel = wc.str.contains("cancel").sum()
+        team_wc_pending = wc.str.contains("pending").sum()
+
+        team_wc_other = (
+            len(f1_team)
+            - team_wc_done
+            - team_wc_cancel
+            - team_wc_pending
+        )
+
+        # ---------------- PORTAL ----------------
+
+        portal = (
+            f2_team["P_Status"]
+            .astype(str)
+            .str.lower()
+        )
+
+        team_committed = portal.eq("committed").sum()
+        team_live = portal.eq("live").sum()
+        team_port_cancel = portal.eq("cancelled").sum()
+        team_port_other = portal.eq("others").sum()
+
+        team_port_pending = (
+            len(f2_team)
+            - team_committed
+            - team_live
+            - team_port_cancel
+            - team_port_other
+        )
+        # ================= KPI DASHBOARD ===================
+
+        left, right = st.columns(2)
+
+        with left:
+
+            st.markdown("### 📝 Applications")
+
+            c = st.columns(1)
+
+            with c[0]:
+                kpi_card(
+                    "Applications",
                     f"{team_apps:,}",
-                    help=KPI_DEFS["total_apps"]
+                    "100%",
+                    "📝",
+                    "#2563EB"
                 )
 
-            # ---------------- Quality ----------------
+            st.markdown("### ✅ Quality Audit")
 
-            st.markdown(
-                '<div class="kpi-header">✅ Quality</div>',
-                unsafe_allow_html=True
-            )
+            q = st.columns(4)
 
-            q1, q2 = st.columns(2)
+            quality_cards = [
+                ("Approved", team_approved, "#16A34A", "✅"),
+                ("Reworked", team_reworked, "#F59E0B", "🔄"),
+                ("Cancelled", team_cancelled, "#DC2626", "❌"),
+                ("Pending", team_pending, "#6B7280", "⏳")
+            ]
 
-            with q1:
-                st.metric(
-                    "Approved",
-                    f"{team_approved:,}",
-                    help=KPI_DEFS["qual_approved"]
-                )
+            for col, card in zip(q, quality_cards):
 
-            with q2:
-                st.metric(
-                    "Approval Rate",
-                    team_approv_rate,
-                    help=KPI_DEFS["approv_rate"]
-                )
+                title, value, color, icon = card
 
-            # ---------------- Portal ----------------
+                with col:
+                    pct = f"{value/team_apps*100:.1f}%" if team_apps else "0%"
+                    kpi_card(title, value, pct, icon, color)
 
-            st.markdown(
-                '<div class="kpi-header">🚀 Portal</div>',
-                unsafe_allow_html=True
-            )
+        with right:
 
-            p1, p2, p3 = st.columns(3)
+            st.markdown("### ☎ Welcome Calls")
 
-            with p1:
-                st.metric(
-                    "Committed",
-                    f"{team_committed:,}",
-                    help=KPI_DEFS["commit_apps"]
-                )
+            w = st.columns(4)
 
-            with p2:
-                st.metric(
-                    "Commit Rate",
-                    team_commit_rate,
-                    help=KPI_DEFS["commit_rate"]
-                )
+            welcome_cards = [
+                ("Done", team_wc_done, "#16A34A", "☎"),
+                ("Cancelled", team_wc_cancel, "#DC2626", "❌"),
+                ("Pending", team_wc_pending, "#F59E0B", "⏳"),
+                ("Others", team_wc_other, "#6B7280", "📞")
+            ]
 
-            with p3:
-                st.metric(
-                    "Live",
-                    f"{team_live:,}",
-                    help=KPI_DEFS["total_live"]
-                )
+            for col, card in zip(w, welcome_cards):
+
+                title, value, color, icon = card
+
+                with col:
+                    pct = f"{value/team_apps*100:.1f}%" if team_apps else "0%"
+                    kpi_card(title, value, pct, icon, color)
+
+            st.markdown("### 🚀 Portal")
+
+            p = st.columns(5)
+
+            portal_cards = [
+                ("Committed", team_committed, "#2563EB", "📦"),
+                ("Live", team_live, "#16A34A", "🚀"),
+                ("Cancelled", team_port_cancel, "#DC2626", "❌"),
+                ("Pending", team_port_pending, "#F59E0B", "⏳"),
+                ("Others", team_port_other, "#6B7280", "📋")
+            ]
+
+            total_port = len(f2_team)
+
+            for col, card in zip(p, portal_cards):
+
+                title, value, color, icon = card
+
+                with col:
+                    pct = f"{value/total_port*100:.1f}%" if total_port else "0%"
+                    kpi_card(title, value, pct, icon, color)
+
+        st.divider()
        #############################################
 
         app_counts = f1_team.groupby('Advisor').size().to_frame('Total Applications')
