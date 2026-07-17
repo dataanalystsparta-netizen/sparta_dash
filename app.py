@@ -11,10 +11,9 @@ from fpdf import FPDF
 st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
 LIVE_AGENTS = [
-   "Anshu","Anjali", "Aman", "Frogh", "Gaurav", "Guru", 
-   "Naveen", "Krrish", "Niki", "Manmeet","Gungun","Manmeet",
-   "Animesh","Ajay","Shaheen","Deepali","Kunal","Rani",
-   "Archana","Manshay","Prerna","Tokivi"
+   "Anshu","Anjali", "Frogh",
+   "Naveen", "Krrish",
+   "Animesh","Ajay","Kunal",
 ]
 
 st.markdown("""
