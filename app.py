@@ -227,7 +227,7 @@ TABLE_TOOLTIPS = {
 }
 
 ###################################################################################################
-def kpi_card(title, value, pct="", icon="📊"):
+def kpi_card(title, value, pct="", icon="📊", accent="#2563EB"):
 
     with st.container(border=True):
 
