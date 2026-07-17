@@ -328,79 +328,77 @@ try:
         team_live = len(f2_team[f2_team['P_Status'] == 'Live'])
         team_live_rate = f"{(team_live / team_committed * 100):.1f}%" if team_committed > 0 else "0.0%"
 
-    #    with st.container(border=True):
-     #       tm1, tm2, tm3, tm4, tm5, tm6, tm7 = st.columns(7)
-      #      tm1.metric("📝 Tot. Applications",f"{team_apps:,}",help=KPI_DEFS["total_apps"])
-       #     tm2.metric("✅ Quality Approv.", f"{team_approved:,}", help=KPI_DEFS["qual_approved"])
-        #    tm3.metric("📈 Approv. Rate", team_approv_rate, help=KPI_DEFS["approv_rate"])
-         #   tm4.metric("📦 Commit. Apps", f"{team_committed:,}", help=KPI_DEFS["commit_apps"])
-          #  tm5.metric("📋 Commit. Rate", team_commit_rate, help=KPI_DEFS["commit_rate"])
-           # tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
-            #tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
-          with st.container():
-   
-       # ---------------- Applications ----------------
-   
-             st.markdown('<div class="kpi-header">📝 Applications</div>', unsafe_allow_html=True)
-         
-             a1 = st.columns(1)
-         
-             with a1[0]:
-                 st.metric(
-                     "Total Applications",
-                     f"{team_apps:,}",
-                     help=KPI_DEFS["total_apps"]
-                 )
-         
-         
-             # ---------------- Quality ----------------
-         
-             st.markdown('<div class="kpi-header">✅ Quality</div>', unsafe_allow_html=True)
-         
-             q1, q2 = st.columns(2)
-         
-             with q1:
-                 st.metric(
-                     "Approved",
-                     f"{team_approved:,}",
-                     help=KPI_DEFS["qual_approved"]
-                 )
-         
-             with q2:
-                 st.metric(
-                     "Approval Rate",
-                     team_approv_rate,
-                     help=KPI_DEFS["approv_rate"]
-                 )
-         
-         
-             # ---------------- Portal ----------------
-         
-             st.markdown('<div class="kpi-header">🚀 Portal</div>', unsafe_allow_html=True)
-         
-             p1, p2, p3 = st.columns(3)
-         
-             with p1:
-                 st.metric(
-                     "Committed",
-                     f"{team_committed:,}",
-                     help=KPI_DEFS["commit_apps"]
-                 )
-         
-             with p2:
-                 st.metric(
-                     "Commit Rate",
-                     team_commit_rate,
-                     help=KPI_DEFS["commit_rate"]
-                 )
-         
-             with p3:
-                 st.metric(
-                     "Live",
-                     f"{team_live:,}",
-                     help=KPI_DEFS["total_live"]
-                 )
 
+       with st.container():
+   
+           # ---------------- Applications ----------------
+   
+           st.markdown(
+               '<div class="kpi-header">📝 Applications</div>',
+               unsafe_allow_html=True
+           )
+   
+           a1 = st.columns(1)
+   
+           with a1[0]:
+               st.metric(
+                   "Total Applications",
+                   f"{team_apps:,}",
+                   help=KPI_DEFS["total_apps"]
+               )
+   
+           # ---------------- Quality ----------------
+   
+           st.markdown(
+               '<div class="kpi-header">✅ Quality</div>',
+               unsafe_allow_html=True
+           )
+   
+           q1, q2 = st.columns(2)
+   
+           with q1:
+               st.metric(
+                   "Approved",
+                   f"{team_approved:,}",
+                   help=KPI_DEFS["qual_approved"]
+               )
+   
+           with q2:
+               st.metric(
+                   "Approval Rate",
+                   team_approv_rate,
+                   help=KPI_DEFS["approv_rate"]
+               )
+   
+           # ---------------- Portal ----------------
+   
+           st.markdown(
+               '<div class="kpi-header">🚀 Portal</div>',
+               unsafe_allow_html=True
+           )
+   
+           p1, p2, p3 = st.columns(3)
+   
+           with p1:
+               st.metric(
+                   "Committed",
+                   f"{team_committed:,}",
+                   help=KPI_DEFS["commit_apps"]
+               )
+   
+           with p2:
+               st.metric(
+                   "Commit Rate",
+                   team_commit_rate,
+                   help=KPI_DEFS["commit_rate"]
+               )
+   
+           with p3:
+               st.metric(
+                   "Live",
+                   f"{team_live:,}",
+                   help=KPI_DEFS["total_live"]
+               )
 
 
        #############################################
