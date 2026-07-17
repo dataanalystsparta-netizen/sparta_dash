@@ -148,6 +148,47 @@ TABLE_TOOLTIPS = {
     "Committed": "Applications processed and awaiting final activation."
 }
 
+###################################################################################################
+def kpi_card(title, value, subtitle="", icon="📊", accent="#2563EB"):
+    st.markdown(
+        f"""
+        <div style="
+            background:white;
+            border-radius:14px;
+            padding:18px;
+            border-top:6px solid {accent};
+            box-shadow:0 3px 10px rgba(0,0,0,.12);
+            height:120px;
+        ">
+            <div style="font-size:15px;color:#666;">
+                {icon} {title}
+            </div>
+
+            <div style="
+                font-size:34px;
+                font-weight:700;
+                color:#111827;
+                margin-top:8px;
+            ">
+                {value}
+            </div>
+
+            <div style="
+                color:#888;
+                font-size:13px;
+                margin-top:8px;
+            ">
+                {subtitle}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+##########################################################################################
+
+
 try:
     df1, df2, last_sync = fetch_data()
 
@@ -211,7 +252,13 @@ try:
 
         with st.container(border=True):
             tm1, tm2, tm3, tm4, tm5, tm6, tm7 = st.columns(7)
-            tm1.metric("📝 Tot. Applications", f"{team_apps:,}", help=KPI_DEFS["total_apps"])
+            kpi_card(
+                title="Applications",
+                value=f"{team_apps:,}",
+                subtitle="Total applications",
+                icon="📝",
+                accent="#2563EB"
+            )
             tm2.metric("✅ Quality Approv.", f"{team_approved:,}", help=KPI_DEFS["qual_approved"])
             tm3.metric("📈 Approv. Rate", team_approv_rate, help=KPI_DEFS["approv_rate"])
             tm4.metric("📦 Commit. Apps", f"{team_committed:,}", help=KPI_DEFS["commit_apps"])
