@@ -227,50 +227,20 @@ TABLE_TOOLTIPS = {
 }
 
 ###################################################################################################
-def kpi_card(title, value, pct="", icon="📊", accent="#2563EB"):
-    st.markdown(
-        f"""
-        <div style="
-            background:#FFFFFF;
-            border-radius:12px;
-            border-top:5px solid {accent};
-            padding:14px;
-            box-shadow:0 2px 8px rgba(0,0,0,.08);
-            text-align:center;
-            height:105px;
-            margin-bottom:8px;
-        ">
+def kpi_card(title, value, pct="", icon="📊"):
 
-            <div style="
-                font-size:14px;
-                color:#6B7280;
-                font-weight:600;
-            ">
-                {icon} {title}
-            </div>
+    with st.container(border=True):
 
-            <div style="
-                font-size:30px;
-                font-weight:700;
-                color:#111827;
-                margin-top:8px;
-                line-height:1;
-            ">
-                {value}
-            </div>
+        st.markdown(
+            f"#### {icon} {title}"
+        )
 
-            <div style="
-                font-size:13px;
-                color:#9CA3AF;
-                margin-top:6px;
-            ">
-                {pct}
-            </div>
+        st.markdown(
+            f"<h2 style='text-align:center'>{value}</h2>",
+            unsafe_allow_html=True
+        )
 
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+        st.caption(pct)
 
 ##########################################################################################
 
