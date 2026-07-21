@@ -17,92 +17,14 @@ LIVE_AGENTS = [
 ]
 
 st.markdown("""
-<style>
-
-.block-container{
-    max-width:98%;
-    padding-top:4rem;
-}
-
-/* Dashboard title */
-h3{
-    margin-bottom:.5rem !important;
-    color:#1E3A8A;
-}
-
-/* Last updated */
-.last-updated{
-    font-size:.8rem;
-    color:gray;
-    text-align:right;
-}
-
-/* KPI Section Heading */
-
-.kpi-header{
-    background:#0F172A;
-    color:white;
-    padding:10px 16px;
-    border-radius:10px;
-    font-size:20px;
-    font-weight:600;
-    margin-top:12px;
-    margin-bottom:8px;
-}
-
-/* Hide Streamlit metric arrows */
-
-[data-testid="stMetricDelta"]{
-    display:none;
-}
-
-/* Better metric cards */
-
-[data-testid="metric-container"]{
-
-    background:#FFFFFF;
-
-    border-radius:12px;
-
-    border:1px solid #E5E7EB;
-
-    padding:12px;
-
-    box-shadow:0 2px 8px rgba(0,0,0,.08);
-
-    transition:.2s;
-}
-
-[data-testid="metric-container"]:hover{
-
-    transform:translateY(-2px);
-
-    box-shadow:0 6px 14px rgba(0,0,0,.12);
-
-}
-
-[data-testid="stMetricLabel"]{
-
-    text-align:center;
-
-    font-size:15px;
-
-    font-weight:600;
-
-}
-
-[data-testid="stMetricValue"]{
-
-    text-align:center;
-
-    font-size:32px;
-
-    font-weight:700;
-
-}
-
-</style>
-""", unsafe_allow_html=True)
+   <style>
+   .block-container { max-width: 98%; padding-top: 5rem; }
+    h3 { margin-bottom: 0.5rem !important; font-size: 1.2rem !important; color: #1E3A8A; }
+   .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
+   [data-testid="stMetricValue"] { font-size: 1.6rem !important; }
+   [data-testid="stMetricLabel"] { font-size: 0.85rem !important; white-space: nowrap; }
+   </style>
+   """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=300)
 def fetch_data():
@@ -226,25 +148,6 @@ TABLE_TOOLTIPS = {
     "Committed": "Applications processed and awaiting final activation."
 }
 
-###################################################################################################
-def kpi_card(title, value, pct="", icon="📊", accent="#2563EB"):
-
-    with st.container(border=True):
-
-        st.markdown(
-            f"#### {icon} {title}"
-        )
-
-        st.markdown(
-            f"<h2 style='text-align:center'>{value}</h2>",
-            unsafe_allow_html=True
-        )
-
-        st.caption(pct)
-
-##########################################################################################
-
-
 try:
     df1, df2, last_sync = fetch_data()
 
@@ -299,137 +202,22 @@ try:
             active_advisors_team = all_advisors
 
         team_apps = len(f1_team)
+        team_approved = len(f1_team[f1_team['Q_Status'] == 'Approved'])
+        team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
+        team_committed = len(f2_team)
+        team_commit_rate = f"{(team_committed / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
+        team_live = len(f2_team[f2_team['P_Status'] == 'Live'])
+        team_live_rate = f"{(team_live / team_committed * 100):.1f}%" if team_committed > 0 else "0.0%"
 
-        # ---------------- QUALITY ----------------
-
-        team_approved = len(f1_team[f1_team["Q_Status"]=="Approved"])
-        team_reworked = len(f1_team[f1_team["Q_Status"]=="Rework"])
-        team_cancelled = len(f1_team[f1_team["Q_Status"]=="Cancelled"])
-        team_pending = len(f1_team[f1_team["Q_Status"]=="Others"])
-
-        # ---------------- WELCOME ----------------
-
-        wc = (
-            f1_team["Status"]
-            .astype(str)
-            .str.lower()
-            .str.strip()
-        )
-
-        team_wc_done = wc.str.contains("done").sum()
-        team_wc_cancel = wc.str.contains("cancel").sum()
-        team_wc_pending = wc.str.contains("pending").sum()
-
-        team_wc_other = (
-            len(f1_team)
-            - team_wc_done
-            - team_wc_cancel
-            - team_wc_pending
-        )
-
-        # ---------------- PORTAL ----------------
-
-        portal = (
-            f2_team["P_Status"]
-            .astype(str)
-            .str.lower()
-        )
-
-        team_committed = portal.eq("committed").sum()
-        team_live = portal.eq("live").sum()
-        team_port_cancel = portal.eq("cancelled").sum()
-        team_port_other = portal.eq("others").sum()
-
-        team_port_pending = (
-            len(f2_team)
-            - team_committed
-            - team_live
-            - team_port_cancel
-            - team_port_other
-        )
-        # ================= KPI DASHBOARD ===================
-
-        left, right = st.columns(2)
-
-        with left:
-
-            st.markdown("### 📝 Applications")
-
-            c = st.columns(1)
-
-            with c[0]:
-                kpi_card(
-                    "Applications",
-                    f"{team_apps:,}",
-                    "100%",
-                    "📝",
-                    "#2563EB"
-                )
-
-            st.markdown("### ✅ Quality Audit")
-
-            q = st.columns(4)
-
-            quality_cards = [
-                ("Approved", team_approved, "#16A34A", "✅"),
-                ("Reworked", team_reworked, "#F59E0B", "🔄"),
-                ("Cancelled", team_cancelled, "#DC2626", "❌"),
-                ("Pending", team_pending, "#6B7280", "⏳")
-            ]
-
-            for col, card in zip(q, quality_cards):
-
-                title, value, color, icon = card
-
-                with col:
-                    pct = f"{value/team_apps*100:.1f}%" if team_apps else "0%"
-                    kpi_card(title, value, pct, icon, color)
-
-        with right:
-
-            st.markdown("### ☎ Welcome Calls")
-
-            w = st.columns(4)
-
-            welcome_cards = [
-                ("Done", team_wc_done, "#16A34A", "☎"),
-                ("Cancelled", team_wc_cancel, "#DC2626", "❌"),
-                ("Pending", team_wc_pending, "#F59E0B", "⏳"),
-                ("Others", team_wc_other, "#6B7280", "📞")
-            ]
-
-            for col, card in zip(w, welcome_cards):
-
-                title, value, color, icon = card
-
-                with col:
-                    pct = f"{value/team_apps*100:.1f}%" if team_apps else "0%"
-                    kpi_card(title, value, pct, icon, color)
-
-            st.markdown("### 🚀 Portal")
-
-            p = st.columns(5)
-
-            portal_cards = [
-                ("Committed", team_committed, "#2563EB", "📦"),
-                ("Live", team_live, "#16A34A", "🚀"),
-                ("Cancelled", team_port_cancel, "#DC2626", "❌"),
-                ("Pending", team_port_pending, "#F59E0B", "⏳"),
-                ("Others", team_port_other, "#6B7280", "📋")
-            ]
-
-            total_port = len(f2_team)
-
-            for col, card in zip(p, portal_cards):
-
-                title, value, color, icon = card
-
-                with col:
-                    pct = f"{value/total_port*100:.1f}%" if total_port else "0%"
-                    kpi_card(title, value, pct, icon, color)
-
-        st.divider()
-       #############################################
+        with st.container(border=True):
+            tm1, tm2, tm3, tm4, tm5, tm6, tm7 = st.columns(7)
+            tm1.metric("📝 Tot. Applications", f"{team_apps:,}", help=KPI_DEFS["total_apps"])
+            tm2.metric("✅ Quality Approv.", f"{team_approved:,}", help=KPI_DEFS["qual_approved"])
+            tm3.metric("📈 Approv. Rate", team_approv_rate, help=KPI_DEFS["approv_rate"])
+            tm4.metric("📦 Commit. Apps", f"{team_committed:,}", help=KPI_DEFS["commit_apps"])
+            tm5.metric("📋 Commit. Rate", team_commit_rate, help=KPI_DEFS["commit_rate"])
+            tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
+            tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
 
         app_counts = f1_team.groupby('Advisor').size().to_frame('Total Applications')
         qual_counts = f1_team.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
