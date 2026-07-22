@@ -449,3 +449,63 @@ with st.expander("📄 Master Data Columns"):
         hide_index=True
     )
 
+# ==========================================================
+# DATA PREVIEW
+# ==========================================================
+
+st.divider()
+
+st.header("📂 Data Preview")
+
+tab1, tab2, tab3 = st.tabs([
+    "Applications",
+    "Portal",
+    "Master Dataset"
+])
+
+with tab1:
+
+    st.caption(f"{len(sparta_df):,} records")
+
+    st.dataframe(
+        sparta_df,
+        use_container_width=True,
+        height=500,
+        hide_index=True
+    )
+
+with tab2:
+
+    st.caption(f"{len(sparta2_df):,} records")
+
+    st.dataframe(
+        sparta2_df,
+        use_container_width=True,
+        height=500,
+        hide_index=True
+    )
+
+with tab3:
+
+    st.caption(f"{len(master_df):,} merged records")
+
+    st.dataframe(
+        master_df,
+        use_container_width=True,
+        height=600,
+        hide_index=True
+    )
+
+
+# ==========================================================
+# FOOTER
+# ==========================================================
+
+st.divider()
+
+st.success("✅ Data loaded successfully")
+
+st.caption(
+    f"Dashboard refreshed at "
+    f"{datetime.now().strftime('%d %b %Y %H:%M:%S')}"
+)
