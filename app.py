@@ -20,47 +20,37 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Modern KPI Cards
+# Custom CSS for Individual KPI Cards
 st.markdown("""
 <style>
-    .kpi-card {
-        background-color: #f8f9fa;
-        border-radius: 10px;
-        padding: 15px 20px;
+    .single-kpi-card {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 14px 18px;
+        border: 1px solid #e9ecef;
         border-left: 5px solid #007bff;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        margin-bottom: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.04);
+        margin-bottom: 12px;
     }
-    .kpi-card-title {
-        font-size: 0.85rem;
+    .kpi-title {
+        font-size: 0.78rem;
         font-weight: 600;
         text-transform: uppercase;
         color: #6c757d;
         letter-spacing: 0.5px;
     }
-    .kpi-card-value {
-        font-size: 1.8rem;
+    .kpi-value {
+        font-size: 1.6rem;
         font-weight: 700;
         color: #1e293b;
-        margin-top: 5px;
+        margin-top: 4px;
     }
-    .kpi-subtext {
-        font-size: 0.8rem;
-        color: #64748b;
-        margin-top: 8px;
+    .kpi-category {
+        font-size: 0.72rem;
+        font-weight: 500;
+        color: #a0aec0;
+        margin-bottom: 2px;
     }
-    .stat-badge {
-        display: inline-block;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-right: 4px;
-    }
-    .badge-success { background-color: #d1e7dd; color: #0f5132; }
-    .badge-warning { background-color: #fff3cd; color: #664d03; }
-    .badge-danger { background-color: #f8d7da; color: #842029; }
-    .badge-info { background-color: #cff4fc; color: #055160; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -167,6 +157,16 @@ def parse_date(series):
         errors="coerce",
         dayfirst=True
     )
+
+# Helper for card HTML rendering
+def render_kpi(category, title, value, border_color="#007bff"):
+    return f"""
+    <div class="single-kpi-card" style="border-left-color: {border_color};">
+        <div class="kpi-category">{category}</div>
+        <div class="kpi-title">{title}</div>
+        <div class="kpi-value">{value:,}</div>
+    </div>
+    """
 
 # ==========================================================
 # APP HEADER
@@ -365,13 +365,10 @@ master_df = build_master_dataframe(
 )
 
 # ==========================================================
-# TOP KPI SECTION
+# SEPARATE KPI CARDS SECTION
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
-
-# Calculate KPI Metrics cleanly from master_df
-total_applications = len(master_df)
 
 # Helper for case-insensitive exact matching
 def count_status(df, column, values):
@@ -379,70 +376,67 @@ def count_status(df, column, values):
         return 0
     return df[column].astype(str).str.strip().str.lower().isin([v.lower() for v in values]).sum()
 
-# Quality Metrics
+# Calculations
+total_applications = len(master_df)
+
 q_approved = count_status(master_df, "Quality Status", ["Approved", "Pass", "Passed"])
 q_rework = count_status(master_df, "Quality Status", ["Rework", "Pending Rework"])
 q_cancelled = count_status(master_df, "Quality Status", ["Cancelled", "Cancel", "Rejected"])
 
-# Welcome Call Metrics
 wc_done = count_status(master_df, "Welcome Status", ["Done", "Passed", "Completed", "WC Done"])
 wc_cancelled = count_status(master_df, "Welcome Status", ["Cancelled", "Cancel", "Rejected"])
 wc_pending = count_status(master_df, "Welcome Status", ["Pending", "In Progress", ""])
 
-# Committed / Portal Metrics
 portal_live = count_status(master_df, "Portal Status", ["Live", "Connected"])
-portal_cancelled = count_status(master_df, "Portal Status", ["Cancelled", "Cancel", "Rejected"])
 portal_committed = count_status(master_df, "Portal Status", ["Committed", "Order Placed"])
+portal_cancelled = count_status(master_df, "Portal Status", ["Cancelled", "Cancel", "Rejected"])
 portal_pending = count_status(master_df, "Portal Status", ["Pending", "In Progress", ""])
 
-# Render 4 Cards in Row
-kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+# --- ROW 1: Applications & Quality ---
+r1_col1, r1_col2, r1_col3, r1_col4 = st.columns(4)
 
-with kpi1:
-    st.markdown(f"""
-    <div class="kpi-card" style="border-left-color: #007bff;">
-        <div class="kpi-card-title">Total Applications</div>
-        <div class="kpi-card-value">{total_applications:,}</div>
-        <div class="kpi-subtext">Total submitted leads</div>
-    </div>
-    """, unsafe_allow_html=True)
+with r1_col1:
+    st.markdown(render_kpi("Overview", "Total Applications", total_applications, "#0d6efd"), unsafe_allow_html=True)
 
-with kpi2:
-    st.markdown(f"""
-    <div class="kpi-card" style="border-left-color: #198754;">
-        <div class="kpi-card-title">Quality Breakdown</div>
-        <div class="kpi-card-value">{q_approved:,} <span style="font-size: 0.9rem; font-weight: normal;">Approved</span></div>
-        <div class="kpi-subtext">
-            <span class="stat-badge badge-warning">Rework: {q_rework:,}</span>
-            <span class="stat-badge badge-danger">Cancelled: {q_cancelled:,}</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+with r1_col2:
+    st.markdown(render_kpi("Quality", "Approved", q_approved, "#198754"), unsafe_allow_html=True)
 
-with kpi3:
-    st.markdown(f"""
-    <div class="kpi-card" style="border-left-color: #ffc107;">
-        <div class="kpi-card-title">Welcome Call</div>
-        <div class="kpi-card-value">{wc_done:,} <span style="font-size: 0.9rem; font-weight: normal;">Done</span></div>
-        <div class="kpi-subtext">
-            <span class="stat-badge badge-danger">Cancelled: {wc_cancelled:,}</span>
-            <span class="stat-badge badge-info">Pending: {wc_pending:,}</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+with r1_col3:
+    st.markdown(render_kpi("Quality", "Rework", q_rework, "#ffc107"), unsafe_allow_html=True)
 
-with kpi4:
-    st.markdown(f"""
-    <div class="kpi-card" style="border-left-color: #0dcaf0;">
-        <div class="kpi-card-title">Committed Lifecycle</div>
-        <div class="kpi-card-value">{portal_live:,} <span style="font-size: 0.9rem; font-weight: normal;">Live</span></div>
-        <div class="kpi-subtext">
-            <span class="stat-badge badge-success">Committed: {portal_committed:,}</span>
-            <span class="stat-badge badge-danger">Cancelled: {portal_cancelled:,}</span>
-            <span class="stat-badge badge-info">Pending: {portal_pending:,}</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+with r1_col4:
+    st.markdown(render_kpi("Quality", "Cancelled", q_cancelled, "#dc3545"), unsafe_allow_html=True)
+
+# --- ROW 2: Welcome Call ---
+r2_col1, r2_col2, r2_col3, r2_col4 = st.columns(4)
+
+with r2_col1:
+    st.markdown(render_kpi("Welcome Call", "Done", wc_done, "#198754"), unsafe_allow_html=True)
+
+with r2_col2:
+    st.markdown(render_kpi("Welcome Call", "Cancelled", wc_cancelled, "#dc3545"), unsafe_allow_html=True)
+
+with r2_col3:
+    st.markdown(render_kpi("Welcome Call", "Pending", wc_pending, "#0dcaf0"), unsafe_allow_html=True)
+
+with r2_col4:
+    st.empty()  # Blank space for layout alignment
+
+# --- ROW 3: Committed / Portal Lifecycle ---
+r3_col1, r3_col2, r3_col3, r3_col4 = st.columns(4)
+
+with r3_col1:
+    st.markdown(render_kpi("Committed", "Live", portal_live, "#198754"), unsafe_allow_html=True)
+
+with r3_col2:
+    st.markdown(render_kpi("Committed", "Committed", portal_committed, "#0d6efd"), unsafe_allow_html=True)
+
+with r3_col3:
+    st.markdown(render_kpi("Committed", "Cancelled", portal_cancelled, "#dc3545"), unsafe_allow_html=True)
+
+with r3_col4:
+    st.markdown(render_kpi("Committed", "Pending", portal_pending, "#0dcaf0"), unsafe_allow_html=True)
+
 
 # ==========================================================
 # DATA PREVIEW
