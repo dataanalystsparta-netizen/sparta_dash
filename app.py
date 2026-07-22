@@ -509,3 +509,209 @@ st.caption(
     f"Dashboard refreshed at "
     f"{datetime.now().strftime('%d %b %Y %H:%M:%S')}"
 )
+
+
+
+# ==========================================================
+# GLOBAL FILTERS
+# ==========================================================
+
+st.sidebar.header("🔍 Dashboard Filters")
+
+# -------------------------------
+# DATE FILTER
+# -------------------------------
+
+min_date = master_df["Sale Date"].min()
+max_date = master_df["Sale Date"].max()
+
+date_range = st.sidebar.date_input(
+    "Sale Date",
+    value=(min_date, max_date),
+    min_value=min_date,
+    max_value=max_date
+)
+
+# -------------------------------
+# ADVISOR FILTER
+# -------------------------------
+
+advisor_list = sorted(
+    master_df["Advisor"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+selected_advisors = st.sidebar.multiselect(
+    "Advisor",
+    advisor_list,
+    default=advisor_list
+)
+
+# -------------------------------
+# QUALITY FILTER
+# -------------------------------
+
+quality_list = sorted(
+    master_df["Quality Status"]
+    .fillna("Blank")
+    .unique()
+    .tolist()
+)
+
+selected_quality = st.sidebar.multiselect(
+    "Quality Status",
+    quality_list,
+    default=quality_list
+)
+
+# -------------------------------
+# WELCOME FILTER
+# -------------------------------
+
+welcome_list = sorted(
+    master_df["Welcome Status"]
+    .fillna("Blank")
+    .unique()
+    .tolist()
+)
+
+selected_welcome = st.sidebar.multiselect(
+    "Welcome Status",
+    welcome_list,
+    default=welcome_list
+)
+
+# -------------------------------
+# PORTAL FILTER
+# -------------------------------
+
+portal_list = sorted(
+    master_df["Portal Status"]
+    .fillna("Blank")
+    .unique()
+    .tolist()
+)
+
+selected_portal = st.sidebar.multiselect(
+    "Portal Status",
+    portal_list,
+    default=portal_list
+)
+
+# -------------------------------
+# CURRENT PROVIDER
+# -------------------------------
+
+provider_list = sorted(
+    master_df["Current Provider"]
+    .fillna("Blank")
+    .unique()
+    .tolist()
+)
+
+selected_provider = st.sidebar.multiselect(
+    "Current Provider",
+    provider_list,
+    default=provider_list
+)
+
+# -------------------------------
+# PACKAGE
+# -------------------------------
+
+package_list = sorted(
+    master_df["Package"]
+    .fillna("Blank")
+    .unique()
+    .tolist()
+)
+
+selected_package = st.sidebar.multiselect(
+    "Package",
+    package_list,
+    default=package_list
+)
+
+
+# ==========================================================
+# APPLY FILTERS
+# ==========================================================
+
+filtered_df = master_df.copy()
+
+# -------------------------------
+# DATE
+# -------------------------------
+
+if len(date_range) == 2:
+
+    start_date = pd.to_datetime(date_range[0])
+    end_date = pd.to_datetime(date_range[1])
+
+    filtered_df = filtered_df[
+        filtered_df["Sale Date"].between(
+            start_date,
+            end_date
+        )
+    ]
+
+# -------------------------------
+# ADVISOR
+# -------------------------------
+
+filtered_df = filtered_df[
+    filtered_df["Advisor"].isin(selected_advisors)
+]
+
+# -------------------------------
+# QUALITY
+# -------------------------------
+
+filtered_df = filtered_df[
+    filtered_df["Quality Status"]
+    .fillna("Blank")
+    .isin(selected_quality)
+]
+
+# -------------------------------
+# WELCOME
+# -------------------------------
+
+filtered_df = filtered_df[
+    filtered_df["Welcome Status"]
+    .fillna("Blank")
+    .isin(selected_welcome)
+]
+
+# -------------------------------
+# PORTAL
+# -------------------------------
+
+filtered_df = filtered_df[
+    filtered_df["Portal Status"]
+    .fillna("Blank")
+    .isin(selected_portal)
+]
+
+# -------------------------------
+# PROVIDER
+# -------------------------------
+
+filtered_df = filtered_df[
+    filtered_df["Current Provider"]
+    .fillna("Blank")
+    .isin(selected_provider)
+]
+
+# -------------------------------
+# PACKAGE
+# -------------------------------
+
+filtered_df = filtered_df[
+    filtered_df["Package"]
+    .fillna("Blank")
+    .isin(selected_package)
+]
+
