@@ -1,8 +1,3 @@
-# ==========================================================
-# SPARTA SALES DASHBOARD V2
-# Part 1 - Imports + Google Sheets Connection
-# ==========================================================
-
 import re
 from datetime import datetime
 
@@ -24,6 +19,51 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Custom CSS for Modern KPI Cards
+st.markdown("""
+<style>
+    .kpi-card {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 15px 20px;
+        border-left: 5px solid #007bff;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        margin-bottom: 10px;
+    }
+    .kpi-card-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #6c757d;
+        letter-spacing: 0.5px;
+    }
+    .kpi-card-value {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-top: 5px;
+    }
+    .kpi-subtext {
+        font-size: 0.8rem;
+        color: #64748b;
+        margin-top: 8px;
+    }
+    .stat-badge {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-right: 4px;
+    }
+    .badge-success { background-color: #d1e7dd; color: #0f5132; }
+    .badge-warning { background-color: #fff3cd; color: #664d03; }
+    .badge-danger { background-color: #f8d7da; color: #842029; }
+    .badge-info { background-color: #cff4fc; color: #055160; }
+</style>
+""", unsafe_allow_html=True)
+
 
 # ==========================================================
 # CONSTANTS
@@ -323,6 +363,87 @@ master_df = build_master_dataframe(
     sparta_df,
     sparta2_df
 )
+
+# ==========================================================
+# TOP KPI SECTION
+# ==========================================================
+
+st.subheader("📌 Key Performance Indicators")
+
+# Calculate KPI Metrics cleanly from master_df
+total_applications = len(master_df)
+
+# Helper for case-insensitive exact matching
+def count_status(df, column, values):
+    if column not in df.columns:
+        return 0
+    return df[column].astype(str).str.strip().str.lower().isin([v.lower() for v in values]).sum()
+
+# Quality Metrics
+q_approved = count_status(master_df, "Quality Status", ["Approved", "Pass", "Passed"])
+q_rework = count_status(master_df, "Quality Status", ["Rework", "Pending Rework"])
+q_cancelled = count_status(master_df, "Quality Status", ["Cancelled", "Cancel", "Rejected"])
+
+# Welcome Call Metrics
+wc_done = count_status(master_df, "Welcome Status", ["Done", "Passed", "Completed", "WC Done"])
+wc_cancelled = count_status(master_df, "Welcome Status", ["Cancelled", "Cancel", "Rejected"])
+wc_pending = count_status(master_df, "Welcome Status", ["Pending", "In Progress", ""])
+
+# Committed / Portal Metrics
+portal_live = count_status(master_df, "Portal Status", ["Live", "Connected"])
+portal_cancelled = count_status(master_df, "Portal Status", ["Cancelled", "Cancel", "Rejected"])
+portal_committed = count_status(master_df, "Portal Status", ["Committed", "Order Placed"])
+portal_pending = count_status(master_df, "Portal Status", ["Pending", "In Progress", ""])
+
+# Render 4 Cards in Row
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+
+with kpi1:
+    st.markdown(f"""
+    <div class="kpi-card" style="border-left-color: #007bff;">
+        <div class="kpi-card-title">Total Applications</div>
+        <div class="kpi-card-value">{total_applications:,}</div>
+        <div class="kpi-subtext">Total submitted leads</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with kpi2:
+    st.markdown(f"""
+    <div class="kpi-card" style="border-left-color: #198754;">
+        <div class="kpi-card-title">Quality Breakdown</div>
+        <div class="kpi-card-value">{q_approved:,} <span style="font-size: 0.9rem; font-weight: normal;">Approved</span></div>
+        <div class="kpi-subtext">
+            <span class="stat-badge badge-warning">Rework: {q_rework:,}</span>
+            <span class="stat-badge badge-danger">Cancelled: {q_cancelled:,}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with kpi3:
+    st.markdown(f"""
+    <div class="kpi-card" style="border-left-color: #ffc107;">
+        <div class="kpi-card-title">Welcome Call</div>
+        <div class="kpi-card-value">{wc_done:,} <span style="font-size: 0.9rem; font-weight: normal;">Done</span></div>
+        <div class="kpi-subtext">
+            <span class="stat-badge badge-danger">Cancelled: {wc_cancelled:,}</span>
+            <span class="stat-badge badge-info">Pending: {wc_pending:,}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with kpi4:
+    st.markdown(f"""
+    <div class="kpi-card" style="border-left-color: #0dcaf0;">
+        <div class="kpi-card-title">Committed Lifecycle</div>
+        <div class="kpi-card-value">{portal_live:,} <span style="font-size: 0.9rem; font-weight: normal;">Live</span></div>
+        <div class="kpi-subtext">
+            <span class="stat-badge badge-success">Committed: {portal_committed:,}</span>
+            <span class="stat-badge badge-danger">Cancelled: {portal_cancelled:,}</span>
+            <span class="stat-badge badge-info">Pending: {portal_pending:,}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # ==========================================================
 # DATA PREVIEW
 # ==========================================================
@@ -379,5 +500,3 @@ st.caption(
     f"Dashboard refreshed at "
     f"{datetime.now().strftime('%d %b %Y %H:%M:%S')}"
 )
-
-
