@@ -244,16 +244,21 @@ def load_sheet(sheet_name):
 # ==========================================================
 
 def clean_phone(series):
+    """
+    Cleans phone numbers aggressively by stripping non-digits, leading zeros, 
+    and trailing spaces so '07123...' matches '7123...' across sheets.
+    """
     return (
         series.astype(str)
         .str.replace(r"\D", "", regex=True)
+        .str.lstrip("0")
         .str.strip()
     )
 
 def parse_mixed_dates(val):
     """
     Robust element-wise parser for mixed ISO (YYYY-MM-DD) and UK (DD/MM/YYYY) formats.
-    Ensures 2026-06-12 and 12/06/2026 both parse to 12th June 2026.
+    Ensures 2026-06-12 and 12/06/2026 both parse strictly to 12th June 2026.
     """
     if pd.isna(val) or str(val).strip() in ["", "(blank)", "nan", "none"]:
         return pd.NaT
@@ -337,20 +342,29 @@ def categorize_welcome_status(val):
     return "Pending"
 
 def categorize_portal_status(val):
+    """
+    Refined status classification to catch status variations accurately.
+    """
     if pd.isna(val):
         return "Committed"
     
     val_str = str(val).strip().lower()
     
-    # Cancelled: Cancelled, Rejected, To be cancelled
-    if any(k in val_str for k in ["cancel", "reject"]):
+    if val_str in ["", "(blank)", "nan", "none"]:
+        return "Committed"
+    
+    # 1. Cancelled
+    if any(k in val_str for k in ["cancel", "reject", "to be cancelled"]):
         return "Cancelled"
     
-    # Live: Live, Pending, pending
-    if any(k in val_str for k in ["live", "pending"]):
+    # 2. Live
+    if any(k in val_str for k in ["live", "active", "completed"]):
         return "Live"
     
-    # Committed: Everything else
+    # 3. Committed / Pipeline
+    if any(k in val_str for k in ["commit", "pending", "in progress", "processing"]):
+        return "Committed"
+    
     return "Committed"
 
 # ==========================================================
@@ -506,9 +520,13 @@ def build_master_dataframe(app_df, portal_df):
     apps = app_df.copy()
     portal = portal_df.copy()
 
+    # Exclude empty telephone numbers
+    portal = portal[portal["Telephone No."] != ""].copy()
+
+    # Keep the LAST updated record for each telephone number to get the latest status
     portal = portal.drop_duplicates(
         subset="Telephone No.",
-        keep="first"
+        keep="last"
     )
 
     master = apps.merge(
