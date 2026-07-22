@@ -24,55 +24,54 @@ st.set_page_config(
 st.markdown("""
 <style>
     .kpi-row-container {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 6px !important;
-        width: 100% !important;
-        overflow-x: auto !important;
-        padding: 4px 0px 10px 0px !important;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        gap: 8px;
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 6px;
     }
     .kpi-tile-single {
-        flex: 1 1 0 !important;
-        min-width: 90px !important;
-        background-color: #ffffff !important;
-        border-radius: 6px !important;
-        padding: 6px 2px !important;
-        border: 1px solid #e2e8f0 !important;
-        border-top: 3px solid #2563eb !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
-        text-align: center !important;
-        height: 74px !important;
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: center !important;
-        align-items: center !important;
-        box-sizing: border-box !important;
+        flex: 1 1 0;
+        min-width: 95px;
+        background-color: #ffffff;
+        border-radius: 6px;
+        padding: 6px 4px;
+        border: 1px solid #e2e8f0;
+        border-top: 3px solid #2563eb;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        text-align: center;
+        height: 76px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
     }
     .kpi-tile-title {
-        font-size: 0.55rem !important;
-        font-weight: 700 !important;
-        text-transform: uppercase !important;
-        color: #64748b !important;
-        letter-spacing: 0.2px !important;
-        margin-bottom: 2px !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        width: 100% !important;
+        font-size: 0.55rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #64748b;
+        letter-spacing: 0.2px;
+        margin-bottom: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 100%;
     }
     .kpi-tile-value {
-        font-size: 1.1rem !important;
-        font-weight: 800 !important;
-        color: #0f172a !important;
-        line-height: 1.1 !important;
-        margin-bottom: 2px !important;
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.1;
+        margin-bottom: 2px;
     }
     .kpi-tile-subtext {
-        font-size: 0.6rem !important;
-        font-weight: 600 !important;
-        line-height: 1 !important;
-        white-space: nowrap !important;
+        font-size: 0.62rem;
+        font-weight: 600;
+        line-height: 1;
+        white-space: nowrap;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -139,6 +138,7 @@ def load_sheet(sheet_name):
 
     rows = values[1:]
 
+    # Ensure every row has the same number of columns
     max_cols = len(headers)
 
     cleaned_rows = []
@@ -180,12 +180,15 @@ def parse_date(series):
         dayfirst=True
     )
 
+# Individual HTML Card Builder
 def make_kpi_card_html(title, value, subtext, color="#2563eb"):
-    return f"""<div class="kpi-tile-single" style="border-top-color: {color};">
+    return f"""
+    <div class="kpi-tile-single" style="border-top-color: {color};">
         <div class="kpi-tile-title" title="{title}">{title}</div>
         <div class="kpi-tile-value">{value:,}</div>
         <div class="kpi-tile-subtext" style="color: {color};">{subtext}</div>
-    </div>"""
+    </div>
+    """
 
 # ==========================================================
 # APP HEADER
@@ -256,7 +259,11 @@ def load_sparta():
 
     df = df[keep_columns].copy()
 
+    # Clean phone numbers
+
     df["Telephone No."] = clean_phone(df["Telephone No."])
+
+    # Parse dates
 
     date_columns = [
 
@@ -377,11 +384,12 @@ master_df = build_master_dataframe(
 )
 
 # ==========================================================
-# TOP KPI SECTION (SINGLE LINE HTML FIX)
+# TOP KPI SECTION (ALL 11 KPIS IN A SINGLE ROW)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
 
+# Helper for case-insensitive exact matching
 def count_status(df, column, values):
     if column not in df.columns:
         return 0
@@ -417,8 +425,8 @@ COLOR_QUALITY = "#059669"    # Green
 COLOR_WELCOME = "#d97706"    # Amber
 COLOR_COMMITTED = "#0d9488"  # Teal
 
-# Generate all tile strings
-cards_list = [
+# Construct all 11 cards inside one single flexbox row
+cards_html = [
     make_kpi_card_html("Applications", total_applications, "100% Base", COLOR_OVERVIEW),
     make_kpi_card_html("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified", COLOR_QUALITY),
     make_kpi_card_html("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", COLOR_QUALITY),
@@ -432,11 +440,12 @@ cards_list = [
     make_kpi_card_html("Committed Pending", portal_pending, f"{get_pct(portal_pending, total_applications)} Pending Action", COLOR_COMMITTED)
 ]
 
-# Joined inside a single HTML wrapper block
-kpis_html_wrapper = f'<div class="kpi-row-container">{"".join(cards_list)}</div>'
-
-# Render directly
-st.markdown(kpis_html_wrapper, unsafe_allow_html=True)
+# Render the single-line container
+st.markdown(f"""
+<div class="kpi-row-container">
+    {''.join(cards_html)}
+</div>
+""", unsafe_allow_html=True)
 
 
 # ==========================================================
