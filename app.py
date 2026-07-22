@@ -20,67 +20,34 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Native CSS-Styled Cards
+# Custom CSS to keep st.metric cards ultra-compact and aligned
 st.markdown("""
 <style>
-    .kpi-card {
-        border-radius: 8px;
-        padding: 8px 4px;
-        border: 1px solid #cbd5e1;
-        text-align: center;
-        margin-bottom: 8px;
-        height: 84px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-        box-sizing: border-box;
+    /* Reduce vertical padding in metric cards to keep them tight */
+    [data-testid="stMetric"] {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 6px 8px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }
-    
-    /* Top Category Color Strips */
-    .strip-overview { border-top: 4px solid #2563eb !important; }
-    .strip-quality  { border-top: 4px solid #059669 !important; }
-    .strip-welcome  { border-top: 4px solid #d97706 !important; }
-    .strip-portal   { border-top: 4px solid #0d9488 !important; }
-
-    /* Specific Status Background Colors */
-    .bg-blue   { background-color: #eff6ff !important; } /* Applications */
-    .bg-green  { background-color: #f0fdf4 !important; } /* Approved / Live / Done */
-    .bg-yellow { background-color: #fefce8 !important; } /* Rework / Pending */
-    .bg-red    { background-color: #fef2f2 !important; } /* Cancelled / Rejected */
-
-    .kpi-title {
-        font-size: 0.60rem;
-        font-weight: 700;
+    [data-testid="stMetricLabel"] {
+        font-size: 0.65rem !important;
+        font-weight: 700 !important;
         text-transform: uppercase;
-        color: #475569;
-        letter-spacing: 0.2px;
-        margin-bottom: 2px;
+        color: #64748b;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        width: 100%;
     }
-    .kpi-value {
-        font-size: 1.25rem;
-        font-weight: 800;
+    [data-testid="stMetricValue"] {
+        font-size: 1.15rem !important;
+        font-weight: 800 !important;
         color: #0f172a;
-        line-height: 1.1;
-        margin-bottom: 2px;
     }
-    .kpi-subtext {
-        font-size: 0.65rem;
-        font-weight: 700;
-        line-height: 1;
-        white-space: nowrap;
+    [data-testid="stMetricDelta"] {
+        font-size: 0.65rem !important;
     }
-    
-    /* Text Color accents for subtext */
-    .text-blue   { color: #1d4ed8; }
-    .text-green  { color: #15803d; }
-    .text-yellow { color: #b45309; }
-    .text-red    { color: #b91c1c; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -179,15 +146,6 @@ def parse_date(series):
         errors="coerce",
         dayfirst=True
     )
-
-def render_kpi_card(title, value, subtext, category_strip_class, bg_class, text_class):
-    return f"""
-    <div class="kpi-card {category_strip_class} {bg_class}">
-        <div class="kpi-title" title="{title}">{title}</div>
-        <div class="kpi-value">{value:,}</div>
-        <div class="kpi-subtext {text_class}">{subtext}</div>
-    </div>
-    """
 
 # ==========================================================
 # APP HEADER
@@ -356,7 +314,7 @@ master_df = build_master_dataframe(
 )
 
 # ==========================================================
-# TOP KPI SECTION (COLOR-CODED STATUS CARDS - 11 COLUMNS)
+# TOP KPI SECTION (NATIVE STREAMLIT METRICS - 11 COLUMNS)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
@@ -371,7 +329,7 @@ def get_pct(part, total):
         return "0.0%"
     return f"{(part / total * 100):.1f}%"
 
-# Calculations
+# Metrics Calculations
 total_applications = len(master_df)
 
 q_approved = count_status(master_df, "Quality Status", ["Approved", "Pass", "Passed"])
@@ -387,30 +345,41 @@ portal_committed = count_status(master_df, "Portal Status", ["Committed", "Order
 portal_cancelled = count_status(master_df, "Portal Status", ["Cancelled", "Cancel", "Rejected"])
 portal_pending = count_status(master_df, "Portal Status", ["Pending", "In Progress", ""])
 
-# Define 11 Equal Columns
+# Define 11 equal-width columns
 cols = st.columns(11)
 
-# Card Definitions
-# Structure: (Title, Count, Subtext, Top Strip Class, Background Color Class, Text Color Class)
-card_configs = [
-    ("Applications", total_applications, "100% Base", "strip-overview", "bg-blue", "text-blue"),
-    ("QA Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified", "strip-quality", "bg-green", "text-green"),
-    ("QA Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", "strip-quality", "bg-yellow", "text-yellow"),
-    ("QA Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected", "strip-quality", "bg-red", "text-red"),
-    ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed", "strip-welcome", "bg-green", "text-green"),
-    ("Welcome Cancel", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled", "strip-welcome", "bg-red", "text-red"),
-    ("Welcome Pend.", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending", "strip-welcome", "bg-yellow", "text-yellow"),
-    ("Live Deals", portal_live, f"{get_pct(portal_live, total_applications)} Converted", "strip-portal", "bg-green", "text-green"),
-    ("Committed Rem.", portal_committed, f"{get_pct(portal_committed, total_applications)} Pipeline", "strip-portal", "bg-yellow", "text-yellow"),
-    ("Comm. Cancel", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned", "strip-portal", "bg-red", "text-red"),
-    ("Comm. Pend.", portal_pending, f"{get_pct(portal_pending, total_applications)} Pending", "strip-portal", "bg-yellow", "text-yellow")
-]
+with cols[0]:
+    st.metric(label="Applications", value=f"{total_applications:,}", delta="100% Base")
 
-# Render each card across the 11 columns
-for col, config in zip(cols, card_configs):
-    with col:
-        html = render_kpi_card(*config)
-        st.markdown(html, unsafe_allow_html=True)
+with cols[1]:
+    st.metric(label="QA Approved", value=f"{q_approved:,}", delta=get_pct(q_approved, total_applications))
+
+with cols[2]:
+    st.metric(label="QA Rework", value=f"{q_rework:,}", delta=get_pct(q_rework, total_applications))
+
+with cols[3]:
+    st.metric(label="QA Cancelled", value=f"{q_cancelled:,}", delta=get_pct(q_cancelled, total_applications), delta_color="inverse")
+
+with cols[4]:
+    st.metric(label="Welcome Done", value=f"{wc_done:,}", delta=get_pct(wc_done, total_applications))
+
+with cols[5]:
+    st.metric(label="Welcome Cancel", value=f"{wc_cancelled:,}", delta=get_pct(wc_cancelled, total_applications), delta_color="inverse")
+
+with cols[6]:
+    st.metric(label="Welcome Pend.", value=f"{wc_pending:,}", delta=get_pct(wc_pending, total_applications))
+
+with cols[7]:
+    st.metric(label="Live Deals", value=f"{portal_live:,}", delta=get_pct(portal_live, total_applications))
+
+with cols[8]:
+    st.metric(label="Committed Rem.", value=f"{portal_committed:,}", delta=get_pct(portal_committed, total_applications))
+
+with cols[9]:
+    st.metric(label="Comm. Cancel", value=f"{portal_cancelled:,}", delta=get_pct(portal_cancelled, total_applications), delta_color="inverse")
+
+with cols[10]:
+    st.metric(label="Comm. Pend.", value=f"{portal_pending:,}", delta=get_pct(portal_pending, total_applications))
 
 
 # ==========================================================
