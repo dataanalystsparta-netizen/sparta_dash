@@ -25,7 +25,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-
 # ==========================================================
 # CONSTANTS
 # ==========================================================
@@ -38,7 +37,6 @@ LIVE_SHEET = "Sparta2"
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly"
 ]
-
 
 # ==========================================================
 # GOOGLE SHEETS CONNECTION
@@ -59,7 +57,6 @@ def get_google_service():
     )
 
     return service
-
 
 # ==========================================================
 # GENERIC SHEET LOADER
@@ -111,7 +108,6 @@ def load_sheet(sheet_name):
 
     return df
 
-
 # ==========================================================
 # HELPER FUNCTIONS
 # ==========================================================
@@ -124,7 +120,6 @@ def clean_phone(series):
         .str.strip()
     )
 
-
 def parse_date(series):
 
     return pd.to_datetime(
@@ -132,7 +127,6 @@ def parse_date(series):
         errors="coerce",
         dayfirst=True
     )
-
 
 # ==========================================================
 # APP HEADER
@@ -225,7 +219,6 @@ def load_sparta():
 
     return df
 
-
 # ==========================================================
 # LOAD PORTAL SHEET
 # ==========================================================
@@ -247,7 +240,6 @@ def load_sparta2():
         "Cancellation Reason": "Portal Cancellation",
         "Dashboard_Month": "Dashboard Month",
         "Standardized_Date": "Standardized Date"
-
     }
 
     df = df.rename(columns=rename_map)
@@ -276,7 +268,6 @@ def load_sparta2():
 
     return df
 
-
 # ==========================================================
 # LOAD BOTH DATASETS
 # ==========================================================
@@ -286,9 +277,6 @@ with st.spinner("Loading Google Sheets..."):
     sparta_df = load_sparta()
 
     sparta2_df = load_sparta2()
-
-
-
 
 # ==========================================================
 # BUILD MASTER DATASET
@@ -335,14 +323,11 @@ master_df = build_master_dataframe(
     sparta_df,
     sparta2_df
 )
-
-
 # ==========================================================
 # DATA PREVIEW
 # ==========================================================
 
 st.divider()
-
 st.header("📂 Data Preview")
 
 tab1, tab2, tab3 = st.tabs([
@@ -361,7 +346,6 @@ with tab1:
         height=500,
         hide_index=True
     )
-
 with tab2:
 
     st.caption(f"{len(sparta2_df):,} records")
@@ -372,7 +356,6 @@ with tab2:
         height=500,
         hide_index=True
     )
-
 with tab3:
 
     st.caption(f"{len(master_df):,} merged records")
@@ -383,7 +366,6 @@ with tab3:
         height=600,
         hide_index=True
     )
-
 
 # ==========================================================
 # FOOTER
