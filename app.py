@@ -20,36 +20,37 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Individual KPI Cards
+# Custom CSS for Modern Top-Bar Cards (Matching Image Design)
 st.markdown("""
 <style>
-    .single-kpi-card {
+    .kpi-card-top {
         background-color: #ffffff;
         border-radius: 8px;
-        padding: 14px 18px;
-        border: 1px solid #e9ecef;
-        border-left: 5px solid #007bff;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.04);
+        padding: 16px 10px;
+        border: 1px solid #e5e7eb;
+        border-top: 4px solid #2563eb;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        text-align: center;
         margin-bottom: 12px;
     }
     .kpi-title {
-        font-size: 0.78rem;
-        font-weight: 600;
+        font-size: 0.72rem;
+        font-weight: 700;
         text-transform: uppercase;
-        color: #6c757d;
-        letter-spacing: 0.5px;
+        color: #6b7280;
+        letter-spacing: 0.6px;
+        margin-bottom: 4px;
     }
     .kpi-value {
-        font-size: 1.6rem;
-        font-weight: 700;
-        color: #1e293b;
-        margin-top: 4px;
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.2;
+        margin-bottom: 4px;
     }
-    .kpi-category {
-        font-size: 0.72rem;
-        font-weight: 500;
-        color: #a0aec0;
-        margin-bottom: 2px;
+    .kpi-subtext {
+        font-size: 0.78rem;
+        font-weight: 600;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -158,13 +159,13 @@ def parse_date(series):
         dayfirst=True
     )
 
-# Helper for card HTML rendering
-def render_kpi(category, title, value, border_color="#007bff"):
+# Helper for card HTML rendering matching exact design
+def render_kpi_card(title, value, subtext, color="#2563eb"):
     return f"""
-    <div class="single-kpi-card" style="border-left-color: {border_color};">
-        <div class="kpi-category">{category}</div>
+    <div class="kpi-card-top" style="border-top-color: {color};">
         <div class="kpi-title">{title}</div>
         <div class="kpi-value">{value:,}</div>
+        <div class="kpi-subtext" style="color: {color};">{subtext}</div>
     </div>
     """
 
@@ -365,7 +366,7 @@ master_df = build_master_dataframe(
 )
 
 # ==========================================================
-# SEPARATE KPI CARDS SECTION
+# TOP KPI SECTION (CLEAN MODERN CARDS)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
@@ -376,66 +377,80 @@ def count_status(df, column, values):
         return 0
     return df[column].astype(str).str.strip().str.lower().isin([v.lower() for v in values]).sum()
 
+def get_pct(part, total):
+    if total == 0:
+        return "0.0%"
+    return f"{(part / total * 100):.1f}%"
+
 # Calculations
 total_applications = len(master_df)
 
+# Quality Counts
 q_approved = count_status(master_df, "Quality Status", ["Approved", "Pass", "Passed"])
 q_rework = count_status(master_df, "Quality Status", ["Rework", "Pending Rework"])
 q_cancelled = count_status(master_df, "Quality Status", ["Cancelled", "Cancel", "Rejected"])
 
+# Welcome Call Counts
 wc_done = count_status(master_df, "Welcome Status", ["Done", "Passed", "Completed", "WC Done"])
 wc_cancelled = count_status(master_df, "Welcome Status", ["Cancelled", "Cancel", "Rejected"])
 wc_pending = count_status(master_df, "Welcome Status", ["Pending", "In Progress", ""])
 
+# Committed / Portal Counts
 portal_live = count_status(master_df, "Portal Status", ["Live", "Connected"])
 portal_committed = count_status(master_df, "Portal Status", ["Committed", "Order Placed"])
 portal_cancelled = count_status(master_df, "Portal Status", ["Cancelled", "Cancel", "Rejected"])
 portal_pending = count_status(master_df, "Portal Status", ["Pending", "In Progress", ""])
 
+# Category Color Themes
+COLOR_OVERVIEW = "#2563eb"   # Blue
+COLOR_QUALITY = "#059669"    # Green
+COLOR_WELCOME = "#d97706"    # Amber / Yellow
+COLOR_COMMITTED = "#0d9488"  # Teal
+
 # --- ROW 1: Applications & Quality ---
-r1_col1, r1_col2, r1_col3, r1_col4 = st.columns(4)
+r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
 
-with r1_col1:
-    st.markdown(render_kpi("Overview", "Total Applications", total_applications, "#0d6efd"), unsafe_allow_html=True)
+with r1_c1:
+    st.markdown(render_kpi_card("Applications", total_applications, "100% Pipeline Base", COLOR_OVERVIEW), unsafe_allow_html=True)
 
-with r1_col2:
-    st.markdown(render_kpi("Quality", "Approved", q_approved, "#198754"), unsafe_allow_html=True)
+with r1_c2:
+    st.markdown(render_kpi_card("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualification Rate", COLOR_QUALITY), unsafe_allow_html=True)
 
-with r1_col3:
-    st.markdown(render_kpi("Quality", "Rework", q_rework, "#ffc107"), unsafe_allow_html=True)
+with r1_c3:
+    st.markdown(render_kpi_card("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", COLOR_QUALITY), unsafe_allow_html=True)
 
-with r1_col4:
-    st.markdown(render_kpi("Quality", "Cancelled", q_cancelled, "#dc3545"), unsafe_allow_html=True)
+with r1_c4:
+    st.markdown(render_kpi_card("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejection Rate", COLOR_QUALITY), unsafe_allow_html=True)
 
 # --- ROW 2: Welcome Call ---
-r2_col1, r2_col2, r2_col3, r2_col4 = st.columns(4)
+r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
 
-with r2_col1:
-    st.markdown(render_kpi("Welcome Call", "Done", wc_done, "#198754"), unsafe_allow_html=True)
+with r2_c1:
+    st.markdown(render_kpi_card("Welcome Call Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed", COLOR_WELCOME), unsafe_allow_html=True)
 
-with r2_col2:
-    st.markdown(render_kpi("Welcome Call", "Cancelled", wc_cancelled, "#dc3545"), unsafe_allow_html=True)
+with r2_c2:
+    st.markdown(render_kpi_card("Welcome Call Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled", COLOR_WELCOME), unsafe_allow_html=True)
 
-with r2_col3:
-    st.markdown(render_kpi("Welcome Call", "Pending", wc_pending, "#0dcaf0"), unsafe_allow_html=True)
+with r2_c3:
+    st.markdown(render_kpi_card("Welcome Call Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending", COLOR_WELCOME), unsafe_allow_html=True)
 
-with r2_col4:
-    st.empty()  # Blank space for layout alignment
+with r2_c4:
+    st.empty()
 
-# --- ROW 3: Committed / Portal Lifecycle ---
-r3_col1, r3_col2, r3_col3, r3_col4 = st.columns(4)
+# --- ROW 3: Committed / Portal ---
+r3_c1, r3_c2, r3_c3, r3_c4 = st.columns(4)
 
-with r3_col1:
-    st.markdown(render_kpi("Committed", "Live", portal_live, "#198754"), unsafe_allow_html=True)
+with r3_c1:
+    st.markdown(render_kpi_card("Live Deals", portal_live, f"{get_pct(portal_live, total_applications)} Final Conversion", COLOR_COMMITTED), unsafe_allow_html=True)
 
-with r3_col2:
-    st.markdown(render_kpi("Committed", "Committed", portal_committed, "#0d6efd"), unsafe_allow_html=True)
+with r3_c2:
+    st.markdown(render_kpi_card("Committed Remaining", portal_committed, f"{get_pct(portal_committed, total_applications)} In-Pipeline", COLOR_COMMITTED), unsafe_allow_html=True)
 
-with r3_col3:
-    st.markdown(render_kpi("Committed", "Cancelled", portal_cancelled, "#dc3545"), unsafe_allow_html=True)
+with r3_c3:
+    st.markdown(render_kpi_card("Committed Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned", COLOR_COMMITTED), unsafe_allow_html=True)
 
-with r3_col4:
-    st.markdown(render_kpi("Committed", "Pending", portal_pending, "#0dcaf0"), unsafe_allow_html=True)
+with r3_c4:
+    st.markdown(render_kpi_card("Committed Pending", portal_pending, f"{get_pct(portal_pending, total_applications)} Pending Action", COLOR_COMMITTED), unsafe_allow_html=True)
 
 
 # ==========================================================
