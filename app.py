@@ -1,20 +1,20 @@
+SPREADSHEET_ID = "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ"
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 
+SPREADSHEET_ID = "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ"
 
-# ----------------------------------------------------------
-# DATA INGESTION
-# ----------------------------------------------------------
 
 @st.cache_data(ttl=300)
-def fetch_data():
+def load_data():
 
-    info = st.secrets["gcp_service_account"]
-
+    # -------------------------
+    # Authenticate
+    # -------------------------
     creds = Credentials.from_service_account_info(
-        info,
+        st.secrets["gcp_service_account"],
         scopes=[
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
@@ -23,21 +23,33 @@ def fetch_data():
 
     client = gspread.authorize(creds)
 
-    spreadsheet = client.open_by_key(
-        "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ"
+    ss = client.open_by_key(SPREADSHEET_ID)
+
+    # -------------------------
+    # Load Sheets
+    # -------------------------
+    app_sheet = pd.DataFrame(
+        ss.worksheet("Sparta").get_all_records()
     )
 
-    # --------------------------------------------------
-    # SHEET 1
-    # --------------------------------------------------
-
-    sheet1 = pd.DataFrame(
-        spreadsheet.worksheet("Sparta").get_all_records()
+    live_sheet = pd.DataFrame(
+        ss.worksheet("Sparta2").get_all_records()
     )
 
-    # Keep only required columns
+    # -------------------------
+    # Last Sync
+    # -------------------------
+    try:
+        meta = ss.worksheet("Meta").get_all_values()
+        last_sync = meta[0][1]
+    except:
+        last_sync = "Unknown"
 
-    sheet1 = sheet1[
+    # =====================================================
+    # APPLICATION SHEET
+    # =====================================================
+
+    app_df = app_sheet[
         [
             "Advisor",
             "Sale Date",
@@ -59,28 +71,24 @@ def fetch_data():
         ]
     ].copy()
 
-    sheet1.rename(
+    app_df.rename(
         columns={
             "CLI": "Telephone No.",
-            "Status": "Welcome Status",
+            "Status": "Welcome Call Status",
             "Cancellation Sub-text": "Welcome Cancellation Reason",
-            "WCD date": "Welcome Date",
+            "WCD date": "Welcome Call Date",
             "Provisioning": "Provisioning Status",
             "Prov Date": "Provisioning Date",
-            "Packageoffered": "Package Offered",
+            "Packageoffered": "Package",
         },
         inplace=True,
     )
 
-    # --------------------------------------------------
-    # SHEET 2
-    # --------------------------------------------------
+    # =====================================================
+    # LIVE SHEET
+    # =====================================================
 
-    sheet2 = pd.DataFrame(
-        spreadsheet.worksheet("Sparta2").get_all_records()
-    )
-
-    sheet2 = sheet2[
+    live_df = live_sheet[
         [
             "Telephone No.",
             "Committed Date",
@@ -93,84 +101,80 @@ def fetch_data():
         ]
     ].copy()
 
-    sheet2.rename(
+    live_df.rename(
         columns={
             "Committed Date": "Live Date",
             "Status": "Portal Status",
-            "Comments": "Portal Comments",
         },
         inplace=True,
     )
 
-    # --------------------------------------------------
-    # DATE CONVERSIONS
-    # --------------------------------------------------
+    # =====================================================
+    # DATE PARSING
+    # =====================================================
 
     date_columns = [
         "Sale Date",
         "Quality Date",
-        "Welcome Date",
+        "Welcome Call Date",
         "Provisioning Date",
+        "Live Date",
         "Standardized_Date",
     ]
 
     for col in date_columns:
-        if col in sheet1.columns:
-            sheet1[col] = pd.to_datetime(
-                sheet1[col],
+
+        if col in app_df.columns:
+            app_df[col] = pd.to_datetime(
+                app_df[col],
                 errors="coerce",
                 dayfirst=True,
             )
 
-    sheet2["Live Date"] = pd.to_datetime(
-        sheet2["Live Date"],
-        errors="coerce",
-        dayfirst=True,
+        if col in live_df.columns:
+            live_df[col] = pd.to_datetime(
+                live_df[col],
+                errors="coerce",
+                dayfirst=True,
+            )
+
+    # =====================================================
+    # CLEAN TELEPHONE
+    # =====================================================
+
+    app_df["Telephone No."] = (
+        app_df["Telephone No."]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
     )
 
-    # --------------------------------------------------
-    # CLEAN STRINGS
-    # --------------------------------------------------
+    live_df["Telephone No."] = (
+        live_df["Telephone No."]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
 
-    sheet1["Advisor"] = (
-        sheet1["Advisor"]
+    # =====================================================
+    # CLEAN ADVISOR
+    # =====================================================
+
+    app_df["Advisor"] = (
+        app_df["Advisor"]
         .astype(str)
         .str.strip()
         .str.title()
     )
 
-    sheet2["Telephone No."] = (
-        sheet2["Telephone No."]
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-        .str.strip()
-    )
+    # =====================================================
+    # BUILD MASTER DATASET
+    # =====================================================
 
-    sheet1["Telephone No."] = (
-        sheet1["Telephone No."]
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-        .str.strip()
-    )
-
-    # --------------------------------------------------
-    # MASTER DATASET
-    # --------------------------------------------------
-
-    master_df = sheet1.merge(
-        sheet2,
+    master_df = app_df.merge(
+        live_df,
         on="Telephone No.",
         how="left",
     )
-
-    # --------------------------------------------------
-    # LAST SYNC
-    # --------------------------------------------------
-
-    try:
-        meta = spreadsheet.worksheet("Meta").get_all_values()
-        last_sync = meta[0][1]
-    except Exception:
-        last_sync = "Unknown"
 
     return master_df, last_sync
