@@ -11,3 +11,11 @@ xlsxwriter
 fpdf
 folium
 streamlit_folium
+
+streamlit
+pandas
+numpy
+google-api-python-client
+google-auth
+openpyxl
+plotly
