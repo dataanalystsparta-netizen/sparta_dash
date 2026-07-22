@@ -1,180 +1,360 @@
-SPREADSHEET_ID = "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ"
 import streamlit as st
 import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
+import numpy as np
+from datetime import datetime
 
-SPREADSHEET_ID = "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ"
+# ----------------------------------------------------------
+# PAGE CONFIG
+# ----------------------------------------------------------
 
+st.set_page_config(
+    page_title="Sparta Sales Operations",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# ----------------------------------------------------------
+# CONFIG
+# ----------------------------------------------------------
+
+SHEET1_URL = (
+    "https://docs.google.com/spreadsheets/d/"
+    "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ/"
+    "export?format=csv&gid=1598890500"
+)
+
+SHEET2_URL = (
+    "https://docs.google.com/spreadsheets/d/"
+    "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ/"
+    "export?format=csv&gid=1601740359"
+)
+
+# ----------------------------------------------------------
+# CSS
+# ----------------------------------------------------------
+
+st.markdown("""
+<style>
+
+.main{
+    background:#F5F7FA;
+}
+
+.block-container{
+    padding-top:2rem;
+    padding-bottom:2rem;
+    max-width:95%;
+}
+
+.metric-box{
+    background:white;
+    padding:18px;
+    border-radius:14px;
+    border:1px solid #E5E7EB;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# ----------------------------------------------------------
+# HELPERS
+# ----------------------------------------------------------
+
+def clean_phone(value):
+    """
+    Standardise phone numbers across both sheets.
+    """
+
+    if pd.isna(value):
+        return ""
+
+    value = str(value)
+
+    value = value.replace(".0","")
+
+    value = "".join(ch for ch in value if ch.isdigit())
+
+    return value.strip()
+
+
+# ----------------------------------------------------------
+# LOAD SHEET 1
+# ----------------------------------------------------------
 
 @st.cache_data(ttl=300)
-def load_data():
 
-    # -------------------------
-    # Authenticate
-    # -------------------------
-    creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ],
-    )
+def load_sheet1():
 
-    client = gspread.authorize(creds)
+    df = pd.read_csv(SHEET1_URL)
 
-    ss = client.open_by_key(SPREADSHEET_ID)
+    df = df.rename(columns={
 
-    # -------------------------
-    # Load Sheets
-    # -------------------------
-    app_sheet = pd.DataFrame(
-        ss.worksheet("Sparta").get_all_records()
-    )
+        "Advisor":"Advisor",
 
-    live_sheet = pd.DataFrame(
-        ss.worksheet("Sparta2").get_all_records()
-    )
+        "Sale Date":"Sale Date",
 
-    # -------------------------
-    # Last Sync
-    # -------------------------
-    try:
-        meta = ss.worksheet("Meta").get_all_values()
-        last_sync = meta[0][1]
-    except:
-        last_sync = "Unknown"
+        "Customer Name":"Customer Name",
 
-    # =====================================================
-    # APPLICATION SHEET
-    # =====================================================
+        "CLI":"Telephone No.",
 
-    app_df = app_sheet[
-        [
-            "Advisor",
-            "Sale Date",
-            "Customer Name",
-            "CLI",
-            "Quality Date",
-            "Quality Status",
-            "Quality Remarks",
-            "Welcome call Remarks",
-            "Status",
-            "Cancellation Sub-text",
-            "WCD date",
-            "Provisioning",
-            "Prov Date",
-            "Current Provider",
-            "Packageoffered",
-            "Standardized_Date",
-            "Dashboard_Month",
-        ]
-    ].copy()
+        "Quality Date":"Quality Date",
 
-    app_df.rename(
-        columns={
-            "CLI": "Telephone No.",
-            "Status": "Welcome Call Status",
-            "Cancellation Sub-text": "Welcome Cancellation Reason",
-            "WCD date": "Welcome Call Date",
-            "Provisioning": "Provisioning Status",
-            "Prov Date": "Provisioning Date",
-            "Packageoffered": "Package",
-        },
-        inplace=True,
-    )
+        "Quality Status":"Quality Status",
 
-    # =====================================================
-    # LIVE SHEET
-    # =====================================================
+        "Quality Remarks":"Quality Remarks",
 
-    live_df = live_sheet[
-        [
-            "Telephone No.",
-            "Committed Date",
-            "Status",
-            "LetterStatus",
-            "CallStatus",
-            "Comments",
-            "Voice of Customer",
-            "Cancellation Reason",
-        ]
-    ].copy()
+        "Welcome call Remarks":"Welcome Remarks",
 
-    live_df.rename(
-        columns={
-            "Committed Date": "Live Date",
-            "Status": "Portal Status",
-        },
-        inplace=True,
-    )
+        "Status":"Welcome Status",
 
-    # =====================================================
-    # DATE PARSING
-    # =====================================================
+        "Cancellation Sub-text":"Cancellation Reason",
 
-    date_columns = [
+        "WCD date":"Welcome Date",
+
+        "Provisioning":"Provisioning Status",
+
+        "Prov Date":"Provisioning Date",
+
+        "Current Provider":"Current Provider",
+
+        "Packageoffered":"Package"
+
+    })
+
+    keep = [
+
+        "Advisor",
+
         "Sale Date",
+
+        "Customer Name",
+
+        "Telephone No.",
+
         "Quality Date",
-        "Welcome Call Date",
+
+        "Quality Status",
+
+        "Quality Remarks",
+
+        "Welcome Remarks",
+
+        "Welcome Status",
+
+        "Cancellation Reason",
+
+        "Welcome Date",
+
+        "Provisioning Status",
+
         "Provisioning Date",
-        "Live Date",
-        "Standardized_Date",
+
+        "Current Provider",
+
+        "Package"
+
     ]
 
-    for col in date_columns:
+    df = df[keep].copy()
 
-        if col in app_df.columns:
-            app_df[col] = pd.to_datetime(
-                app_df[col],
-                errors="coerce",
-                dayfirst=True,
-            )
+    df["Telephone No."] = df["Telephone No."].apply(clean_phone)
 
-        if col in live_df.columns:
-            live_df[col] = pd.to_datetime(
-                live_df[col],
-                errors="coerce",
-                dayfirst=True,
-            )
+    return df
 
-    # =====================================================
-    # CLEAN TELEPHONE
-    # =====================================================
 
-    app_df["Telephone No."] = (
-        app_df["Telephone No."]
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-        .str.strip()
-    )
+# ----------------------------------------------------------
+# LOAD SHEET 2
+# ----------------------------------------------------------
 
-    live_df["Telephone No."] = (
-        live_df["Telephone No."]
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-        .str.strip()
-    )
+@st.cache_data(ttl=300)
 
-    # =====================================================
-    # CLEAN ADVISOR
-    # =====================================================
+def load_sheet2():
 
-    app_df["Advisor"] = (
-        app_df["Advisor"]
-        .astype(str)
-        .str.strip()
-        .str.title()
-    )
+    df = pd.read_csv(SHEET2_URL)
 
-    # =====================================================
-    # BUILD MASTER DATASET
-    # =====================================================
+    df = df.rename(columns={
 
-    master_df = app_df.merge(
-        live_df,
+        "Telephone No.":"Telephone No.",
+
+        "Committed Date":"Live Date",
+
+        "Status":"Portal Status",
+
+        "LetterStatus":"Letter Status",
+
+        "CallStatus":"Call Status",
+
+        "Comments":"Comments",
+
+        "Voice of Customer":"Voice of Customer",
+
+        "Cancellation Reason":"Portal Cancellation Reason"
+
+    })
+
+    keep = [
+
+        "Telephone No.",
+
+        "Live Date",
+
+        "Portal Status",
+
+        "Letter Status",
+
+        "Call Status",
+
+        "Comments",
+
+        "Voice of Customer",
+
+        "Portal Cancellation Reason"
+
+    ]
+
+    df = df[keep].copy()
+
+    df["Telephone No."] = df["Telephone No."].apply(clean_phone)
+
+    return df
+
+
+# ----------------------------------------------------------
+# MASTER DATA
+# ----------------------------------------------------------
+
+@st.cache_data(ttl=300)
+
+def load_master_data():
+
+    apps = load_sheet1()
+
+    live = load_sheet2()
+
+    master = apps.merge(
+
+        live,
+
         on="Telephone No.",
-        how="left",
+
+        how="left"
+
     )
 
-    return master_df, last_sync
+    # convert dates
+
+    date_cols = [
+
+        "Sale Date",
+
+        "Quality Date",
+
+        "Welcome Date",
+
+        "Provisioning Date",
+
+        "Live Date"
+
+    ]
+
+    for c in date_cols:
+
+        if c in master.columns:
+
+            master[c] = pd.to_datetime(
+
+                master[c],
+
+                errors="coerce"
+
+            )
+
+    return master
+
+
+# ----------------------------------------------------------
+# LOAD DATA
+# ----------------------------------------------------------
+
+master_df = load_master_data()
+
+# ----------------------------------------------------------
+# HEADER
+# ----------------------------------------------------------
+
+left,right = st.columns([5,1])
+
+with left:
+
+    st.title("📊 Sparta Sales Operations Command Center")
+
+    st.caption("Version 2.0")
+
+with right:
+
+    st.metric(
+
+        "Last Refresh",
+
+        datetime.now().strftime("%H:%M:%S")
+
+    )
+
+st.divider()
+
+# ----------------------------------------------------------
+# BASIC METRICS
+# ----------------------------------------------------------
+
+c1,c2,c3 = st.columns(3)
+
+with c1:
+
+    st.metric(
+
+        "Applications",
+
+        len(master_df)
+
+    )
+
+with c2:
+
+    st.metric(
+
+        "Unique Customers",
+
+        master_df["Telephone No."].nunique()
+
+    )
+
+with c3:
+
+    st.metric(
+
+        "Live Records",
+
+        master_df["Portal Status"].notna().sum()
+
+    )
+
+st.divider()
+
+# ----------------------------------------------------------
+# PREVIEW
+# ----------------------------------------------------------
+
+st.subheader("Master Dataset Preview")
+
+st.dataframe(
+
+    master_df.head(20),
+
+    use_container_width=True
+
+)
+
+st.success(
+    f"Loaded {len(master_df):,} records successfully."
+)
