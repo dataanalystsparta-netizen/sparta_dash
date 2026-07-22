@@ -317,7 +317,7 @@ def categorize_portal_status(val):
     if any(k in val_str for k in ["live", "pending"]):
         return "Live"
     
-    # Committed: Everything else (Committed, Delayed, Given to aman, Missed, Order Delayed, Re processed, to be extended, (blank), etc.)
+    # Committed: Everything else
     return "Committed"
 
 # ==========================================================
@@ -488,10 +488,52 @@ def build_master_dataframe(app_df, portal_df):
 
     return master
 
-master_df = build_master_dataframe(
+master_raw_df = build_master_dataframe(
     sparta_df,
     sparta2_df
 )
+
+# ==========================================================
+# TOP DATE FILTER SECTION
+# ==========================================================
+
+st.subheader("📅 Filter by Sale Date")
+
+# Fallback dates if dataset is completely empty or null
+valid_dates = master_raw_df["Sale Date"].dropna()
+min_date = valid_dates.min().date() if not valid_dates.empty else datetime.today().date()
+max_date = valid_dates.max().date() if not valid_dates.empty else datetime.today().date()
+
+filter_col1, filter_col2 = st.columns([1, 1])
+
+with filter_col1:
+    start_date = st.date_input(
+        "Start Date",
+        value=min_date,
+        min_value=min_date,
+        max_value=max_date
+    )
+
+with filter_col2:
+    end_date = st.date_input(
+        "End Date",
+        value=max_date,
+        min_value=min_date,
+        max_value=max_date
+    )
+
+# Apply Date Filter across Master Dataframe
+if start_date <= end_date:
+    date_mask = (
+        (master_raw_df["Sale Date"].dt.date >= start_date) & 
+        (master_raw_df["Sale Date"].dt.date <= end_date)
+    )
+    master_df = master_raw_df[date_mask].copy()
+else:
+    st.error("Error: Start Date must be earlier than or equal to End Date.")
+    master_df = master_raw_df.copy()
+
+st.divider()
 
 # ==========================================================
 # TOP KPI SECTION (ST.METRIC 11 COLUMNS)
@@ -509,7 +551,7 @@ def get_pct(part, total):
         return "0.0%"
     return f"{(part / total * 100):.1f}%"
 
-# Calculations
+# Calculations based on FILTERED master_df
 total_applications = len(master_df)
 
 q_approved = count_status(master_df, "Quality Status Clean", "Approved")
@@ -565,10 +607,16 @@ tab1, tab2, tab3 = st.tabs([
     "Master Dataset"
 ])
 
+# Filter individual dataframes for Preview tabs
+filtered_sparta = sparta_df[
+    (sparta_df["Sale Date"].dt.date >= start_date) & 
+    (sparta_df["Sale Date"].dt.date <= end_date)
+] if start_date <= end_date else sparta_df
+
 with tab1:
-    st.caption(f"{len(sparta_df):,} records")
+    st.caption(f"{len(filtered_sparta):,} records (Filtered)")
     st.dataframe(
-        sparta_df,
+        filtered_sparta,
         use_container_width=True,
         height=500,
         hide_index=True
@@ -584,7 +632,7 @@ with tab2:
     )
 
 with tab3:
-    st.caption(f"{len(master_df):,} merged records")
+    st.caption(f"{len(master_df):,} merged records (Filtered)")
     st.dataframe(
         master_df,
         use_container_width=True,
