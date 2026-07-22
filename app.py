@@ -80,7 +80,7 @@ st.markdown("""
         display: none !important; /* Hide native arrow icons */
     }
 
-    /* TOP ACCENT STRIPS + SOFT LIGHT BACKGROUNDS BY COLUMN (1 to 11) */
+    /* TOP ACCENT STRIPS + SOFT LIGHT BACKGROUNDS BY COLUMN (1 to 12) */
     
     /* Col 1: Applications (Soft Blue) */
     [data-testid="stColumn"]:nth-child(1) [data-testid="stMetric"] { 
@@ -110,54 +110,61 @@ st.markdown("""
     }
     [data-testid="stColumn"]:nth-child(4) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
 
-    /* Col 5: Welcome Done (Soft Green) */
+    /* Col 5: QA Pending (Soft Orange/Yellow) */
     [data-testid="stColumn"]:nth-child(5) [data-testid="stMetric"] { 
+        border-top: 4px solid #f97316 !important; 
+        background-color: #fff7ed !important; 
+    }
+    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetricDelta"] { color: #c2410c !important; }
+
+    /* Col 6: Welcome Done (Soft Green) */
+    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetric"] { 
         border-top: 4px solid #10b981 !important; 
         background-color: #f0fdf4 !important; 
     }
-    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetricDelta"] { color: #15803d !important; }
+    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetricDelta"] { color: #15803d !important; }
 
-    /* Col 6: Welcome Cancel (Soft Red) */
-    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetric"] { 
+    /* Col 7: Welcome Cancel (Soft Red) */
+    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetric"] { 
         border-top: 4px solid #ef4444 !important; 
         background-color: #fef2f2 !important; 
     }
-    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
+    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
 
-    /* Col 7: Welcome Pend. (Soft Yellow) */
-    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetric"] { 
+    /* Col 8: Welcome Pend. (Soft Yellow) */
+    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetric"] { 
         border-top: 4px solid #f59e0b !important; 
         background-color: #fefce8 !important; 
     }
-    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetricDelta"] { color: #b45309 !important; }
+    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetricDelta"] { color: #b45309 !important; }
 
-    /* Col 8: Live Deals (Soft Teal) */
-    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetric"] { 
+    /* Col 9: Live Deals (Soft Teal) */
+    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetric"] { 
         border-top: 4px solid #14b8a6 !important; 
         background-color: #f0fdfa !important; 
     }
-    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetricDelta"] { color: #0f766e !important; }
+    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetricDelta"] { color: #0f766e !important; }
 
-    /* Col 9: Committed Rem. (Soft Yellow) */
-    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetric"] { 
+    /* Col 10: Committed Rem. (Soft Yellow) */
+    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetric"] { 
         border-top: 4px solid #f59e0b !important; 
         background-color: #fefce8 !important; 
     }
-    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetricDelta"] { color: #b45309 !important; }
+    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetricDelta"] { color: #b45309 !important; }
 
-    /* Col 10: Comm. Cancel (Soft Red) */
-    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetric"] { 
+    /* Col 11: Comm. Cancel (Soft Red) */
+    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetric"] { 
         border-top: 4px solid #ef4444 !important; 
         background-color: #fef2f2 !important; 
     }
-    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
+    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
 
-    /* Col 11: Comm. Pend. (Soft Yellow) */
-    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetric"] { 
+    /* Col 12: Comm. Pend. (Soft Yellow) */
+    [data-testid="stColumn"]:nth-child(12) [data-testid="stMetric"] { 
         border-top: 4px solid #f59e0b !important; 
         background-color: #fefce8 !important; 
     }
-    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetricDelta"] { color: #b45309 !important; }
+    [data-testid="stColumn"]:nth-child(12) [data-testid="stMetricDelta"] { color: #b45309 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -240,7 +247,7 @@ def load_sheet(sheet_name):
     return pd.DataFrame(cleaned_rows, columns=headers)
 
 # ==========================================================
-# HELPER FUNCTIONS
+# HELPER & DATA CLEANING FUNCTIONS
 # ==========================================================
 
 def clean_phone(series):
@@ -256,6 +263,52 @@ def parse_date(series):
         errors="coerce",
         dayfirst=True
     )
+
+def categorize_quality_status(val):
+    if pd.isna(val):
+        return "Pending"
+    
+    val_str = str(val).strip().lower()
+    
+    if val_str in ["", "(blank)", "nan", "none"]:
+        return "Pending"
+    
+    # Approved
+    if "appr" in val_str:
+        return "Approved"
+    
+    # Rework
+    if "rework" in val_str:
+        return "Rework"
+    
+    # Cancelled (Hold, Duplicate, Reject, Cancel, Inbound, N/A, Rec in accessible, etc.)
+    if any(k in val_str for k in ["cancel", "reject", "hold", "duplicat", "inbound", "n/a", "rec in accessible"]):
+        return "Cancelled"
+    
+    return "Cancelled"
+
+def categorize_welcome_status(val):
+    if pd.isna(val):
+        return "Pending"
+    
+    val_str = str(val).strip().lower()
+    
+    if val_str in ["", "(blank)", "nan", "none"]:
+        return "Pending"
+    
+    # Done
+    if "done" in val_str:
+        return "Done"
+    
+    # Cancelled (Rejected, Hold, Cancel)
+    if any(k in val_str for k in ["cancel", "reject", "hold"]):
+        return "Cancelled"
+    
+    # Pending (Pending, Follow up, Paperwork, Wrong no, Ringing)
+    if any(k in val_str for k in ["pending", "follow", "paperwork", "wrong", "ring"]):
+        return "Pending"
+    
+    return "Pending"
 
 # ==========================================================
 # APP HEADER
@@ -333,6 +386,10 @@ def load_sparta():
 
     for col in date_columns:
         df[col] = parse_date(df[col])
+
+    # Standardize Quality and Welcome Statuses using clean categorization logic
+    df["Quality Status Clean"] = df["Quality Status"].apply(categorize_quality_status)
+    df["Welcome Status Clean"] = df["Welcome Status"].apply(categorize_welcome_status)
 
     return df
 
@@ -424,15 +481,15 @@ master_df = build_master_dataframe(
 )
 
 # ==========================================================
-# TOP KPI SECTION (ST.METRIC 11 COLUMNS WITH BACKGROUND TINTS)
+# TOP KPI SECTION (ST.METRIC 12 COLUMNS)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
 
-def count_status(df, column, values):
+def count_status(df, column, target_val):
     if column not in df.columns:
         return 0
-    return df[column].astype(str).str.strip().str.lower().isin([v.lower() for v in values]).sum()
+    return (df[column] == target_val).sum()
 
 def get_pct(part, total):
     if total == 0:
@@ -442,21 +499,22 @@ def get_pct(part, total):
 # Calculations
 total_applications = len(master_df)
 
-q_approved = count_status(master_df, "Quality Status", ["Approved", "Pass", "Passed"])
-q_rework = count_status(master_df, "Quality Status", ["Rework", "Pending Rework"])
-q_cancelled = count_status(master_df, "Quality Status", ["Cancelled", "Cancel", "Rejected"])
+q_approved = count_status(master_df, "Quality Status Clean", "Approved")
+q_rework = count_status(master_df, "Quality Status Clean", "Rework")
+q_cancelled = count_status(master_df, "Quality Status Clean", "Cancelled")
+q_pending = count_status(master_df, "Quality Status Clean", "Pending")
 
-wc_done = count_status(master_df, "Welcome Status", ["Done", "Passed", "Completed", "WC Done"])
-wc_cancelled = count_status(master_df, "Welcome Status", ["Cancelled", "Cancel", "Rejected"])
-wc_pending = count_status(master_df, "Welcome Status", ["Pending", "In Progress", ""])
+wc_done = count_status(master_df, "Welcome Status Clean", "Done")
+wc_cancelled = count_status(master_df, "Welcome Status Clean", "Cancelled")
+wc_pending = count_status(master_df, "Welcome Status Clean", "Pending")
 
-portal_live = count_status(master_df, "Portal Status", ["Live", "Connected"])
-portal_committed = count_status(master_df, "Portal Status", ["Committed", "Order Placed"])
-portal_cancelled = count_status(master_df, "Portal Status", ["Cancelled", "Cancel", "Rejected"])
-portal_pending = count_status(master_df, "Portal Status", ["Pending", "In Progress", ""])
+portal_live = (master_df["Portal Status"].astype(str).str.strip().str.lower().isin(["live", "connected"])).sum()
+portal_committed = (master_df["Portal Status"].astype(str).str.strip().str.lower().isin(["committed", "order placed"])).sum()
+portal_cancelled = (master_df["Portal Status"].astype(str).str.strip().str.lower().isin(["cancelled", "cancel", "rejected"])).sum()
+portal_pending = (master_df["Portal Status"].astype(str).str.strip().str.lower().isin(["pending", "in progress", ""])).sum()
 
-# Define 11 Columns
-cols = st.columns(11)
+# Define 12 Columns
+cols = st.columns(12)
 
 # Card Data Definition: (Label, Count Value, Delta Subtext String)
 kpis = [
@@ -464,6 +522,7 @@ kpis = [
     ("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified"),
     ("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework"),
     ("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected"),
+    ("Quality Pending", q_pending, f"{get_pct(q_pending, total_applications)} Pending"),
     ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed"),
     ("Welcome Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled"),
     ("Welcome Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending"),
