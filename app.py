@@ -1,168 +1,147 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
+# ==========================================================
+# SPARTA SALES DASHBOARD V2
+# Part 1 - Imports + Google Sheets Connection
+# ==========================================================
 
-import gspread
+import re
+from datetime import datetime
+
+import numpy as np
+import pandas as pd
+import streamlit as st
+
 from google.oauth2.service_account import Credentials
-# ----------------------------------------------------------
-# GOOGLE SHEETS CONFIG
-# ----------------------------------------------------------
+from googleapiclient.discovery import build
+
+
+# ==========================================================
+# PAGE CONFIG
+# ==========================================================
+
+st.set_page_config(
+    page_title="Sparta Sales Dashboard",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+
+# ==========================================================
+# CONSTANTS
+# ==========================================================
 
 SPREADSHEET_ID = "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ"
 
-SHEET1_NAME = "Sparta"        # <-- CHANGE TO ACTUAL NAME
-SHEET2_NAME = "Sparta2"        # <-- CHANGE TO ACTUAL NAME
+APPLICATION_SHEET = "Sparta"
+LIVE_SHEET = "Sparta2"
+
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets.readonly"
+]
 
 
-# ----------------------------------------------------------
-# CONNECT TO GOOGLE
-# ----------------------------------------------------------
+# ==========================================================
+# GOOGLE SHEETS CONNECTION
+# ==========================================================
 
-@st.cache_resource
-def get_gsheet_client():
+@st.cache_resource(show_spinner=False)
+def get_google_service():
 
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive.readonly"
-    ]
-
-    creds = Credentials.from_service_account_info(
+    credentials = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
-        scopes=scope
+        scopes=SCOPES
     )
 
-    return gspread.authorize(creds)
+    service = build(
+        "sheets",
+        "v4",
+        credentials=credentials
+    )
 
-@st.cache_data(ttl=300)
-def load_sheet1():
+    return service
 
-    gc = get_gsheet_client()
 
-    sheet = gc.open_by_key(SPREADSHEET_ID).worksheet(SHEET1_NAME)
+# ==========================================================
+# GENERIC SHEET LOADER
+# ==========================================================
 
-    data = sheet.get_all_records()
+@st.cache_data(ttl=300, show_spinner=False)
+def load_sheet(sheet_name):
 
-    df = pd.DataFrame(data)
+    service = get_google_service()
 
-    df = df.rename(columns={
+    result = (
+        service.spreadsheets()
+        .values()
+        .get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=sheet_name
+        )
+        .execute()
+    )
 
-        "Advisor":"Advisor",
-        "Sale Date":"Sale Date",
-        "Customer Name":"Customer Name",
-        "CLI":"Telephone No.",
-        "Quality Date":"Quality Date",
-        "Quality Status":"Quality Status",
-        "Quality Remarks":"Quality Remarks",
-        "Welcome call Remarks":"Welcome Remarks",
-        "Status":"Welcome Status",
-        "Cancellation Sub-text":"Cancellation Reason",
-        "WCD date":"Welcome Date",
-        "Provisioning":"Provisioning Status",
-        "Prov Date":"Provisioning Date",
-        "Current Provider":"Current Provider",
-        "Packageoffered":"Package"
+    values = result.get("values", [])
 
-    })
+    if not values:
+        return pd.DataFrame()
 
-    keep = [
+    headers = values[0]
 
-        "Advisor",
-        "Sale Date",
-        "Customer Name",
-        "Telephone No.",
-        "Quality Date",
-        "Quality Status",
-        "Quality Remarks",
-        "Welcome Remarks",
-        "Welcome Status",
-        "Cancellation Reason",
-        "Welcome Date",
-        "Provisioning Status",
-        "Provisioning Date",
-        "Current Provider",
-        "Package"
+    rows = values[1:]
 
-    ]
+    # Ensure every row has the same number of columns
+    max_cols = len(headers)
 
-    df = df[keep].copy()
+    cleaned_rows = []
 
-    df["Telephone No."] = df["Telephone No."].astype(str).str.replace(r"\D","",regex=True)
+    for row in rows:
+
+        if len(row) < max_cols:
+            row.extend([""] * (max_cols - len(row)))
+
+        elif len(row) > max_cols:
+            row = row[:max_cols]
+
+        cleaned_rows.append(row)
+
+    df = pd.DataFrame(
+        cleaned_rows,
+        columns=headers
+    )
 
     return df
 
-@st.cache_data(ttl=300)
-def load_sheet2():
 
-    gc = get_gsheet_client()
+# ==========================================================
+# HELPER FUNCTIONS
+# ==========================================================
 
-    sheet = gc.open_by_key(SPREADSHEET_ID).worksheet(SHEET2_NAME)
+def clean_phone(series):
 
-    data = sheet.get_all_records()
-
-    df = pd.DataFrame(data)
-
-    df = df.rename(columns={
-
-        "Telephone No.":"Telephone No.",
-        "Committed Date":"Live Date",
-        "Status":"Portal Status",
-        "LetterStatus":"Letter Status",
-        "CallStatus":"Call Status",
-        "Comments":"Comments",
-        "Voice of Customer":"Voice of Customer",
-        "Cancellation Reason":"Portal Cancellation Reason"
-
-    })
-
-    keep = [
-
-        "Telephone No.",
-        "Live Date",
-        "Portal Status",
-        "Letter Status",
-        "Call Status",
-        "Comments",
-        "Voice of Customer",
-        "Portal Cancellation Reason"
-
-    ]
-
-    df = df[keep].copy()
-
-    df["Telephone No."] = df["Telephone No."].astype(str).str.replace(r"\D","",regex=True)
-
-    return df
-
-@st.cache_data(ttl=300)
-def load_master_data():
-
-    app_df = load_sheet1()
-
-    live_df = load_sheet2()
-
-    master_df = app_df.merge(
-        live_df,
-        on="Telephone No.",
-        how="left"
+    return (
+        series.astype(str)
+        .str.replace(r"\D", "", regex=True)
+        .str.strip()
     )
 
-    date_cols = [
 
-        "Sale Date",
-        "Quality Date",
-        "Welcome Date",
-        "Provisioning Date",
-        "Live Date"
+def parse_date(series):
 
-    ]
+    return pd.to_datetime(
+        series,
+        errors="coerce",
+        dayfirst=True
+    )
 
-    for col in date_cols:
 
-        if col in master_df.columns:
+# ==========================================================
+# APP HEADER
+# ==========================================================
 
-            master_df[col] = pd.to_datetime(
-                master_df[col],
-                errors="coerce"
-            )
+st.title("📊 Sparta Sales Dashboard")
 
-    return master_df
+st.caption(
+    f"Last refresh : {datetime.now().strftime('%d %b %Y %H:%M:%S')}"
+)
+
+st.divider()
