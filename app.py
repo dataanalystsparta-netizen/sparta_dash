@@ -287,3 +287,165 @@ with st.spinner("Loading Google Sheets..."):
 
     sparta2_df = load_sparta2()
 
+
+
+
+# ==========================================================
+# BUILD MASTER DATASET
+# ==========================================================
+
+@st.cache_data(ttl=300, show_spinner=False)
+def build_master_dataframe(app_df, portal_df):
+
+    apps = app_df.copy()
+    portal = portal_df.copy()
+
+    # Remove duplicate phone numbers from portal sheet
+    # (keep the latest record if duplicates exist)
+
+    if "Live Date" in portal.columns:
+
+        portal = portal.sort_values(
+            by="Live Date",
+            ascending=False,
+            na_position="last"
+        )
+
+    portal = portal.drop_duplicates(
+        subset="Telephone No.",
+        keep="first"
+    )
+
+    # LEFT JOIN
+    master = apps.merge(
+        portal,
+        on="Telephone No.",
+        how="left",
+        suffixes=("", "_portal")
+    )
+
+    return master
+
+
+# ==========================================================
+# CREATE MASTER DF
+# ==========================================================
+
+master_df = build_master_dataframe(
+    sparta_df,
+    sparta2_df
+)
+
+
+# ==========================================================
+# DATA DIAGNOSTICS
+# ==========================================================
+
+st.subheader("📋 Data Diagnostics")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric(
+        "Applications",
+        f"{len(sparta_df):,}"
+    )
+
+with col2:
+    st.metric(
+        "Portal Records",
+        f"{len(sparta2_df):,}"
+    )
+
+with col3:
+    st.metric(
+        "Master Records",
+        f"{len(master_df):,}"
+    )
+
+with col4:
+    live_count = master_df["Portal Status"].notna().sum()
+
+    st.metric(
+        "Matched Portal Records",
+        f"{live_count:,}"
+    )
+
+
+st.divider()
+
+
+# ==========================================================
+# DATA QUALITY CHECKS
+# ==========================================================
+
+quality_col1, quality_col2 = st.columns(2)
+
+with quality_col1:
+
+    duplicate_apps = (
+        sparta_df["Telephone No."]
+        .duplicated()
+        .sum()
+    )
+
+    duplicate_portal = (
+        sparta2_df["Telephone No."]
+        .duplicated()
+        .sum()
+    )
+
+    st.write("### Phone Number Checks")
+
+    st.write(f"Duplicate Numbers (Applications): **{duplicate_apps:,}**")
+
+    st.write(f"Duplicate Numbers (Portal): **{duplicate_portal:,}**")
+
+    st.write(f"Unique Advisors: **{master_df['Advisor'].nunique()}**")
+
+with quality_col2:
+
+    unmatched = master_df["Portal Status"].isna().sum()
+
+    quality_counts = (
+        master_df["Quality Status"]
+        .fillna("Blank")
+        .value_counts()
+    )
+
+    st.write("### Lifecycle Checks")
+
+    st.write(f"Applications without Portal Record: **{unmatched:,}**")
+
+    st.write("")
+
+    st.write("Quality Status Distribution")
+
+    st.dataframe(
+        quality_counts.rename("Count"),
+        use_container_width=True
+    )
+
+
+st.divider()
+
+
+# ==========================================================
+# COLUMN INFORMATION
+# ==========================================================
+
+with st.expander("📄 Master Data Columns"):
+
+    column_df = pd.DataFrame({
+
+        "Column": master_df.columns,
+        "Data Type": master_df.dtypes.astype(str)
+
+    })
+
+    st.dataframe(
+        column_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
