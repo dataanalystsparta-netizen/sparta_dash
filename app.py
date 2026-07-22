@@ -20,48 +20,33 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Compact Square KPI Cards
+# Custom CSS to keep st.metric cards ultra-compact and aligned
 st.markdown("""
 <style>
-    .kpi-tile-square {
+    /* Reduce vertical padding in metric cards to keep them tight */
+    [data-testid="stMetric"] {
         background-color: #ffffff;
-        border-radius: 8px;
-        padding: 8px 6px;
         border: 1px solid #e2e8f0;
-        border-top: 4px solid #2563eb;
+        border-radius: 6px;
+        padding: 6px 8px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-        text-align: center;
-        margin-bottom: 8px;
-        height: 88px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
     }
-    .kpi-tile-title {
-        font-size: 0.62rem;
-        font-weight: 700;
+    [data-testid="stMetricLabel"] {
+        font-size: 0.65rem !important;
+        font-weight: 700 !important;
         text-transform: uppercase;
         color: #64748b;
-        letter-spacing: 0.3px;
-        margin-bottom: 2px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        width: 100%;
     }
-    .kpi-tile-value {
-        font-size: 1.3rem;
-        font-weight: 800;
+    [data-testid="stMetricValue"] {
+        font-size: 1.15rem !important;
+        font-weight: 800 !important;
         color: #0f172a;
-        line-height: 1.1;
-        margin-bottom: 2px;
     }
-    .kpi-tile-subtext {
-        font-size: 0.68rem;
-        font-weight: 600;
-        line-height: 1;
-        white-space: nowrap;
+    [data-testid="stMetricDelta"] {
+        font-size: 0.65rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -84,21 +69,13 @@ SCOPES = [
 # GOOGLE SHEETS CONNECTION
 # ==========================================================
 
-@st.cache_resource(show_spinner=False)
 def get_google_service():
-
+    """Generates a fresh service object to prevent stale TCP sockets in Streamlit Cloud."""
     credentials = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
         scopes=SCOPES
     )
-
-    service = build(
-        "sheets",
-        "v4",
-        credentials=credentials
-    )
-
-    return service
+    return build("sheets", "v4", credentials=credentials, cache_discovery=False)
 
 # ==========================================================
 # GENERIC SHEET LOADER
@@ -109,15 +86,28 @@ def load_sheet(sheet_name):
 
     service = get_google_service()
 
-    result = (
-        service.spreadsheets()
-        .values()
-        .get(
-            spreadsheetId=SPREADSHEET_ID,
-            range=sheet_name
+    try:
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(
+                spreadsheetId=SPREADSHEET_ID,
+                range=sheet_name
+            )
+            .execute()
         )
-        .execute()
-    )
+    except Exception:
+        # Retry with fresh service instance if socket dropped
+        service = get_google_service()
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(
+                spreadsheetId=SPREADSHEET_ID,
+                range=sheet_name
+            )
+            .execute()
+        )
 
     values = result.get("values", [])
 
@@ -125,37 +115,25 @@ def load_sheet(sheet_name):
         return pd.DataFrame()
 
     headers = values[0]
-
     rows = values[1:]
 
-    # Ensure every row has the same number of columns
     max_cols = len(headers)
-
     cleaned_rows = []
 
     for row in rows:
-
         if len(row) < max_cols:
             row.extend([""] * (max_cols - len(row)))
-
         elif len(row) > max_cols:
             row = row[:max_cols]
-
         cleaned_rows.append(row)
 
-    df = pd.DataFrame(
-        cleaned_rows,
-        columns=headers
-    )
-
-    return df
+    return pd.DataFrame(cleaned_rows, columns=headers)
 
 # ==========================================================
 # HELPER FUNCTIONS
 # ==========================================================
 
 def clean_phone(series):
-
     return (
         series.astype(str)
         .str.replace(r"\D", "", regex=True)
@@ -163,22 +141,11 @@ def clean_phone(series):
     )
 
 def parse_date(series):
-
     return pd.to_datetime(
         series,
         errors="coerce",
         dayfirst=True
     )
-
-# Square Tile HTML Renderer
-def render_square_kpi(title, value, subtext, color="#2563eb"):
-    return f"""
-    <div class="kpi-tile-square" style="border-top-color: {color};">
-        <div class="kpi-tile-title" title="{title}">{title}</div>
-        <div class="kpi-tile-value">{value:,}</div>
-        <div class="kpi-tile-subtext" style="color: {color};">{subtext}</div>
-    </div>
-    """
 
 # ==========================================================
 # APP HEADER
@@ -202,7 +169,6 @@ def load_sparta():
     df = load_sheet(APPLICATION_SHEET)
 
     rename_map = {
-
         "Advisor": "Advisor",
         "Sale Date": "Sale Date",
         "Customer Name": "Customer Name",
@@ -220,13 +186,11 @@ def load_sparta():
         "Packageoffered": "Package",
         "Dashboard_Month": "Dashboard Month",
         "Standardized_Date": "Standardized Date"
-
     }
 
     df = df.rename(columns=rename_map)
 
     keep_columns = [
-
         "Advisor",
         "Sale Date",
         "Customer Name",
@@ -244,29 +208,20 @@ def load_sparta():
         "Package",
         "Dashboard Month",
         "Standardized Date"
-
     ]
 
     df = df[keep_columns].copy()
-
-    # Clean phone numbers
-
     df["Telephone No."] = clean_phone(df["Telephone No."])
 
-    # Parse dates
-
     date_columns = [
-
         "Sale Date",
         "Quality Date",
         "Welcome Date",
         "Provisioning Date",
         "Standardized Date"
-
     ]
 
     for col in date_columns:
-
         df[col] = parse_date(df[col])
 
     return df
@@ -281,7 +236,6 @@ def load_sparta2():
     df = load_sheet(LIVE_SHEET)
 
     rename_map = {
-
         "Telephone No.": "Telephone No.",
         "Committed Date": "Live Date",
         "Status": "Portal Status",
@@ -297,7 +251,6 @@ def load_sparta2():
     df = df.rename(columns=rename_map)
 
     keep_columns = [
-
         "Telephone No.",
         "Live Date",
         "Portal Status",
@@ -308,13 +261,10 @@ def load_sparta2():
         "Portal Cancellation",
         "Dashboard Month",
         "Standardized Date"
-
     ]
 
     df = df[keep_columns].copy()
-
     df["Telephone No."] = clean_phone(df["Telephone No."])
-
     df["Live Date"] = parse_date(df["Live Date"])
     df["Standardized Date"] = parse_date(df["Standardized Date"])
 
@@ -325,9 +275,7 @@ def load_sparta2():
 # ==========================================================
 
 with st.spinner("Loading Google Sheets..."):
-
     sparta_df = load_sparta()
-
     sparta2_df = load_sparta2()
 
 # ==========================================================
@@ -336,12 +284,10 @@ with st.spinner("Loading Google Sheets..."):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def build_master_dataframe(app_df, portal_df):
-
     apps = app_df.copy()
     portal = portal_df.copy()
 
     if "Live Date" in portal.columns:
-
         portal = portal.sort_values(
             by="Live Date",
             ascending=False,
@@ -353,7 +299,6 @@ def build_master_dataframe(app_df, portal_df):
         keep="first"
     )
 
-    # LEFT JOIN
     master = apps.merge(
         portal,
         on="Telephone No.",
@@ -363,23 +308,17 @@ def build_master_dataframe(app_df, portal_df):
 
     return master
 
-
-# ==========================================================
-# CREATE MASTER DF
-# ==========================================================
-
 master_df = build_master_dataframe(
     sparta_df,
     sparta2_df
 )
 
 # ==========================================================
-# TOP KPI SECTION (COMPACT SQUARE TILES - 6 PER ROW)
+# TOP KPI SECTION (NATIVE STREAMLIT METRICS - 11 COLUMNS)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
 
-# Helper for case-insensitive exact matching
 def count_status(df, column, values):
     if column not in df.columns:
         return 0
@@ -390,73 +329,57 @@ def get_pct(part, total):
         return "0.0%"
     return f"{(part / total * 100):.1f}%"
 
-# Calculations
+# Metrics Calculations
 total_applications = len(master_df)
 
-# Quality Counts
 q_approved = count_status(master_df, "Quality Status", ["Approved", "Pass", "Passed"])
 q_rework = count_status(master_df, "Quality Status", ["Rework", "Pending Rework"])
 q_cancelled = count_status(master_df, "Quality Status", ["Cancelled", "Cancel", "Rejected"])
 
-# Welcome Call Counts
 wc_done = count_status(master_df, "Welcome Status", ["Done", "Passed", "Completed", "WC Done"])
 wc_cancelled = count_status(master_df, "Welcome Status", ["Cancelled", "Cancel", "Rejected"])
 wc_pending = count_status(master_df, "Welcome Status", ["Pending", "In Progress", ""])
 
-# Committed / Portal Counts
 portal_live = count_status(master_df, "Portal Status", ["Live", "Connected"])
 portal_committed = count_status(master_df, "Portal Status", ["Committed", "Order Placed"])
 portal_cancelled = count_status(master_df, "Portal Status", ["Cancelled", "Cancel", "Rejected"])
 portal_pending = count_status(master_df, "Portal Status", ["Pending", "In Progress", ""])
 
-# Category Color Themes
-COLOR_OVERVIEW = "#2563eb"   # Blue
-COLOR_QUALITY = "#059669"    # Green
-COLOR_WELCOME = "#d97706"    # Amber
-COLOR_COMMITTED = "#0d9488"  # Teal
+# Define 11 equal-width columns
+cols = st.columns(11)
 
-# --- ROW 1 (6 Columns) ---
-r1_cols = st.columns(6)
+with cols[0]:
+    st.metric(label="Applications", value=f"{total_applications:,}", delta="100% Base")
 
-with r1_cols[0]:
-    st.markdown(render_square_kpi("Applications", total_applications, "100% Base", COLOR_OVERVIEW), unsafe_allow_html=True)
+with cols[1]:
+    st.metric(label="QA Approved", value=f"{q_approved:,}", delta=get_pct(q_approved, total_applications))
 
-with r1_cols[1]:
-    st.markdown(render_square_kpi("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified", COLOR_QUALITY), unsafe_allow_html=True)
+with cols[2]:
+    st.metric(label="QA Rework", value=f"{q_rework:,}", delta=get_pct(q_rework, total_applications))
 
-with r1_cols[2]:
-    st.markdown(render_square_kpi("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", COLOR_QUALITY), unsafe_allow_html=True)
+with cols[3]:
+    st.metric(label="QA Cancelled", value=f"{q_cancelled:,}", delta=get_pct(q_cancelled, total_applications), delta_color="inverse")
 
-with r1_cols[3]:
-    st.markdown(render_square_kpi("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected", COLOR_QUALITY), unsafe_allow_html=True)
+with cols[4]:
+    st.metric(label="Welcome Done", value=f"{wc_done:,}", delta=get_pct(wc_done, total_applications))
 
-with r1_cols[4]:
-    st.markdown(render_square_kpi("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed", COLOR_WELCOME), unsafe_allow_html=True)
+with cols[5]:
+    st.metric(label="Welcome Cancel", value=f"{wc_cancelled:,}", delta=get_pct(wc_cancelled, total_applications), delta_color="inverse")
 
-with r1_cols[5]:
-    st.markdown(render_square_kpi("Welcome Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled", COLOR_WELCOME), unsafe_allow_html=True)
+with cols[6]:
+    st.metric(label="Welcome Pend.", value=f"{wc_pending:,}", delta=get_pct(wc_pending, total_applications))
 
+with cols[7]:
+    st.metric(label="Live Deals", value=f"{portal_live:,}", delta=get_pct(portal_live, total_applications))
 
-# --- ROW 2 (6 Columns) ---
-r2_cols = st.columns(6)
+with cols[8]:
+    st.metric(label="Committed Rem.", value=f"{portal_committed:,}", delta=get_pct(portal_committed, total_applications))
 
-with r2_cols[0]:
-    st.markdown(render_square_kpi("Welcome Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending", COLOR_WELCOME), unsafe_allow_html=True)
+with cols[9]:
+    st.metric(label="Comm. Cancel", value=f"{portal_cancelled:,}", delta=get_pct(portal_cancelled, total_applications), delta_color="inverse")
 
-with r2_cols[1]:
-    st.markdown(render_square_kpi("Live Deals", portal_live, f"{get_pct(portal_live, total_applications)} Converted", COLOR_COMMITTED), unsafe_allow_html=True)
-
-with r2_cols[2]:
-    st.markdown(render_square_kpi("Committed Rem.", portal_committed, f"{get_pct(portal_committed, total_applications)} In-Pipeline", COLOR_COMMITTED), unsafe_allow_html=True)
-
-with r2_cols[3]:
-    st.markdown(render_square_kpi("Committed Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned", COLOR_COMMITTED), unsafe_allow_html=True)
-
-with r2_cols[4]:
-    st.markdown(render_square_kpi("Committed Pending", portal_pending, f"{get_pct(portal_pending, total_applications)} Pending Action", COLOR_COMMITTED), unsafe_allow_html=True)
-
-with r2_cols[5]:
-    st.empty()
+with cols[10]:
+    st.metric(label="Comm. Pend.", value=f"{portal_pending:,}", delta=get_pct(portal_pending, total_applications))
 
 
 # ==========================================================
@@ -473,29 +396,25 @@ tab1, tab2, tab3 = st.tabs([
 ])
 
 with tab1:
-
     st.caption(f"{len(sparta_df):,} records")
-
     st.dataframe(
         sparta_df,
         use_container_width=True,
         height=500,
         hide_index=True
     )
+
 with tab2:
-
     st.caption(f"{len(sparta2_df):,} records")
-
     st.dataframe(
         sparta2_df,
         use_container_width=True,
         height=500,
         hide_index=True
     )
+
 with tab3:
-
     st.caption(f"{len(master_df):,} merged records")
-
     st.dataframe(
         master_df,
         use_container_width=True,
