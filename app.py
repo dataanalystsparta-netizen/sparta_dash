@@ -10,8 +10,8 @@ from google.oauth2.service_account import Credentials
 
 SPREADSHEET_ID = "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ"
 
-SHEET1_NAME = "Sheet1"        # <-- CHANGE TO ACTUAL NAME
-SHEET2_NAME = "Sheet2"        # <-- CHANGE TO ACTUAL NAME
+SHEET1_NAME = "Sparta"        # <-- CHANGE TO ACTUAL NAME
+SHEET2_NAME = "Sparta2"        # <-- CHANGE TO ACTUAL NAME
 
 
 # ----------------------------------------------------------
