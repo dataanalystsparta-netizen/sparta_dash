@@ -20,30 +20,40 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Compact Square KPI Cards
+# Custom CSS for Single-Line Flexbox Strip
 st.markdown("""
 <style>
-    .kpi-tile-square {
+    .kpi-row-container {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        gap: 8px;
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 6px;
+    }
+    .kpi-tile-single {
+        flex: 1 1 0;
+        min-width: 95px;
         background-color: #ffffff;
-        border-radius: 8px;
-        padding: 8px 6px;
+        border-radius: 6px;
+        padding: 6px 4px;
         border: 1px solid #e2e8f0;
-        border-top: 4px solid #2563eb;
+        border-top: 3px solid #2563eb;
         box-shadow: 0 1px 2px rgba(0,0,0,0.03);
         text-align: center;
-        margin-bottom: 8px;
-        height: 88px;
+        height: 76px;
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
     }
     .kpi-tile-title {
-        font-size: 0.62rem;
+        font-size: 0.55rem;
         font-weight: 700;
         text-transform: uppercase;
         color: #64748b;
-        letter-spacing: 0.3px;
+        letter-spacing: 0.2px;
         margin-bottom: 2px;
         white-space: nowrap;
         overflow: hidden;
@@ -51,14 +61,14 @@ st.markdown("""
         width: 100%;
     }
     .kpi-tile-value {
-        font-size: 1.3rem;
+        font-size: 1.15rem;
         font-weight: 800;
         color: #0f172a;
         line-height: 1.1;
         margin-bottom: 2px;
     }
     .kpi-tile-subtext {
-        font-size: 0.68rem;
+        font-size: 0.62rem;
         font-weight: 600;
         line-height: 1;
         white-space: nowrap;
@@ -170,10 +180,10 @@ def parse_date(series):
         dayfirst=True
     )
 
-# Square Tile HTML Renderer
-def render_square_kpi(title, value, subtext, color="#2563eb"):
+# Individual HTML Card Builder
+def make_kpi_card_html(title, value, subtext, color="#2563eb"):
     return f"""
-    <div class="kpi-tile-square" style="border-top-color: {color};">
+    <div class="kpi-tile-single" style="border-top-color: {color};">
         <div class="kpi-tile-title" title="{title}">{title}</div>
         <div class="kpi-tile-value">{value:,}</div>
         <div class="kpi-tile-subtext" style="color: {color};">{subtext}</div>
@@ -374,7 +384,7 @@ master_df = build_master_dataframe(
 )
 
 # ==========================================================
-# TOP KPI SECTION (COMPACT SQUARE TILES - 6 PER ROW)
+# TOP KPI SECTION (ALL 11 KPIS IN A SINGLE ROW)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
@@ -409,54 +419,33 @@ portal_committed = count_status(master_df, "Portal Status", ["Committed", "Order
 portal_cancelled = count_status(master_df, "Portal Status", ["Cancelled", "Cancel", "Rejected"])
 portal_pending = count_status(master_df, "Portal Status", ["Pending", "In Progress", ""])
 
-# Category Color Themes
+# Category Colors
 COLOR_OVERVIEW = "#2563eb"   # Blue
 COLOR_QUALITY = "#059669"    # Green
 COLOR_WELCOME = "#d97706"    # Amber
 COLOR_COMMITTED = "#0d9488"  # Teal
 
-# --- ROW 1 (6 Columns) ---
-r1_cols = st.columns(6)
+# Construct all 11 cards inside one single flexbox row
+cards_html = [
+    make_kpi_card_html("Applications", total_applications, "100% Base", COLOR_OVERVIEW),
+    make_kpi_card_html("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified", COLOR_QUALITY),
+    make_kpi_card_html("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", COLOR_QUALITY),
+    make_kpi_card_html("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected", COLOR_QUALITY),
+    make_kpi_card_html("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed", COLOR_WELCOME),
+    make_kpi_card_html("Welcome Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled", COLOR_WELCOME),
+    make_kpi_card_html("Welcome Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending", COLOR_WELCOME),
+    make_kpi_card_html("Live Deals", portal_live, f"{get_pct(portal_live, total_applications)} Converted", COLOR_COMMITTED),
+    make_kpi_card_html("Committed Rem.", portal_committed, f"{get_pct(portal_committed, total_applications)} In-Pipeline", COLOR_COMMITTED),
+    make_kpi_card_html("Committed Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned", COLOR_COMMITTED),
+    make_kpi_card_html("Committed Pending", portal_pending, f"{get_pct(portal_pending, total_applications)} Pending Action", COLOR_COMMITTED)
+]
 
-with r1_cols[0]:
-    st.markdown(render_square_kpi("Applications", total_applications, "100% Base", COLOR_OVERVIEW), unsafe_allow_html=True)
-
-with r1_cols[1]:
-    st.markdown(render_square_kpi("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified", COLOR_QUALITY), unsafe_allow_html=True)
-
-with r1_cols[2]:
-    st.markdown(render_square_kpi("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", COLOR_QUALITY), unsafe_allow_html=True)
-
-with r1_cols[3]:
-    st.markdown(render_square_kpi("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected", COLOR_QUALITY), unsafe_allow_html=True)
-
-with r1_cols[4]:
-    st.markdown(render_square_kpi("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed", COLOR_WELCOME), unsafe_allow_html=True)
-
-with r1_cols[5]:
-    st.markdown(render_square_kpi("Welcome Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled", COLOR_WELCOME), unsafe_allow_html=True)
-
-
-# --- ROW 2 (6 Columns) ---
-r2_cols = st.columns(6)
-
-with r2_cols[0]:
-    st.markdown(render_square_kpi("Welcome Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending", COLOR_WELCOME), unsafe_allow_html=True)
-
-with r2_cols[1]:
-    st.markdown(render_square_kpi("Live Deals", portal_live, f"{get_pct(portal_live, total_applications)} Converted", COLOR_COMMITTED), unsafe_allow_html=True)
-
-with r2_cols[2]:
-    st.markdown(render_square_kpi("Committed Rem.", portal_committed, f"{get_pct(portal_committed, total_applications)} In-Pipeline", COLOR_COMMITTED), unsafe_allow_html=True)
-
-with r2_cols[3]:
-    st.markdown(render_square_kpi("Committed Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned", COLOR_COMMITTED), unsafe_allow_html=True)
-
-with r2_cols[4]:
-    st.markdown(render_square_kpi("Committed Pending", portal_pending, f"{get_pct(portal_pending, total_applications)} Pending Action", COLOR_COMMITTED), unsafe_allow_html=True)
-
-with r2_cols[5]:
-    st.empty()
+# Render the single-line container
+st.markdown(f"""
+<div class="kpi-row-container">
+    {''.join(cards_html)}
+</div>
+""", unsafe_allow_html=True)
 
 
 # ==========================================================
