@@ -251,11 +251,21 @@ def clean_phone(series):
     )
 
 def parse_date(series):
+    """Parses mixed date strings (e.g. ISO timestamp, dd/mm/yyyy) cleanly to datetime64."""
     return pd.to_datetime(
         series,
         errors="coerce",
-        dayfirst=True
+        dayfirst=True,
+        format="mixed"
     )
+
+def format_date_display(df, date_columns):
+    """Formats datetime columns into strict DD/MM/YYYY text format for table output."""
+    out_df = df.copy()
+    for col in date_columns:
+        if col in out_df.columns and pd.api.types.is_datetime64_any_dtype(out_df[col]):
+            out_df[col] = out_df[col].dt.strftime("%d/%m/%Y").fillna("")
+    return out_df
 
 def categorize_quality_status(val):
     if pd.isna(val):
@@ -511,7 +521,8 @@ with filter_col1:
         "Start Date",
         value=min_date,
         min_value=min_date,
-        max_value=max_date
+        max_value=max_date,
+        format="DD/MM/YYYY"
     )
 
 with filter_col2:
@@ -519,7 +530,8 @@ with filter_col2:
         "End Date",
         value=max_date,
         min_value=min_date,
-        max_value=max_date
+        max_value=max_date,
+        format="DD/MM/YYYY"
     )
 
 # Apply Date Filter across Master Dataframe
@@ -613,10 +625,15 @@ filtered_sparta = sparta_df[
     (sparta_df["Sale Date"].dt.date <= end_date)
 ] if start_date <= end_date else sparta_df
 
+# Standardize date column names for display formatting
+app_date_cols = ["Sale Date", "Quality Date", "Welcome Date", "Provisioning Date", "Standardized Date"]
+portal_date_cols = ["Live Date", "Standardized Date"]
+master_date_cols = app_date_cols + portal_date_cols
+
 with tab1:
     st.caption(f"{len(filtered_sparta):,} records (Filtered)")
     st.dataframe(
-        filtered_sparta,
+        format_date_display(filtered_sparta, app_date_cols),
         use_container_width=True,
         height=500,
         hide_index=True
@@ -625,7 +642,7 @@ with tab1:
 with tab2:
     st.caption(f"{len(sparta2_df):,} records")
     st.dataframe(
-        sparta2_df,
+        format_date_display(sparta2_df, portal_date_cols),
         use_container_width=True,
         height=500,
         hide_index=True
@@ -634,7 +651,7 @@ with tab2:
 with tab3:
     st.caption(f"{len(master_df):,} merged records (Filtered)")
     st.dataframe(
-        master_df,
+        format_date_display(master_df, master_date_cols),
         use_container_width=True,
         height=600,
         hide_index=True
