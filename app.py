@@ -368,6 +368,74 @@ def categorize_portal_status(val):
     return "Committed"
 
 # ==========================================================
+# KPI DEBUG & STATUS BREAKDOWN DRILLDOWN
+# ==========================================================
+
+with st.expander("🔍 KPI Status Breakdown & Mapping Inspector", expanded=True):
+    st.markdown("### Raw vs Cleaned Status Audit")
+    
+    col_debug1, col_debug2, col_debug3 = st.columns(3)
+    
+    with col_debug1:
+        st.subheader("1. Quality Status Breakdown")
+        
+        # Raw vs Cleaned comparison for Quality Status
+        q_breakdown = (
+            master_df.groupby(["Quality Status", "Quality Status Clean"], dropna=False)
+            .size()
+            .reset_index(name="Record Count")
+            .sort_values(by="Record Count", ascending=False)
+        )
+        st.dataframe(q_breakdown, use_container_width=True, hide_index=True)
+
+    with col_debug2:
+        st.subheader("2. Welcome Status Breakdown")
+        
+        # Raw vs Cleaned comparison for Welcome Status
+        w_breakdown = (
+            master_df.groupby(["Welcome Status", "Welcome Status Clean"], dropna=False)
+            .size()
+            .reset_index(name="Record Count")
+            .sort_values(by="Record Count", ascending=False)
+        )
+        st.dataframe(w_breakdown, use_container_width=True, hide_index=True)
+
+    with col_debug3:
+        st.subheader("3. Portal / Live Status Breakdown")
+        
+        # Raw vs Cleaned comparison for Portal Status
+        p_breakdown = (
+            master_df.groupby(["Portal Status", "Portal Status Clean"], dropna=False)
+            .size()
+            .reset_index(name="Record Count")
+            .sort_values(by="Record Count", ascending=False)
+        )
+        st.dataframe(p_breakdown, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # Match / Merge Audit
+    total_apps = len(master_df)
+    matched_apps = master_df["Portal Status"].notna().sum()
+    unmatched_apps = master_df["Portal Status"].isna().sum()
+
+    m_col1, m_col2, m_col3 = st.columns(3)
+    m_col1.metric("Total Applications (Filtered)", f"{total_apps:,}")
+    m_col2.metric("Matched in Sparta2 (Portal)", f"{matched_apps:,}")
+    m_col3.metric(
+        "Unmatched / Missing in Sparta2", 
+        f"{unmatched_apps:,}", 
+        delta="Defaulted to Committed" if unmatched_apps > 0 else "100% Matched",
+        delta_color="inverse" if unmatched_apps > 0 else "normal"
+    )
+
+
+
+
+
+
+
+# ==========================================================
 # APP HEADER
 # ==========================================================
 
