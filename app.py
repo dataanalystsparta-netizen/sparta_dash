@@ -20,12 +20,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Native st.metric Styling matching your card design
+# Custom CSS for Native st.metric Styling matching your card design + soft background tints
 st.markdown("""
 <style>
     /* Card Container Base */
     [data-testid="stMetric"] {
-        background-color: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 8px;
         padding: 8px 4px !important;
@@ -49,7 +48,7 @@ st.markdown("""
         font-size: 0.58rem !important;
         font-weight: 700 !important;
         text-transform: uppercase;
-        color: #64748b;
+        color: #475569;
         letter-spacing: 0.3px;
         margin-bottom: 2px;
         justify-content: center !important;
@@ -78,46 +77,87 @@ st.markdown("""
     }
     
     [data-testid="stMetricDelta"] svg {
-        display: none !important; /* Hide native arrow icons to match exact image style */
+        display: none !important; /* Hide native arrow icons */
     }
 
-    /* TOP ACCENT STRIPS BY COLUMN (1 to 11) */
-    /* Col 1: Overview Blue */
-    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetric"] { border-top: 4px solid #3b82f6 !important; }
-    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetricDelta"] { color: #2563eb !important; }
+    /* TOP ACCENT STRIPS + SOFT LIGHT BACKGROUNDS BY COLUMN (1 to 11) */
+    
+    /* Col 1: Applications (Soft Blue) */
+    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetric"] { 
+        border-top: 4px solid #3b82f6 !important; 
+        background-color: #eff6ff !important; 
+    }
+    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetricDelta"] { color: #1d4ed8 !important; }
 
-    /* Col 2-4: Quality Green / Yellow / Red */
-    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] { border-top: 4px solid #10b981 !important; }
-    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetricDelta"] { color: #059669 !important; }
+    /* Col 2: QA Approved (Soft Green) */
+    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] { 
+        border-top: 4px solid #10b981 !important; 
+        background-color: #f0fdf4 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetricDelta"] { color: #15803d !important; }
 
-    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetric"] { border-top: 4px solid #f59e0b !important; }
-    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetricDelta"] { color: #d97706 !important; }
+    /* Col 3: QA Rework (Soft Yellow) */
+    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetric"] { 
+        border-top: 4px solid #f59e0b !important; 
+        background-color: #fefce8 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetricDelta"] { color: #b45309 !important; }
 
-    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetric"] { border-top: 4px solid #ef4444 !important; }
-    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetricDelta"] { color: #dc2626 !important; }
+    /* Col 4: QA Cancelled (Soft Red) */
+    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetric"] { 
+        border-top: 4px solid #ef4444 !important; 
+        background-color: #fef2f2 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
 
-    /* Col 5-7: Welcome Green / Red / Yellow */
-    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetric"] { border-top: 4px solid #10b981 !important; }
-    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetricDelta"] { color: #059669 !important; }
+    /* Col 5: Welcome Done (Soft Green) */
+    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetric"] { 
+        border-top: 4px solid #10b981 !important; 
+        background-color: #f0fdf4 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetricDelta"] { color: #15803d !important; }
 
-    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetric"] { border-top: 4px solid #ef4444 !important; }
-    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetricDelta"] { color: #dc2626 !important; }
+    /* Col 6: Welcome Cancel (Soft Red) */
+    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetric"] { 
+        border-top: 4px solid #ef4444 !important; 
+        background-color: #fef2f2 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
 
-    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetric"] { border-top: 4px solid #f59e0b !important; }
-    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetricDelta"] { color: #d97706 !important; }
+    /* Col 7: Welcome Pend. (Soft Yellow) */
+    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetric"] { 
+        border-top: 4px solid #f59e0b !important; 
+        background-color: #fefce8 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetricDelta"] { color: #b45309 !important; }
 
-    /* Col 8-11: Portal Teal / Yellow / Red / Yellow */
-    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetric"] { border-top: 4px solid #14b8a6 !important; }
-    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetricDelta"] { color: #0d9488 !important; }
+    /* Col 8: Live Deals (Soft Teal) */
+    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetric"] { 
+        border-top: 4px solid #14b8a6 !important; 
+        background-color: #f0fdfa !important; 
+    }
+    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetricDelta"] { color: #0f766e !important; }
 
-    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetric"] { border-top: 4px solid #f59e0b !important; }
-    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetricDelta"] { color: #d97706 !important; }
+    /* Col 9: Committed Rem. (Soft Yellow) */
+    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetric"] { 
+        border-top: 4px solid #f59e0b !important; 
+        background-color: #fefce8 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetricDelta"] { color: #b45309 !important; }
 
-    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetric"] { border-top: 4px solid #ef4444 !important; }
-    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetricDelta"] { color: #dc2626 !important; }
+    /* Col 10: Comm. Cancel (Soft Red) */
+    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetric"] { 
+        border-top: 4px solid #ef4444 !important; 
+        background-color: #fef2f2 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
 
-    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetric"] { border-top: 4px solid #f59e0b !important; }
-    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetricDelta"] { color: #d97706 !important; }
+    /* Col 11: Comm. Pend. (Soft Yellow) */
+    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetric"] { 
+        border-top: 4px solid #f59e0b !important; 
+        background-color: #fefce8 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetricDelta"] { color: #b45309 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -384,7 +424,7 @@ master_df = build_master_dataframe(
 )
 
 # ==========================================================
-# TOP KPI SECTION (ST.METRIC 11 COLUMNS WITH CUSTOM CSS)
+# TOP KPI SECTION (ST.METRIC 11 COLUMNS WITH BACKGROUND TINTS)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
@@ -433,7 +473,7 @@ kpis = [
     ("Comm. Pending", portal_pending, f"{get_pct(portal_pending, total_applications)} Pending")
 ]
 
-# Render purely through st.metric without HTML loops
+# Render through st.metric
 for col, (label, val, delta_sub) in zip(cols, kpis):
     with col:
         st.metric(
