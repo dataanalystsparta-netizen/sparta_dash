@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Native st.metric Styling matching your card design + soft background tints
+# Custom CSS for Native st.metric Styling matching card design + soft background tints
 st.markdown("""
 <style>
     /* Card Container Base */
@@ -80,7 +80,7 @@ st.markdown("""
         display: none !important; /* Hide native arrow icons */
     }
 
-    /* TOP ACCENT STRIPS + SOFT LIGHT BACKGROUNDS BY COLUMN (1 to 12) */
+    /* TOP ACCENT STRIPS + SOFT LIGHT BACKGROUNDS BY COLUMN (1 to 11) */
     
     /* Col 1: Applications (Soft Blue) */
     [data-testid="stColumn"]:nth-child(1) [data-testid="stMetric"] { 
@@ -138,33 +138,26 @@ st.markdown("""
     }
     [data-testid="stColumn"]:nth-child(8) [data-testid="stMetricDelta"] { color: #b45309 !important; }
 
-    /* Col 9: Live Deals (Soft Teal) */
+    /* Col 9: Live (Soft Teal) */
     [data-testid="stColumn"]:nth-child(9) [data-testid="stMetric"] { 
         border-top: 4px solid #14b8a6 !important; 
         background-color: #f0fdfa !important; 
     }
     [data-testid="stColumn"]:nth-child(9) [data-testid="stMetricDelta"] { color: #0f766e !important; }
 
-    /* Col 10: Committed Rem. (Soft Yellow) */
+    /* Col 10: Committed (Soft Yellow) */
     [data-testid="stColumn"]:nth-child(10) [data-testid="stMetric"] { 
         border-top: 4px solid #f59e0b !important; 
         background-color: #fefce8 !important; 
     }
     [data-testid="stColumn"]:nth-child(10) [data-testid="stMetricDelta"] { color: #b45309 !important; }
 
-    /* Col 11: Comm. Cancel (Soft Red) */
+    /* Col 11: Live Cancelled (Soft Red) */
     [data-testid="stColumn"]:nth-child(11) [data-testid="stMetric"] { 
         border-top: 4px solid #ef4444 !important; 
         background-color: #fef2f2 !important; 
     }
     [data-testid="stColumn"]:nth-child(11) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
-
-    /* Col 12: Comm. Pend. (Soft Yellow) */
-    [data-testid="stColumn"]:nth-child(12) [data-testid="stMetric"] { 
-        border-top: 4px solid #f59e0b !important; 
-        background-color: #fefce8 !important; 
-    }
-    [data-testid="stColumn"]:nth-child(12) [data-testid="stMetricDelta"] { color: #b45309 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -281,7 +274,7 @@ def categorize_quality_status(val):
     if "rework" in val_str:
         return "Rework"
     
-    # Cancelled (Hold, Duplicate, Reject, Cancel, Inbound, N/A, Rec in accessible, etc.)
+    # Cancelled
     if any(k in val_str for k in ["cancel", "reject", "hold", "duplicat", "inbound", "n/a", "rec in accessible"]):
         return "Cancelled"
     
@@ -300,15 +293,32 @@ def categorize_welcome_status(val):
     if "done" in val_str:
         return "Done"
     
-    # Cancelled (Rejected, Hold, Cancel)
+    # Cancelled
     if any(k in val_str for k in ["cancel", "reject", "hold"]):
         return "Cancelled"
     
-    # Pending (Pending, Follow up, Paperwork, Wrong no, Ringing)
+    # Pending
     if any(k in val_str for k in ["pending", "follow", "paperwork", "wrong", "ring"]):
         return "Pending"
     
     return "Pending"
+
+def categorize_portal_status(val):
+    if pd.isna(val):
+        return "Committed"
+    
+    val_str = str(val).strip().lower()
+    
+    # Cancelled: Cancelled, Rejected, To be cancelled
+    if any(k in val_str for k in ["cancel", "reject"]):
+        return "Cancelled"
+    
+    # Live: Live, Pending, pending
+    if any(k in val_str for k in ["live", "pending"]):
+        return "Live"
+    
+    # Committed: Everything else (Committed, Delayed, Given to aman, Missed, Order Delayed, Re processed, to be extended, (blank), etc.)
+    return "Committed"
 
 # ==========================================================
 # APP HEADER
@@ -435,6 +445,9 @@ def load_sparta2():
     df["Live Date"] = parse_date(df["Live Date"])
     df["Standardized Date"] = parse_date(df["Standardized Date"])
 
+    # Standardize Portal/Live Status
+    df["Portal Status Clean"] = df["Portal Status"].apply(categorize_portal_status)
+
     return df
 
 # ==========================================================
@@ -481,7 +494,7 @@ master_df = build_master_dataframe(
 )
 
 # ==========================================================
-# TOP KPI SECTION (ST.METRIC 12 COLUMNS)
+# TOP KPI SECTION (ST.METRIC 11 COLUMNS)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
@@ -508,13 +521,12 @@ wc_done = count_status(master_df, "Welcome Status Clean", "Done")
 wc_cancelled = count_status(master_df, "Welcome Status Clean", "Cancelled")
 wc_pending = count_status(master_df, "Welcome Status Clean", "Pending")
 
-portal_live = (master_df["Portal Status"].astype(str).str.strip().str.lower().isin(["live", "connected"])).sum()
-portal_committed = (master_df["Portal Status"].astype(str).str.strip().str.lower().isin(["committed", "order placed"])).sum()
-portal_cancelled = (master_df["Portal Status"].astype(str).str.strip().str.lower().isin(["cancelled", "cancel", "rejected"])).sum()
-portal_pending = (master_df["Portal Status"].astype(str).str.strip().str.lower().isin(["pending", "in progress", ""])).sum()
+portal_live = count_status(master_df, "Portal Status Clean", "Live")
+portal_committed = count_status(master_df, "Portal Status Clean", "Committed")
+portal_cancelled = count_status(master_df, "Portal Status Clean", "Cancelled")
 
-# Define 12 Columns
-cols = st.columns(12)
+# Define 11 Columns for clean layout
+cols = st.columns(11)
 
 # Card Data Definition: (Label, Count Value, Delta Subtext String)
 kpis = [
@@ -526,10 +538,9 @@ kpis = [
     ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed"),
     ("Welcome Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled"),
     ("Welcome Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending"),
-    ("Live Deals", portal_live, f"{get_pct(portal_live, total_applications)} Converted"),
-    ("Committed Rem.", portal_committed, f"{get_pct(portal_committed, total_applications)} Pipeline"),
-    ("Comm. Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned"),
-    ("Comm. Pending", portal_pending, f"{get_pct(portal_pending, total_applications)} Pending")
+    ("Live Status: Live", portal_live, f"{get_pct(portal_live, total_applications)} Live/Pend."),
+    ("Live Status: Comm.", portal_committed, f"{get_pct(portal_committed, total_applications)} Pipeline"),
+    ("Live Status: Canc.", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned")
 ]
 
 # Render through st.metric
