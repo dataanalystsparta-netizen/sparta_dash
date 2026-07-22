@@ -1,760 +1,458 @@
-import re
-from datetime import datetime
-
-import numpy as np
-import pandas as pd
 import streamlit as st
-
+import pandas as pd
+import gspread
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
+import datetime
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go 
+import io
+from fpdf import FPDF
+st.set_page_config(page_title="Sparta Master Dashboard", layout="wide")
 
-
-# ==========================================================
-# PAGE CONFIG
-# ==========================================================
-
-st.set_page_config(
-    page_title="Sparta Sales Dashboard",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Custom CSS for Native st.metric Styling matching card design + soft background tints
-st.markdown("""
-<style>
-    /* Card Container Base */
-    [data-testid="stMetric"] {
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 8px 4px !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-        text-align: center !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-
-    /* Centered Text Layout */
-    [data-testid="stMetric"] > div {
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-
-    /* Card Title (Upper Label) */
-    [data-testid="stMetricLabel"] {
-        font-size: 0.58rem !important;
-        font-weight: 700 !important;
-        text-transform: uppercase;
-        color: #475569;
-        letter-spacing: 0.3px;
-        margin-bottom: 2px;
-        justify-content: center !important;
-    }
-    
-    [data-testid="stMetricLabel"] p {
-        font-size: 0.58rem !important;
-        font-weight: 700 !important;
-        margin: 0 !important;
-    }
-
-    /* Card Main Value */
-    [data-testid="stMetricValue"] {
-        font-size: 1.3rem !important;
-        font-weight: 800 !important;
-        color: #0f172a !important;
-        line-height: 1.1;
-        margin-bottom: 2px;
-    }
-
-    /* Card Subtext (Delta) */
-    [data-testid="stMetricDelta"] {
-        font-size: 0.62rem !important;
-        font-weight: 700 !important;
-        justify-content: center !important;
-    }
-    
-    [data-testid="stMetricDelta"] svg {
-        display: none !important; /* Hide native arrow icons */
-    }
-
-    /* TOP ACCENT STRIPS + SOFT LIGHT BACKGROUNDS BY COLUMN (1 to 11) */
-    
-    /* Col 1: Applications (Soft Blue) */
-    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetric"] { 
-        border-top: 4px solid #3b82f6 !important; 
-        background-color: #eff6ff !important; 
-    }
-    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetricDelta"] { color: #1d4ed8 !important; }
-
-    /* Col 2: QA Approved (Soft Green) */
-    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] { 
-        border-top: 4px solid #10b981 !important; 
-        background-color: #f0fdf4 !important; 
-    }
-    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetricDelta"] { color: #15803d !important; }
-
-    /* Col 3: QA Rework (Soft Yellow) */
-    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetric"] { 
-        border-top: 4px solid #f59e0b !important; 
-        background-color: #fefce8 !important; 
-    }
-    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetricDelta"] { color: #b45309 !important; }
-
-    /* Col 4: QA Cancelled (Soft Red) */
-    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetric"] { 
-        border-top: 4px solid #ef4444 !important; 
-        background-color: #fef2f2 !important; 
-    }
-    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
-
-    /* Col 5: QA Pending (Soft Orange/Yellow) */
-    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetric"] { 
-        border-top: 4px solid #f97316 !important; 
-        background-color: #fff7ed !important; 
-    }
-    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetricDelta"] { color: #c2410c !important; }
-
-    /* Col 6: Welcome Done (Soft Green) */
-    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetric"] { 
-        border-top: 4px solid #10b981 !important; 
-        background-color: #f0fdf4 !important; 
-    }
-    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetricDelta"] { color: #15803d !important; }
-
-    /* Col 7: Welcome Cancel (Soft Red) */
-    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetric"] { 
-        border-top: 4px solid #ef4444 !important; 
-        background-color: #fef2f2 !important; 
-    }
-    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
-
-    /* Col 8: Welcome Pend. (Soft Yellow) */
-    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetric"] { 
-        border-top: 4px solid #f59e0b !important; 
-        background-color: #fefce8 !important; 
-    }
-    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetricDelta"] { color: #b45309 !important; }
-
-    /* Col 9: Live (Soft Teal) */
-    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetric"] { 
-        border-top: 4px solid #14b8a6 !important; 
-        background-color: #f0fdfa !important; 
-    }
-    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetricDelta"] { color: #0f766e !important; }
-
-    /* Col 10: Committed (Soft Yellow) */
-    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetric"] { 
-        border-top: 4px solid #f59e0b !important; 
-        background-color: #fefce8 !important; 
-    }
-    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetricDelta"] { color: #b45309 !important; }
-
-    /* Col 11: Live Cancelled (Soft Red) */
-    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetric"] { 
-        border-top: 4px solid #ef4444 !important; 
-        background-color: #fef2f2 !important; 
-    }
-    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
-</style>
-""", unsafe_allow_html=True)
-
-
-# ==========================================================
-# CONSTANTS
-# ==========================================================
-
-SPREADSHEET_ID = "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ"
-
-APPLICATION_SHEET = "Sparta"
-LIVE_SHEET = "Sparta2"
-
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets.readonly"
+LIVE_AGENTS = [
+   "Anshu","Anjali", "Frogh",
+   "Naveen", "Krrish",
+   "Animesh","Ajay","Kunal",
 ]
 
-# ==========================================================
-# GOOGLE SHEETS CONNECTION
-# ==========================================================
+st.markdown("""
+   <style>
+   .block-container { max-width: 98%; padding-top: 5rem; }
+    h3 { margin-bottom: 0.5rem !important; font-size: 1.2rem !important; color: #1E3A8A; }
+   .last-updated { font-size: 0.8rem; color: gray; text-align: right; }
+   [data-testid="stMetricValue"] { font-size: 1.6rem !important; }
+   [data-testid="stMetricLabel"] { font-size: 0.85rem !important; white-space: nowrap; }
+   </style>
+   """, unsafe_allow_html=True)
 
-def get_google_service():
-    """Generates a fresh service object to prevent stale TCP sockets in Streamlit Cloud."""
-    credentials = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=SCOPES
-    )
-    return build("sheets", "v4", credentials=credentials, cache_discovery=False)
-
-# ==========================================================
-# GENERIC SHEET LOADER
-# ==========================================================
-
-@st.cache_data(ttl=300, show_spinner=False)
-def load_sheet(sheet_name):
-
-    service = get_google_service()
+@st.cache_data(ttl=300)
+def fetch_data():
+    info = st.secrets["gcp_service_account"]
+    creds = Credentials.from_service_account_info(info, scopes=[
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
+    ])
+    client = gspread.authorize(creds)
+    ss = client.open_by_key('1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ')
+    
+    df1 = pd.DataFrame(ss.worksheet('Sparta').get_all_records())
+    df1['Date_Parsed'] = pd.to_datetime(df1['Standardized_Date'], errors='coerce')
+    df1['Advisor'] = df1['Advisor'].astype(str).str.strip().str.title()
+    
+    df2 = pd.DataFrame(ss.worksheet('Sparta2').get_all_records())
+    df2['Date_Parsed'] = pd.to_datetime(df2['Sale Date'], format='mixed', dayfirst=True, errors='coerce')
+    df2['Advisor'] = df2['Agent'].astype(str).str.strip().str.title()
 
     try:
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(
-                spreadsheetId=SPREADSHEET_ID,
-                range=sheet_name
-            )
-            .execute()
-        )
-    except Exception:
-        # Retry with fresh service instance if socket dropped
-        service = get_google_service()
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(
-                spreadsheetId=SPREADSHEET_ID,
-                range=sheet_name
-            )
-            .execute()
-        )
-
-    values = result.get("values", [])
-
-    if not values:
-        return pd.DataFrame()
-
-    headers = values[0]
-    rows = values[1:]
-
-    max_cols = len(headers)
-    cleaned_rows = []
-
-    for row in rows:
-        if len(row) < max_cols:
-            row.extend([""] * (max_cols - len(row)))
-        elif len(row) > max_cols:
-            row = row[:max_cols]
-        cleaned_rows.append(row)
-
-    return pd.DataFrame(cleaned_rows, columns=headers)
-
-# ==========================================================
-# HELPER & DATA CLEANING FUNCTIONS
-# ==========================================================
-
-def clean_phone(series):
-    return (
-        series.astype(str)
-        .str.replace(r"\D", "", regex=True)
-        .str.lstrip("0")
-        .str.strip()
-    )
-
-def parse_mixed_dates(val):
-    """
-    Robust element-wise parser for mixed ISO (YYYY-MM-DD) and UK (DD/MM/YYYY) formats.
-    Ensures 2026-06-12 and 12/06/2026 both parse strictly to 12th June 2026.
-    """
-    if pd.isna(val) or str(val).strip() in ["", "(blank)", "nan", "none"]:
-        return pd.NaT
+        meta = ss.worksheet('Meta').get_all_values()
+        last_sync = meta[0][1]
+    except:
+        last_sync = "Unknown"
     
-    val_str = str(val).strip()
-    
-    # 1. Check for ISO Format: YYYY-MM-DD (e.g. 2026-06-12 00:00:00)
-    iso_match = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})", val_str)
-    if iso_match:
-        year, month, day = iso_match.groups()
-        try:
-            return pd.Timestamp(year=int(year), month=int(month), day=int(day))
-        except ValueError:
-            pass
+    return df1, df2, last_sync
 
-    # 2. Check for UK Format: DD/MM/YYYY (e.g. 12/06/2026)
-    uk_match = re.match(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})", val_str)
-    if uk_match:
-        day, month, year = uk_match.groups()
-        try:
-            return pd.Timestamp(year=int(year), month=int(month), day=int(day))
-        except ValueError:
-            pass
+def map_quality(val):
+    s = str(val).lower()
+    if any(x in s for x in ['appr', 'pass']): return 'Approved'
+    if any(x in s for x in ['rew', 'repro']): return 'Rework'
+    if any(x in s for x in ['can', 'rej']): return 'Cancelled'
+    return 'Others'
 
-    # Fallback parser
-    return pd.to_datetime(val_str, errors="coerce", dayfirst=True)
+def map_portal(val):
+    s = str(val).lower()
+    if 'live' in s: return 'Live'
+    if 'com' in s: return 'Committed'
+    if any(x in s for x in ['can', 'rej']): return 'Cancelled'
+    return 'Others'
 
-def parse_date_to_datetime(series):
-    """Applies the mixed date parser safely across a series."""
-    return series.apply(parse_mixed_dates)
+def format_with_pct(val_df, total_series):
+    display_df = val_df.copy()
+    for col in val_df.columns:
+        pcts = (val_df[col] / total_series * 100).fillna(0)
+        display_df[col] = [
+            f"{int(v):,} ({p:.1f}%)" if v > 0 else "-" 
+            for v, p in zip(val_df[col], pcts)
+        ]
+    return display_df
 
-def format_date_ddmmyyyy(series):
-    """Parses dates safely and converts them into standardized dd/mm/yyyy strings."""
-    parsed = parse_date_to_datetime(series)
-    return parsed.dt.strftime("%d/%m/%Y").fillna("")
+def generate_formatted_pdf(start_date, end_date, df_vol, df_qual, df_live):
+    pdf = FPDF(orientation='P', unit='mm', format='A4')
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.set_text_color(30, 58, 138)
+    pdf.cell(0, 10, f"Sparta Team Report: {start_date} to {end_date}", ln=True, align='C')
+    pdf.ln(5)
+    
+    def draw_pdf_table(df, title):
+        if df.empty: return
+        pdf.set_font("Arial", 'B', 12)
+        pdf.set_text_color(30, 58, 138)
+        pdf.cell(0, 10, title, ln=True)
+        df_reset = df.reset_index()
+        if 'index' in df_reset.columns:
+            df_reset.rename(columns={'index': 'Advisor'}, inplace=True)
+        cols = df_reset.columns.tolist()
+        page_width = pdf.w - 2 * pdf.l_margin
+        col_width_advisor = 40
+        rem_width = page_width - col_width_advisor
+        col_width_other = rem_width / (len(cols) - 1) if len(cols) > 1 else 0
+        row_height = 7
+        pdf.set_font("Arial", 'B', 9)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_fill_color(220, 230, 245)
+        for col in cols:
+            w = col_width_advisor if col == cols[0] else col_width_other
+            pdf.cell(w, row_height, str(col).replace('_', ' '), border=1, fill=True, align='C')
+        pdf.ln(row_height)
+        pdf.set_font("Arial", '', 9)
+        fill = False
+        for _, row in df_reset.iterrows():
+            pdf.set_fill_color(248, 248, 248)
+            for col in cols:
+                w = col_width_advisor if col == cols[0] else col_width_other
+                val = str(row[col])
+                align = 'L' if col == cols[0] else 'R'
+                if str(row[cols[0]]) == "GRAND TOTAL":
+                    pdf.set_font("Arial", 'B', 9)
+                else:
+                    pdf.set_font("Arial", '', 9)
+                pdf.cell(w, row_height, val, border=1, fill=fill, align=align)
+            pdf.ln(row_height)
+            fill = not fill
+        pdf.ln(10)
 
-def categorize_quality_status(val):
-    if pd.isna(val):
-        return "Pending"
-    
-    val_str = str(val).strip().lower()
-    
-    if val_str in ["", "(blank)", "nan", "none"]:
-        return "Pending"
-    
-    if "appr" in val_str:
-        return "Approved"
-    
-    if "rework" in val_str:
-        return "Rework"
-    
-    if any(k in val_str for k in ["cancel", "reject", "hold", "duplicat", "inbound", "n/a", "rec in accessible"]):
-        return "Cancelled"
-    
-    return "Cancelled"
+    draw_pdf_table(df_vol, "1. Applications Volume")
+    draw_pdf_table(df_qual, "2. Quality Audit Status")
+    draw_pdf_table(df_live, "3. Live Status Pipeline")
+    return pdf.output(dest='S').encode('latin-1')
 
-def categorize_welcome_status(val):
-    if pd.isna(val):
-        return "Pending"
-    
-    val_str = str(val).strip().lower()
-    
-    if val_str in ["", "(blank)", "nan", "none"]:
-        return "Pending"
-    
-    if "done" in val_str:
-        return "Done"
-    
-    if any(k in val_str for k in ["cancel", "reject", "hold"]):
-        return "Cancelled"
-    
-    if any(k in val_str for k in ["pending", "follow", "paperwork", "wrong", "ring"]):
-        return "Pending"
-    
-    return "Pending"
+KPI_DEFS = {
+   "total_apps": "Total Applications.",
+   "qual_approved": "Applications that have successfully passed the Quality Audit process.",
+   "approv_rate": "Percentage of total applications that reached 'Approved' status.",
+   "commit_apps": "Total applications that got 'Committed'.",
+   "commit_rate": "Percentage of applications that got 'Committed'",
+   "total_live": "Total applications that got 'Live'.",
+   "live_rate": "Conversion rate from Committed applications to confirmed Live records."
+}
 
-def categorize_portal_status(val):
-    if pd.isna(val):
-        return "Committed"
-    
-    val_str = str(val).strip().lower()
-    
-    if val_str in ["", "(blank)", "nan", "none"]:
-        return "Committed"
-    
-    if any(k in val_str for k in ["cancel", "reject", "to be cancelled"]):
-        return "Cancelled"
-    
-    if any(k in val_str for k in ["live", "active", "completed"]):
-        return "Live"
-    
-    if any(k in val_str for k in ["commit", "pending", "in progress", "processing"]):
-        return "Committed"
-    
-    return "Committed"
+TABLE_TOOLTIPS = {
+    "Total Applications": "Grand total of all applications logged by the advisor.",
+    "Applications": "Number of applications logged for this specific period.",
+    "Approved": "Applications that have cleared the Quality Audit process.",
+    "Rework": "Applications requiring corrections or missing information.",
+    "Cancelled": "Applications that were rejected or did not proceed.",
+    "Others": "Applications that are pending, hold or other miscellaneous statuses.",
+    "Live": "Applications successfully activated and confirmed.",
+    "Committed": "Applications processed and awaiting final activation."
+}
 
-# ==========================================================
-# APP HEADER
-# ==========================================================
+try:
+    df1, df2, last_sync = fetch_data()
 
-st.title("📊 Sparta Sales Dashboard")
+    col_title, col_time = st.columns([3, 1])
+    with col_title:
+        st.image("https://raw.githubusercontent.com/dataanalystsparta-netizen/logos/refs/heads/main/sparta-lite.30f2063887def24833df3d0d5ac6c503.png", width=280)
+        st.title("Sparta Performance & Live Status Dashboard")
+        
+    col_time.markdown(f"<p class='last-updated'>Data Last Synced:<br><b>{last_sync}</b></p>", unsafe_allow_html=True)
 
-st.caption(
-    f"Last refresh : {datetime.now().strftime('%d %b %Y %H:%M:%S')}"
-)
+    col_a, col_b, col_c = st.columns([1, 1, 1.5])
+    start_date = col_a.date_input("Start Date", datetime.date.today().replace(day=1))
+    end_date = col_b.date_input("End Date", datetime.date.today())
 
-st.divider()
+    f1 = df1[(df1['Date_Parsed'].dt.date >= start_date) & (df1['Date_Parsed'].dt.date <= end_date)].copy()
+    f2 = df2[(df2['Date_Parsed'].dt.date >= start_date) & (df2['Date_Parsed'].dt.date <= end_date)].copy()
 
-# ==========================================================
-# LOAD APPLICATION SHEET
-# ==========================================================
+    f1['Q_Status'] = f1['Quality Status'].apply(map_quality)
+    f2['P_Status'] = f2['Status'].apply(map_portal)
 
-@st.cache_data(ttl=300, show_spinner=False)
-def load_sparta():
+    all_advisors = sorted(list(set(f1['Advisor'].unique()) | set(f2['Advisor'].unique())))
+    formatted_live = [name.strip().title() for name in LIVE_AGENTS]
 
-    df = load_sheet(APPLICATION_SHEET)
-
-    rename_map = {
-        "Advisor": "Advisor",
-        "Sale Date": "Sale Date",
-        "Customer Name": "Customer Name",
-        "CLI": "Telephone No.",
-        "Quality Date": "Quality Date",
-        "Quality Status": "Quality Status",
-        "Quality Remarks": "Quality Remarks",
-        "Welcome call Remarks": "Welcome Remarks",
-        "Status": "Welcome Status",
-        "Cancellation Sub-text": "Welcome Cancellation",
-        "WCD date": "Welcome Date",
-        "Provisioning": "Provisioning Status",
-        "Prov Date": "Provisioning Date",
-        "Current Provider": "Current Provider",
-        "Packageoffered": "Package",
-        "Dashboard_Month": "Dashboard Month",
-        "Standardized_Date": "Standardized Date"
+    sort_options = {
+        "Total Applications (High to Low)": "Total Applications", 
+        "Quality: Approved": "Qual_Approved", 
+        "Quality: Cancelled": "Qual_Cancelled", 
+        "Live Status: Live": "Port_Live", 
+        "Advisor Name (A-Z)": "index"
     }
-
-    df = df.rename(columns=rename_map)
-
-    keep_columns = [
-        "Advisor",
-        "Sale Date",
-        "Customer Name",
-        "Telephone No.",
-        "Quality Date",
-        "Quality Status",
-        "Quality Remarks",
-        "Welcome Remarks",
-        "Welcome Status",
-        "Welcome Cancellation",
-        "Welcome Date",
-        "Provisioning Status",
-        "Provisioning Date",
-        "Current Provider",
-        "Package",
-        "Dashboard Month",
-        "Standardized Date"
-    ]
-
-    df = df[keep_columns].copy()
-    df["Telephone No."] = clean_phone(df["Telephone No."])
-
-    # Keep parsed Datetime object for internal calculations
-    df["Sale Date Clean"] = parse_date_to_datetime(df["Sale Date"])
-
-    # Format display date columns explicitly
-    date_columns = [
-        "Sale Date",
-        "Quality Date",
-        "Welcome Date",
-        "Provisioning Date",
-        "Standardized Date"
-    ]
-
-    for col in date_columns:
-        df[col] = format_date_ddmmyyyy(df[col])
-
-    # Standardize Statuses
-    df["Quality Status Clean"] = df["Quality Status"].apply(categorize_quality_status)
-    df["Welcome Status Clean"] = df["Welcome Status"].apply(categorize_welcome_status)
-
-    return df
-
-# ==========================================================
-# LOAD PORTAL SHEET
-# ==========================================================
-
-@st.cache_data(ttl=300, show_spinner=False)
-def load_sparta2():
-
-    df = load_sheet(LIVE_SHEET)
-
-    rename_map = {
-        "Telephone No.": "Telephone No.",
-        "Committed Date": "Live Date",
-        "Status": "Portal Status",
-        "LetterStatus": "Letter Status",
-        "CallStatus": "Call Status",
-        "Comments": "Comments",
-        "Voice of Customer": "Voice of Customer",
-        "Cancellation Reason": "Portal Cancellation",
-        "Dashboard_Month": "Dashboard Month",
-        "Standardized_Date": "Standardized Date"
-    }
-
-    df = df.rename(columns=rename_map)
-
-    keep_columns = [
-        "Telephone No.",
-        "Live Date",
-        "Portal Status",
-        "Letter Status",
-        "Call Status",
-        "Comments",
-        "Voice of Customer",
-        "Portal Cancellation",
-        "Dashboard Month",
-        "Standardized Date"
-    ]
-
-    df = df[keep_columns].copy()
-    df["Telephone No."] = clean_phone(df["Telephone No."])
-
-    # Keep internal parsed datetime for sheet 2 date filtering
-    df["Portal Date Clean"] = parse_date_to_datetime(df["Live Date"])
-    if df["Portal Date Clean"].isna().all() and "Standardized Date" in df.columns:
-        df["Portal Date Clean"] = parse_date_to_datetime(df["Standardized Date"])
-
-    # Format portal display dates
-    df["Live Date"] = format_date_ddmmyyyy(df["Live Date"])
-    df["Standardized Date"] = format_date_ddmmyyyy(df["Standardized Date"])
-
-    # Standardize Portal/Live Status
-    df["Portal Status Clean"] = df["Portal Status"].apply(categorize_portal_status)
-
-    return df
-
-# ==========================================================
-# LOAD BOTH DATASETS
-# ==========================================================
-
-with st.spinner("Loading Google Sheets..."):
-    sparta_df = load_sparta()
-    sparta2_df = load_sparta2()
-
-# ==========================================================
-# BUILD MASTER DATASET
-# ==========================================================
-
-@st.cache_data(ttl=300, show_spinner=False)
-def build_master_dataframe(app_df, portal_df):
-    apps = app_df.copy()
-    portal = portal_df.copy()
-
-    # Deduplicate portal records keeping the latest updated row
-    portal_clean = portal.drop_duplicates(
-        subset="Telephone No.",
-        keep="last"
-    )
-
-    master = apps.merge(
-        portal_clean,
-        on="Telephone No.",
-        how="left",
-        suffixes=("", "_portal")
-    )
-
-    return master
-
-master_raw_df = build_master_dataframe(
-    sparta_df,
-    sparta2_df
-)
-
-# ==========================================================
-# TOP DATE FILTER SECTION
-# ==========================================================
-
-st.subheader("📅 Filter Date Range")
-
-valid_dates = master_raw_df["Sale Date Clean"].dropna()
-min_date = valid_dates.min().date() if not valid_dates.empty else datetime.today().date()
-max_date = valid_dates.max().date() if not valid_dates.empty else datetime.today().date()
-
-filter_col1, filter_col2 = st.columns([1, 1])
-
-with filter_col1:
-    start_date = st.date_input(
-        "Start Date",
-        value=min_date,
-        min_value=min_date,
-        max_value=max_date,
-        format="DD/MM/YYYY"
-    )
-
-with filter_col2:
-    end_date = st.date_input(
-        "End Date",
-        value=max_date,
-        min_value=min_date,
-        max_value=max_date,
-        format="DD/MM/YYYY"
-    )
-
-# Filter Application Sheet by Sale Date
-if start_date <= end_date:
-    app_date_mask = (
-        (master_raw_df["Sale Date Clean"].dt.date >= start_date) & 
-        (master_raw_df["Sale Date Clean"].dt.date <= end_date)
-    )
-    master_df = master_raw_df[app_date_mask].copy()
     
-    # Filter Portal Sheet independently using Sheet 2 Date Column for Portal KPIs
-    portal_date_mask = (
-        (sparta2_df["Portal Date Clean"].dt.date >= start_date) & 
-        (sparta2_df["Portal Date Clean"].dt.date <= end_date)
-    )
-    portal_filtered_df = sparta2_df[portal_date_mask].copy()
-else:
-    st.error("Error: Start Date must be earlier than or equal to End Date.")
-    master_df = master_raw_df.copy()
-    portal_filtered_df = sparta2_df.copy()
+    app_counts_base = f1.groupby('Advisor').size().to_frame('Total Applications')
+    qual_counts_base = f1.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
+    port_counts_base = f2.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
+    master_base = pd.DataFrame(index=all_advisors).join([app_counts_base, qual_counts_base, port_counts_base]).fillna(0)
 
-st.divider()
+    available_sorts = [k for k, v in sort_options.items() if v == "index" or v in master_base.columns]
+    selected_sort_label = col_c.selectbox("Master Sort (Aligns all tables):", available_sorts)
 
-# ==========================================================
-# TOP KPI SECTION (ST.METRIC 11 COLUMNS)
-# ==========================================================
+    tab1, tab2 = st.tabs(["📊 Team Overview", "👤 Individual Performance"])
 
-st.subheader("📌 Key Performance Indicators")
+    with tab1:
+        show_live_team = st.checkbox("Show current roster only", value=False, key="team_roster_filter")
+        
+        if show_live_team:
+            f1_team = f1[f1['Advisor'].isin(formatted_live)].copy()
+            f2_team = f2[f2['Advisor'].isin(formatted_live)].copy()
+            active_advisors_team = [name for name in all_advisors if name in formatted_live]
+        else:
+            f1_team = f1.copy()
+            f2_team = f2.copy()
+            active_advisors_team = all_advisors
 
-def count_status(df, column, target_val):
-    if column not in df.columns:
-        return 0
-    return (df[column] == target_val).sum()
+        team_apps = len(f1_team)
+        team_approved = len(f1_team[f1_team['Q_Status'] == 'Approved'])
+        team_approv_rate = f"{(team_approved / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
+        team_committed = len(f2_team)
+        team_commit_rate = f"{(team_committed / team_apps * 100):.1f}%" if team_apps > 0 else "0.0%"
+        team_live = len(f2_team[f2_team['P_Status'] == 'Live'])
+        team_live_rate = f"{(team_live / team_committed * 100):.1f}%" if team_committed > 0 else "0.0%"
 
-def get_pct(part, total):
-    if total == 0:
-        return "0.0%"
-    return f"{(part / total * 100):.1f}%"
+        with st.container(border=True):
+            tm1, tm2, tm3, tm4, tm5, tm6, tm7 = st.columns(7)
+            tm1.metric("📝 Tot. Applications", f"{team_apps:,}", help=KPI_DEFS["total_apps"])
+            tm2.metric("✅ Quality Approv.", f"{team_approved:,}", help=KPI_DEFS["qual_approved"])
+            tm3.metric("📈 Approv. Rate", team_approv_rate, help=KPI_DEFS["approv_rate"])
+            tm4.metric("📦 Commit. Apps", f"{team_committed:,}", help=KPI_DEFS["commit_apps"])
+            tm5.metric("📋 Commit. Rate", team_commit_rate, help=KPI_DEFS["commit_rate"])
+            tm6.metric("🌐 Total Live", f"{team_live:,}", help=KPI_DEFS["total_live"])
+            tm7.metric("🚀 Live Rate", team_live_rate, help=KPI_DEFS["live_rate"])
 
-# Application KPIs calculated from filtered Sparta (master_df)
-total_applications = len(master_df)
+        app_counts = f1_team.groupby('Advisor').size().to_frame('Total Applications')
+        qual_counts = f1_team.groupby(['Advisor', 'Q_Status']).size().unstack(fill_value=0).add_prefix('Qual_')
+        port_counts = f2_team.groupby(['Advisor', 'P_Status']).size().unstack(fill_value=0).add_prefix('Port_')
+        
+        tab_master = pd.DataFrame(index=active_advisors_team).join([app_counts, qual_counts, port_counts]).fillna(0)
+        sort_col = sort_options[selected_sort_label]
+        master = tab_master.sort_index() if sort_col == "index" else tab_master.sort_values(sort_col, ascending=False)
+        
+        totals_row = master.sum().to_frame().T
+        totals_row.index = ["GRAND TOTAL"]
+        final_df = pd.concat([master, totals_row])
+        advisor_indices = master.index
 
-q_approved = count_status(master_df, "Quality Status Clean", "Approved")
-q_rework = count_status(master_df, "Quality Status Clean", "Rework")
-q_cancelled = count_status(master_df, "Quality Status Clean", "Cancelled")
-q_pending = count_status(master_df, "Quality Status Clean", "Pending")
+        st.divider()
+        c1, c2, c3 = st.columns([1, 1.8, 1.8])
+        
+        with c1:
+            st.subheader("📊 Applications")
+            st.dataframe(
+                final_df[['Total Applications']].style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(advisor_indices, 'Total Applications')), 
+                use_container_width=True, height=500,
+                column_config={"Total Applications": st.column_config.Column(help=TABLE_TOOLTIPS["Total Applications"])}
+            )
+        
+        with c2:
+            st.subheader("✅ Quality Audit")
+            q_cols = [c for c in final_df.columns if c.startswith('Qual_')]
+            if q_cols:
+                q_order = ['Qual_Approved', 'Qual_Rework', 'Qual_Cancelled', 'Qual_Others']
+                actual_q_order = [c for c in q_order if c in q_cols]
+                disp_qual_num = final_df[actual_q_order].rename(columns=lambda x: x.replace('Qual_', ''))
+                disp_qual_str = format_with_pct(disp_qual_num, final_df['Total Applications'])
+                styler_q = disp_qual_str.style
+                for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
+                    if col in disp_qual_num.columns:
+                        styler_q = styler_q.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_qual_num[col])
+                
+                st.dataframe(
+                    styler_q, use_container_width=True, height=500,
+                    column_config={col: st.column_config.Column(help=TABLE_TOOLTIPS.get(col, "")) for col in disp_qual_num.columns}
+                )
+            else:
+                st.info("No quality data available.")
+            
+        with c3:
+            st.subheader("🌐 Live Status")
+            p_cols = [c for c in final_df.columns if c.startswith('Port_')]
+            if p_cols:
+                p_order = ['Port_Live', 'Port_Committed', 'Port_Cancelled', 'Port_Others']
+                actual_p_order = [c for c in p_order if c in p_cols]
+                disp_port_num = final_df[actual_p_order].rename(columns=lambda x: x.replace('Port_', ''))
+                disp_port_str = format_with_pct(disp_port_num, final_df['Total Applications'])
+                styler_p = disp_port_str.style
+                for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
+                    if col in disp_port_num.columns:
+                        styler_p = styler_p.background_gradient(subset=(advisor_indices, col), cmap=cmap, gmap=disp_port_num[col])
+                
+                st.dataframe(
+                    styler_p, use_container_width=True, height=500,
+                    column_config={col: st.column_config.Column(help=TABLE_TOOLTIPS.get(col, "")) for col in disp_port_num.columns}
+                )
+            else:
+                st.info("No live status data available.")
 
-wc_done = count_status(master_df, "Welcome Status Clean", "Done")
-wc_cancelled = count_status(master_df, "Welcome Status Clean", "Cancelled")
-wc_pending = count_status(master_df, "Welcome Status Clean", "Pending")
+        st.write("### 📥 Download Team Report")
+        e_col1, e_col2, e_col3 = st.columns(3)
+        export_vol = final_df[['Total Applications']]
+        export_qual = disp_qual_str if q_cols else pd.DataFrame()
+        export_live = disp_port_str if p_cols else pd.DataFrame()
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            export_vol.to_excel(writer, sheet_name='Applications_Volume')
+            if not export_qual.empty: export_qual.to_excel(writer, sheet_name='Quality_Audit')
+            if not export_live.empty: export_live.to_excel(writer, sheet_name='Live_Status')
+        e_col1.download_button(label="Excel (All Tables)", data=output.getvalue(), file_name=f"Sparta_Team_Report_{start_date}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        combined_csv = "APPLICATIONS VOLUME\n" + export_vol.to_csv() + "\nQUALITY AUDIT\n" + export_qual.to_csv() + "\nLIVE STATUS\n" + export_live.to_csv()
+        e_col2.download_button(label="CSV (Combined Tables)", data=combined_csv, file_name=f"Sparta_Team_Report_{start_date}.csv", mime="text/csv")
+        pdf_bytes = generate_formatted_pdf(start_date, end_date, export_vol, export_qual, export_live)
+        e_col3.download_button(label="PDF (Formatted Tables)", data=pdf_bytes, file_name=f"Sparta_Team_Report_{start_date}.pdf", mime="application/pdf")
 
-# Portal KPIs calculated directly from filtered Sparta2 (portal_filtered_df)
-portal_live = count_status(portal_filtered_df, "Portal Status Clean", "Live")
-portal_committed = count_status(portal_filtered_df, "Portal Status Clean", "Committed")
-portal_cancelled = count_status(portal_filtered_df, "Portal Status Clean", "Cancelled")
+        st.divider()
+        st.subheader("📈 Team Performance Trends")
+        tg_1, tg_2 = st.columns(2)
+        with tg_1:
+            if not f1_team.empty:
+                daily_v = f1_team.groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Apps')
+                daily_q = f1_team[f1_team['Q_Status'] == 'Approved'].groupby(f1_team['Date_Parsed'].dt.date).size().reset_index(name='Approved')
+                combined = pd.merge(daily_v, daily_q, on='Date_Parsed', how='left').fillna(0)
+                combined['Date_Parsed'] = combined['Date_Parsed'].astype(str)
+                fig_single = go.Figure()
+                fig_single.add_trace(go.Bar(x=combined['Date_Parsed'], y=combined['Apps'], name="Total Apps", marker_color='#1E3A8A'))
+                fig_single.add_trace(go.Scatter(x=combined['Date_Parsed'], y=combined['Approved'], name="Approved (Audit)", line=dict(color='#2E7D32', width=3)))
+                fig_single.update_layout(title_text="Daily Apps vs. Quality Approval", hovermode="x unified")
+                st.plotly_chart(fig_single, use_container_width=True)
+            else:
+                st.info("No application trend data for this period.")
+        with tg_2:
+            available_cols = [c for c in ['Port_Live', 'Port_Cancelled'] if c in master.columns]
+            if available_cols:
+                status_plot = master[available_cols].rename(columns={'Port_Live':'Live', 'Port_Cancelled':'Cancelled'}).reset_index()
+                fig_status = px.bar(status_plot, x='index', y=[c.replace('Port_', '') for c in available_cols], barmode='group', color_discrete_map={'Live': '#2563EB', 'Cancelled': '#DC2626'}, title="Agent-wise Live vs. Cancelled Volume")
+                st.plotly_chart(fig_status, use_container_width=True)
+            else:
+                st.info("No Live/Cancelled records found for this selection.")
 
-cols = st.columns(11)
+    with tab2:
+        st.subheader("👤 Detailed Agent Analysis")
+        col_check, col_select = st.columns([1, 3])
+        show_live_only = col_check.checkbox("Show current roster only", value=False, key="individual_roster_filter")
+        dropdown_list = [n for n in all_advisors if n in formatted_live] if show_live_only else all_advisors
+        selected_agent = col_select.selectbox("Select Agent:", dropdown_list if dropdown_list else all_advisors)
+        
+        if selected_agent:
+            ag1 = f1[f1['Advisor'] == selected_agent].copy()
+            ag2 = f2[f2['Advisor'] == selected_agent].copy()
+            total_apps = len(ag1)
+            approved = len(ag1[ag1['Q_Status'] == 'Approved'])
+            approval_rate = f"{(approved / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
+            total_committed_apps = len(ag2) 
+            committed_rate = f"{(total_committed_apps / total_apps * 100):.1f}%" if total_apps > 0 else "0.0%"
+            live = len(ag2[ag2['P_Status'] == 'Live'])
+            live_rate = f"{(live / total_committed_apps * 100):.1f}%" if total_committed_apps > 0 else "0.0%"
+            
+            with st.container(border=True):
+                m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
+                m1.metric("📝 Tot. Applications", f"{total_apps:,}", help=KPI_DEFS["total_apps"])
+                m2.metric("✅ Quality Approv.", f"{approved:,}", help=KPI_DEFS["qual_approved"])
+                m3.metric("📈 Approv. Rate", approval_rate, help=KPI_DEFS["approv_rate"])
+                m4.metric("📦 Commit. Apps", f"{total_committed_apps:,}", help=KPI_DEFS["commit_apps"])
+                m5.metric("📋 Commit. Rate", committed_rate, help=KPI_DEFS["commit_rate"])
+                m6.metric("🌐 Total Live", f"{live:,}", help=KPI_DEFS["total_live"])
+                m7.metric("🚀 Live Rate", live_rate, help=KPI_DEFS["live_rate"])
+            
+            st.divider()
+            view_mode = st.radio("View Breakdown By:", ["Daily", "Monthly"], horizontal=True)
+            if view_mode == "Monthly":
+                ag1['Period'] = ag1['Date_Parsed'].dt.to_period('M')
+                ag2['Period'] = ag2['Date_Parsed'].dt.to_period('M')
+            else:
+                ag1['Period'] = ag1['Date_Parsed'].dt.date
+                ag2['Period'] = ag2['Date_Parsed'].dt.date
+            
+            st.write(f"**{view_mode}** breakdown for **{selected_agent}**")
+            ca, cb, cc = st.columns([1, 1.8, 1.8])
 
-kpis = [
-    ("Applications", total_applications, "100% Base"),
-    ("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified"),
-    ("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework"),
-    ("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected"),
-    ("Quality Pending", q_pending, f"{get_pct(q_pending, total_applications)} Pending"),
-    ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed"),
-    ("Welcome Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled"),
-    ("Welcome Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending"),
-    ("Live Status: Live", portal_live, f"{get_pct(portal_live, total_applications)} Live/Pend."),
-    ("Live Status: Comm.", portal_committed, f"{get_pct(portal_committed, total_applications)} Pipeline"),
-    ("Live Status: Canc.", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned")
-]
+            with ca:
+                st.markdown(f"#### 📊 {view_mode} Applications")
+                if not ag1.empty:
+                    daily_apps = ag1.groupby('Period').size().to_frame('Applications')
+                    if view_mode == "Monthly": daily_apps.index = daily_apps.index.strftime('%b %Y')
+                    t_apps = daily_apps.sum().to_frame().T
+                    t_apps.index = ["TOTAL"]
+                    df_apps = pd.concat([daily_apps, t_apps])
+                    st.dataframe(
+                        df_apps.style.format("{:,.0f}").background_gradient(cmap='Greens', subset=(daily_apps.index, 'Applications')), 
+                        use_container_width=True,
+                        column_config={"Applications": st.column_config.Column(help=TABLE_TOOLTIPS["Applications"])}
+                    )
+                else:
+                    st.info("No applications found.")
 
-for col, (label, val, delta_sub) in zip(cols, kpis):
-    with col:
-        st.metric(
-            label=label,
-            value=f"{val:,}",
-            delta=delta_sub
-        )
+            with cb:
+                st.markdown("#### ✅ Quality Audit")
+                if not ag1.empty:
+                    daily_qual = ag1.groupby(['Period', 'Q_Status']).size().unstack(fill_value=0)
+                    q_order = ['Approved', 'Rework', 'Cancelled', 'Others']
+                    actual_q = [c for c in q_order if c in daily_qual.columns]
+                    dq_num = daily_qual[actual_q]
+                    if view_mode == "Monthly": dq_num.index = dq_num.index.strftime('%b %Y')
+                    row_totals = daily_apps['Applications']
+                    dq_str = format_with_pct(dq_num, row_totals)
+                    t_qual_num = dq_num.sum().to_frame().T
+                    t_qual_num.index = ["TOTAL"]
+                    t_qual_str = format_with_pct(t_qual_num, pd.Series([total_apps], index=["TOTAL"]))
+                    final_q_str = pd.concat([dq_str, t_qual_str])
+                    styler_dq = final_q_str.style
+                    for col, cmap in [('Approved', 'YlGn'), ('Cancelled', 'Reds'), ('Rework', 'Wistia')]:
+                        if col in dq_num.columns:
+                            styler_dq = styler_dq.background_gradient(subset=(dq_num.index, col), cmap=cmap, gmap=dq_num[col])
+                    
+                    st.dataframe(
+                        styler_dq, use_container_width=True,
+                        column_config={col: st.column_config.Column(help=TABLE_TOOLTIPS.get(col, "")) for col in dq_num.columns}
+                    )
+                else:
+                    st.info("No quality records.")
 
-# ==========================================================
-# KPI DEBUG & STATUS BREAKDOWN DRILLDOWN
-# ==========================================================
+            with cc:
+                st.markdown("#### 🌐 Live Status")
+                if not ag2.empty:
+                    daily_port = ag2.groupby(['Period', 'P_Status']).size().unstack(fill_value=0)
+                    p_order = ['Live', 'Committed', 'Cancelled', 'Others']
+                    actual_p = [c for c in p_order if c in daily_port.columns]
+                    dp_num = daily_port[actual_p]
+                    if view_mode == "Monthly": dp_num.index = dp_num.index.strftime('%b %Y')
+                    dp_str = format_with_pct(dp_num, row_totals)
+                    t_port_num = dp_num.sum().to_frame().T
+                    t_port_num.index = ["TOTAL"]
+                    t_port_str = format_with_pct(t_port_num, pd.Series([total_apps], index=["TOTAL"]))
+                    final_p_str = pd.concat([dp_str, t_port_str])
+                    styler_dp = final_p_str.style
+                    for col, cmap in [('Live', 'Blues'), ('Cancelled', 'Reds'), ('Committed', 'Purples')]:
+                        if col in dp_num.columns:
+                            styler_dp = styler_dp.background_gradient(subset=(dp_num.index, col), cmap=cmap, gmap=dp_num[col])
+                    
+                    st.dataframe(
+                        styler_dp, use_container_width=True,
+                        column_config={col: st.column_config.Column(help=TABLE_TOOLTIPS.get(col, "")) for col in dp_num.columns}
+                    )
+                else:
+                    st.info("No live status records found for this agent.")
 
-with st.expander("🔍 KPI Status Breakdown & Mapping Inspector", expanded=False):
-    st.markdown("### Raw vs Cleaned Status Audit")
-    
-    col_debug1, col_debug2, col_debug3 = st.columns(3)
-    
-    with col_debug1:
-        st.subheader("1. Quality Status Breakdown (Sheet 1)")
-        q_cols = [c for c in ["Quality Status", "Quality Status Clean"] if c in master_df.columns]
-        q_breakdown = (
-            master_df.groupby(q_cols, dropna=False)
-            .size()
-            .reset_index(name="Record Count")
-            .sort_values(by="Record Count", ascending=False)
-        )
-        st.dataframe(q_breakdown, use_container_width=True, hide_index=True)
+            st.divider()
+            st.subheader(f"📈 Performance Trends: {selected_agent}")
+            if not ag1.empty:
+                d_apps = ag1.groupby('Period').size().to_frame('Total Apps')
+                d_comm = ag2.groupby('Period').size().to_frame('Committed')
+                d_appr = ag1[ag1['Q_Status'] == 'Approved'].groupby('Period').size().to_frame('Approved')
+                d_live = ag2[ag2['P_Status'] == 'Live'].groupby('Period').size().to_frame('Live')
+                i_comb = d_apps.join([d_comm, d_appr, d_live], how='left').fillna(0).reset_index()
+                i_comb['Period'] = i_comb['Period'].astype(str)
+                ig1, ig2 = st.columns(2)
+                with ig1:
+                    fig1 = go.Figure()
+                    fig1.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Total Apps'], name="Total Apps", marker_color='#60A5FA'))
+                    fig1.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Approved'], name="Quality Approved", line=dict(color='#059669', width=3)))
+                    fig1.update_layout(title="Apps vs Quality Approved", hovermode="x unified")
+                    st.plotly_chart(fig1, use_container_width=True)
+                with ig2:
+                    fig2 = go.Figure()
+                    fig2.add_trace(go.Bar(x=i_comb['Period'], y=i_comb['Committed'], name="Commit. Apps", marker_color='#8B5CF6'))
+                    fig2.add_trace(go.Scatter(x=i_comb['Period'], y=i_comb['Live'], name="Live", line=dict(color='#F59E0B', width=3)))
+                    fig2.update_layout(title="Committed vs Live", hovermode="x unified")
+                    st.plotly_chart(fig2, use_container_width=True)
 
-    with col_debug2:
-        st.subheader("2. Welcome Status Breakdown (Sheet 1)")
-        w_cols = [c for c in ["Welcome Status", "Welcome Status Clean"] if c in master_df.columns]
-        w_breakdown = (
-            master_df.groupby(w_cols, dropna=False)
-            .size()
-            .reset_index(name="Record Count")
-            .sort_values(by="Record Count", ascending=False)
-        )
-        st.dataframe(w_breakdown, use_container_width=True, hide_index=True)
-
-    with col_debug3:
-        st.subheader("3. Portal Status Breakdown (Sheet 2 Date Filter)")
-        p_cols = [c for c in ["Portal Status", "Portal Status Clean"] if c in portal_filtered_df.columns]
-        p_breakdown = (
-            portal_filtered_df.groupby(p_cols, dropna=False)
-            .size()
-            .reset_index(name="Record Count")
-            .sort_values(by="Record Count", ascending=False)
-        )
-        st.dataframe(p_breakdown, use_container_width=True, hide_index=True)
-
-    st.divider()
-
-    total_apps = len(master_df)
-    matched_apps = master_df["Portal Status"].notna().sum() if "Portal Status" in master_df.columns else 0
-    unmatched_apps = master_df["Portal Status"].isna().sum() if "Portal Status" in master_df.columns else total_apps
-
-    m_col1, m_col2, m_col3 = st.columns(3)
-    m_col1.metric("Total Applications (Filtered)", f"{total_apps:,}")
-    m_col2.metric("Matched in Sparta2 (Portal)", f"{matched_apps:,}")
-    m_col3.metric(
-        "Unmatched / Missing in Sparta2", 
-        f"{unmatched_apps:,}", 
-        delta="Defaulted to Committed" if unmatched_apps > 0 else "100% Matched",
-        delta_color="inverse" if unmatched_apps > 0 else "normal"
-    )
-
-# Cleanup helper columns after KPIs & Inspector render
-if "Sale Date Clean" in master_df.columns:
-    master_df = master_df.drop(columns=["Sale Date Clean"])
-
-# ==========================================================
-# DATA PREVIEW
-# ==========================================================
-
-st.divider()
-st.header("📂 Data Preview")
-
-tab1, tab2, tab3 = st.tabs([
-    "Applications",
-    "Portal",
-    "Master Dataset"
-])
-
-filtered_sparta = sparta_df[
-    (sparta_df["Sale Date Clean"].dt.date >= start_date) & 
-    (sparta_df["Sale Date Clean"].dt.date <= end_date)
-].drop(columns=["Sale Date Clean"], errors="ignore") if start_date <= end_date else sparta_df.drop(columns=["Sale Date Clean"], errors="ignore")
-
-filtered_sparta2 = portal_filtered_df.drop(columns=["Portal Date Clean"], errors="ignore")
-
-with tab1:
-    st.caption(f"{len(filtered_sparta):,} records (Filtered by Sale Date)")
-    st.dataframe(
-        filtered_sparta,
-        use_container_width=True,
-        height=500,
-        hide_index=True
-    )
-
-with tab2:
-    st.caption(f"{len(filtered_sparta2):,} records (Filtered by Portal Date)")
-    st.dataframe(
-        filtered_sparta2,
-        use_container_width=True,
-        height=500,
-        hide_index=True
-    )
-
-with tab3:
-    st.caption(f"{len(master_df):,} merged records (Filtered)")
-    st.dataframe(
-        master_df,
-        use_container_width=True,
-        height=600,
-        hide_index=True
-    )
-
-# ==========================================================
-# FOOTER
-# ==========================================================
-
-st.divider()
-
-st.success("✅ Data loaded successfully")
-
-st.caption(
-    f"Dashboard refreshed at "
-    f"{datetime.now().strftime('%d %b %Y %H:%M:%S')}"
-)
+except Exception as e:
+    st.error(f"Error: {e}")
