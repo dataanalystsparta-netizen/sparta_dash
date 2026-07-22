@@ -250,22 +250,18 @@ def clean_phone(series):
         .str.strip()
     )
 
-def parse_date(series):
-    """Parses mixed date strings (e.g. ISO timestamp, dd/mm/yyyy) cleanly to datetime64."""
+def parse_date_to_datetime(series):
+    """Converts mixed string dates/timestamps safely into datetime objects for filtering."""
     return pd.to_datetime(
         series,
         errors="coerce",
-        dayfirst=True,
-        format="mixed"
+        dayfirst=True
     )
 
-def format_date_display(df, date_columns):
-    """Formats datetime columns into strict DD/MM/YYYY text format for table output."""
-    out_df = df.copy()
-    for col in date_columns:
-        if col in out_df.columns and pd.api.types.is_datetime64_any_dtype(out_df[col]):
-            out_df[col] = out_df[col].dt.strftime("%d/%m/%Y").fillna("")
-    return out_df
+def format_date_ddmmyyyy(series):
+    """Parses dates safely and converts them into standardized dd/mm/yyyy strings."""
+    parsed = parse_date_to_datetime(series)
+    return parsed.dt.strftime("%d/%m/%Y").fillna("")
 
 def categorize_quality_status(val):
     if pd.isna(val):
@@ -396,6 +392,10 @@ def load_sparta():
     df = df[keep_columns].copy()
     df["Telephone No."] = clean_phone(df["Telephone No."])
 
+    # Keep parsed Datetime object for internal calculations
+    df["Sale Date Clean"] = parse_date_to_datetime(df["Sale Date"])
+
+    # Format all display date columns explicitly to dd/mm/yyyy string format
     date_columns = [
         "Sale Date",
         "Quality Date",
@@ -405,7 +405,7 @@ def load_sparta():
     ]
 
     for col in date_columns:
-        df[col] = parse_date(df[col])
+        df[col] = format_date_ddmmyyyy(df[col])
 
     # Standardize Quality and Welcome Statuses using clean categorization logic
     df["Quality Status Clean"] = df["Quality Status"].apply(categorize_quality_status)
@@ -452,8 +452,10 @@ def load_sparta2():
 
     df = df[keep_columns].copy()
     df["Telephone No."] = clean_phone(df["Telephone No."])
-    df["Live Date"] = parse_date(df["Live Date"])
-    df["Standardized Date"] = parse_date(df["Standardized Date"])
+
+    # Format all portal dates to dd/mm/yyyy
+    df["Live Date"] = format_date_ddmmyyyy(df["Live Date"])
+    df["Standardized Date"] = format_date_ddmmyyyy(df["Standardized Date"])
 
     # Standardize Portal/Live Status
     df["Portal Status Clean"] = df["Portal Status"].apply(categorize_portal_status)
@@ -476,13 +478,6 @@ with st.spinner("Loading Google Sheets..."):
 def build_master_dataframe(app_df, portal_df):
     apps = app_df.copy()
     portal = portal_df.copy()
-
-    if "Live Date" in portal.columns:
-        portal = portal.sort_values(
-            by="Live Date",
-            ascending=False,
-            na_position="last"
-        )
 
     portal = portal.drop_duplicates(
         subset="Telephone No.",
@@ -509,8 +504,8 @@ master_raw_df = build_master_dataframe(
 
 st.subheader("📅 Filter by Sale Date")
 
-# Fallback dates if dataset is completely empty or null
-valid_dates = master_raw_df["Sale Date"].dropna()
+# Use internal datetime column for filter range bounds
+valid_dates = master_raw_df["Sale Date Clean"].dropna()
 min_date = valid_dates.min().date() if not valid_dates.empty else datetime.today().date()
 max_date = valid_dates.max().date() if not valid_dates.empty else datetime.today().date()
 
@@ -537,13 +532,17 @@ with filter_col2:
 # Apply Date Filter across Master Dataframe
 if start_date <= end_date:
     date_mask = (
-        (master_raw_df["Sale Date"].dt.date >= start_date) & 
-        (master_raw_df["Sale Date"].dt.date <= end_date)
+        (master_raw_df["Sale Date Clean"].dt.date >= start_date) & 
+        (master_raw_df["Sale Date Clean"].dt.date <= end_date)
     )
     master_df = master_raw_df[date_mask].copy()
 else:
     st.error("Error: Start Date must be earlier than or equal to End Date.")
     master_df = master_raw_df.copy()
+
+# Drop temporary parsing column before rendering tables
+if "Sale Date Clean" in master_df.columns:
+    master_df = master_df.drop(columns=["Sale Date Clean"])
 
 st.divider()
 
@@ -621,19 +620,14 @@ tab1, tab2, tab3 = st.tabs([
 
 # Filter individual dataframes for Preview tabs
 filtered_sparta = sparta_df[
-    (sparta_df["Sale Date"].dt.date >= start_date) & 
-    (sparta_df["Sale Date"].dt.date <= end_date)
-] if start_date <= end_date else sparta_df
-
-# Standardize date column names for display formatting
-app_date_cols = ["Sale Date", "Quality Date", "Welcome Date", "Provisioning Date", "Standardized Date"]
-portal_date_cols = ["Live Date", "Standardized Date"]
-master_date_cols = app_date_cols + portal_date_cols
+    (sparta_df["Sale Date Clean"].dt.date >= start_date) & 
+    (sparta_df["Sale Date Clean"].dt.date <= end_date)
+].drop(columns=["Sale Date Clean"]) if start_date <= end_date else sparta_df.drop(columns=["Sale Date Clean"])
 
 with tab1:
     st.caption(f"{len(filtered_sparta):,} records (Filtered)")
     st.dataframe(
-        format_date_display(filtered_sparta, app_date_cols),
+        filtered_sparta,
         use_container_width=True,
         height=500,
         hide_index=True
@@ -642,7 +636,7 @@ with tab1:
 with tab2:
     st.caption(f"{len(sparta2_df):,} records")
     st.dataframe(
-        format_date_display(sparta2_df, portal_date_cols),
+        sparta2_df,
         use_container_width=True,
         height=500,
         hide_index=True
@@ -651,7 +645,7 @@ with tab2:
 with tab3:
     st.caption(f"{len(master_df):,} merged records (Filtered)")
     st.dataframe(
-        format_date_display(master_df, master_date_cols),
+        master_df,
         use_container_width=True,
         height=600,
         hide_index=True
