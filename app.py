@@ -20,34 +20,73 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS to keep st.metric cards ultra-compact and aligned
+# Custom CSS matching the image style exactly
 st.markdown("""
 <style>
-    /* Reduce vertical padding in metric cards to keep them tight */
-    [data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        padding: 6px 8px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    /* CSS Grid Container to enforce true horizontal flex layout across 11 tiles */
+    .kpi-row {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 6px !important;
+        width: 100% !important;
+        margin-bottom: 15px !important;
     }
-    [data-testid="stMetricLabel"] {
-        font-size: 0.65rem !important;
+    .kpi-card-styled {
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
+        background-color: #ffffff !important;
+        border-radius: 8px !important;
+        padding: 10px 4px !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02) !important;
+        text-align: center !important;
+        height: 88px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        box-sizing: border-box !important;
+    }
+    
+    /* Category Top Borders matching image style */
+    .border-overview { border-top: 4px solid #4f46e5 !important; } /* Indigo/Blue */
+    .border-quality  { border-top: 4px solid #10b981 !important; } /* Emerald Green */
+    .border-welcome  { border-top: 4px solid #f59e0b !important; } /* Amber/Yellow */
+    .border-portal   { border-top: 4px solid #0d9488 !important; } /* Teal */
+
+    .kpi-title-styled {
+        font-size: 0.58rem !important;
         font-weight: 700 !important;
-        text-transform: uppercase;
-        color: #64748b;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        text-transform: uppercase !important;
+        color: #64748b !important;
+        letter-spacing: 0.3px !important;
+        margin-bottom: 3px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        width: 100% !important;
     }
-    [data-testid="stMetricValue"] {
-        font-size: 1.15rem !important;
+    .kpi-value-styled {
+        font-size: 1.35rem !important;
         font-weight: 800 !important;
-        color: #0f172a;
+        color: #0f172a !important;
+        line-height: 1.0 !important;
+        margin-bottom: 4px !important;
     }
-    [data-testid="stMetricDelta"] {
-        font-size: 0.65rem !important;
+    .kpi-subtext-styled {
+        font-size: 0.62rem !important;
+        font-weight: 700 !important;
+        line-height: 1 !important;
+        white-space: nowrap !important;
     }
+    
+    /* Subtext colors */
+    .text-overview { color: #4f46e5 !important; }
+    .text-quality  { color: #059669 !important; }
+    .text-welcome  { color: #d97706 !important; }
+    .text-portal   { color: #0d9488 !important; }
+    .text-red      { color: #dc2626 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -146,6 +185,15 @@ def parse_date(series):
         errors="coerce",
         dayfirst=True
     )
+
+def render_kpi_card_html(title, value, subtext, border_class, text_class):
+    return f"""
+    <div class="kpi-card-styled {border_class}">
+        <div class="kpi-title-styled" title="{title}">{title}</div>
+        <div class="kpi-value-styled">{value:,}</div>
+        <div class="kpi-subtext-styled {text_class}">{subtext}</div>
+    </div>
+    """
 
 # ==========================================================
 # APP HEADER
@@ -314,7 +362,7 @@ master_df = build_master_dataframe(
 )
 
 # ==========================================================
-# TOP KPI SECTION (NATIVE STREAMLIT METRICS - 11 COLUMNS)
+# TOP KPI SECTION (MATCHING IMAGE STYLING IN 1 ROW)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
@@ -329,7 +377,7 @@ def get_pct(part, total):
         return "0.0%"
     return f"{(part / total * 100):.1f}%"
 
-# Metrics Calculations
+# Calculations
 total_applications = len(master_df)
 
 q_approved = count_status(master_df, "Quality Status", ["Approved", "Pass", "Passed"])
@@ -345,41 +393,26 @@ portal_committed = count_status(master_df, "Portal Status", ["Committed", "Order
 portal_cancelled = count_status(master_df, "Portal Status", ["Cancelled", "Cancel", "Rejected"])
 portal_pending = count_status(master_df, "Portal Status", ["Pending", "In Progress", ""])
 
-# Define 11 equal-width columns
-cols = st.columns(11)
+# 11 Card Definitions matching the visual style
+card_definitions = [
+    ("Applications", total_applications, "100% Pipeline Base", "border-overview", "text-overview"),
+    ("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualification Rate", "border-quality", "text-quality"),
+    ("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", "border-quality", "text-welcome"),
+    ("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected", "border-quality", "text-red"),
+    ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed", "border-welcome", "text-welcome"),
+    ("Welcome Cancel", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled", "border-welcome", "text-red"),
+    ("Welcome Pend.", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending", "border-welcome", "text-welcome"),
+    ("Live Deals", portal_live, f"{get_pct(portal_live, total_applications)} Final Conversion", "border-portal", "text-portal"),
+    ("Committed Rem.", portal_committed, f"{get_pct(portal_committed, total_applications)} In-Pipeline", "border-portal", "text-portal"),
+    ("Comm. Cancel", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned", "border-portal", "text-red"),
+    ("Comm. Pend.", portal_pending, f"{get_pct(portal_pending, total_applications)} Pending Action", "border-portal", "text-portal")
+]
 
-with cols[0]:
-    st.metric(label="Applications", value=f"{total_applications:,}", delta="100% Base")
+# Generate single row wrapper with all 11 cards inside
+cards_html = "".join([render_kpi_card_html(*config) for config in card_definitions])
+row_wrapper = f'<div class="kpi-row">{cards_html}</div>'
 
-with cols[1]:
-    st.metric(label="QA Approved", value=f"{q_approved:,}", delta=get_pct(q_approved, total_applications))
-
-with cols[2]:
-    st.metric(label="QA Rework", value=f"{q_rework:,}", delta=get_pct(q_rework, total_applications))
-
-with cols[3]:
-    st.metric(label="QA Cancelled", value=f"{q_cancelled:,}", delta=get_pct(q_cancelled, total_applications), delta_color="inverse")
-
-with cols[4]:
-    st.metric(label="Welcome Done", value=f"{wc_done:,}", delta=get_pct(wc_done, total_applications))
-
-with cols[5]:
-    st.metric(label="Welcome Cancel", value=f"{wc_cancelled:,}", delta=get_pct(wc_cancelled, total_applications), delta_color="inverse")
-
-with cols[6]:
-    st.metric(label="Welcome Pend.", value=f"{wc_pending:,}", delta=get_pct(wc_pending, total_applications))
-
-with cols[7]:
-    st.metric(label="Live Deals", value=f"{portal_live:,}", delta=get_pct(portal_live, total_applications))
-
-with cols[8]:
-    st.metric(label="Committed Rem.", value=f"{portal_committed:,}", delta=get_pct(portal_committed, total_applications))
-
-with cols[9]:
-    st.metric(label="Comm. Cancel", value=f"{portal_cancelled:,}", delta=get_pct(portal_cancelled, total_applications), delta_color="inverse")
-
-with cols[10]:
-    st.metric(label="Comm. Pend.", value=f"{portal_pending:,}", delta=get_pct(portal_pending, total_applications))
+st.markdown(row_wrapper, unsafe_allow_html=True)
 
 
 # ==========================================================
