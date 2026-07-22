@@ -20,41 +20,48 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Ultra-Compact KPI Cards
+# Custom CSS for Compact Square KPI Cards
 st.markdown("""
 <style>
-    .kpi-card-compact {
+    .kpi-tile-square {
         background-color: #ffffff;
-        border-radius: 6px;
-        padding: 8px 12px;
+        border-radius: 8px;
+        padding: 8px 6px;
         border: 1px solid #e2e8f0;
-        border-top: 3px solid #2563eb;
+        border-top: 4px solid #2563eb;
         box-shadow: 0 1px 2px rgba(0,0,0,0.03);
         text-align: center;
-        margin-bottom: 6px;
+        margin-bottom: 8px;
+        height: 88px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
     }
-    .kpi-title-compact {
-        font-size: 0.68rem;
+    .kpi-tile-title {
+        font-size: 0.62rem;
         font-weight: 700;
         text-transform: uppercase;
         color: #64748b;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.3px;
         margin-bottom: 2px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        width: 100%;
     }
-    .kpi-value-compact {
-        font-size: 1.45rem;
+    .kpi-tile-value {
+        font-size: 1.3rem;
         font-weight: 800;
         color: #0f172a;
         line-height: 1.1;
         margin-bottom: 2px;
     }
-    .kpi-subtext-compact {
-        font-size: 0.72rem;
+    .kpi-tile-subtext {
+        font-size: 0.68rem;
         font-weight: 600;
         line-height: 1;
+        white-space: nowrap;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -163,13 +170,13 @@ def parse_date(series):
         dayfirst=True
     )
 
-# Compact Card HTML Renderer
-def render_compact_kpi(title, value, subtext, color="#2563eb"):
+# Square Tile HTML Renderer
+def render_square_kpi(title, value, subtext, color="#2563eb"):
     return f"""
-    <div class="kpi-card-compact" style="border-top-color: {color};">
-        <div class="kpi-title-compact">{title}</div>
-        <div class="kpi-value-compact">{value:,}</div>
-        <div class="kpi-subtext-compact" style="color: {color};">{subtext}</div>
+    <div class="kpi-tile-square" style="border-top-color: {color};">
+        <div class="kpi-tile-title" title="{title}">{title}</div>
+        <div class="kpi-tile-value">{value:,}</div>
+        <div class="kpi-tile-subtext" style="color: {color};">{subtext}</div>
     </div>
     """
 
@@ -367,7 +374,7 @@ master_df = build_master_dataframe(
 )
 
 # ==========================================================
-# TOP KPI SECTION (COMPACT MICROCARDS)
+# TOP KPI SECTION (COMPACT SQUARE TILES - 6 PER ROW)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
@@ -408,49 +415,47 @@ COLOR_QUALITY = "#059669"    # Green
 COLOR_WELCOME = "#d97706"    # Amber
 COLOR_COMMITTED = "#0d9488"  # Teal
 
-# --- ROW 1: Applications & Quality ---
-r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
+# --- ROW 1 (6 Columns) ---
+r1_cols = st.columns(6)
 
-with r1_c1:
-    st.markdown(render_compact_kpi("Applications", total_applications, "100% Pipeline Base", COLOR_OVERVIEW), unsafe_allow_html=True)
+with r1_cols[0]:
+    st.markdown(render_square_kpi("Applications", total_applications, "100% Base", COLOR_OVERVIEW), unsafe_allow_html=True)
 
-with r1_c2:
-    st.markdown(render_compact_kpi("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified", COLOR_QUALITY), unsafe_allow_html=True)
+with r1_cols[1]:
+    st.markdown(render_square_kpi("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified", COLOR_QUALITY), unsafe_allow_html=True)
 
-with r1_c3:
-    st.markdown(render_compact_kpi("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", COLOR_QUALITY), unsafe_allow_html=True)
+with r1_cols[2]:
+    st.markdown(render_square_kpi("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", COLOR_QUALITY), unsafe_allow_html=True)
 
-with r1_c4:
-    st.markdown(render_compact_kpi("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected", COLOR_QUALITY), unsafe_allow_html=True)
+with r1_cols[3]:
+    st.markdown(render_square_kpi("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected", COLOR_QUALITY), unsafe_allow_html=True)
 
-# --- ROW 2: Welcome Call & Live ---
-r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
+with r1_cols[4]:
+    st.markdown(render_square_kpi("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed", COLOR_WELCOME), unsafe_allow_html=True)
 
-with r2_c1:
-    st.markdown(render_compact_kpi("Welcome Call Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed", COLOR_WELCOME), unsafe_allow_html=True)
+with r1_cols[5]:
+    st.markdown(render_square_kpi("Welcome Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled", COLOR_WELCOME), unsafe_allow_html=True)
 
-with r2_c2:
-    st.markdown(render_compact_kpi("Welcome Call Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled", COLOR_WELCOME), unsafe_allow_html=True)
 
-with r2_c3:
-    st.markdown(render_compact_kpi("Welcome Call Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending", COLOR_WELCOME), unsafe_allow_html=True)
+# --- ROW 2 (6 Columns) ---
+r2_cols = st.columns(6)
 
-with r2_c4:
-    st.markdown(render_compact_kpi("Live Deals", portal_live, f"{get_pct(portal_live, total_applications)} Converted", COLOR_COMMITTED), unsafe_allow_html=True)
+with r2_cols[0]:
+    st.markdown(render_square_kpi("Welcome Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending", COLOR_WELCOME), unsafe_allow_html=True)
 
-# --- ROW 3: Committed Remaining Pipeline ---
-r3_c1, r3_c2, r3_c3, r3_c4 = st.columns(4)
+with r2_cols[1]:
+    st.markdown(render_square_kpi("Live Deals", portal_live, f"{get_pct(portal_live, total_applications)} Converted", COLOR_COMMITTED), unsafe_allow_html=True)
 
-with r3_c1:
-    st.markdown(render_compact_kpi("Committed Remaining", portal_committed, f"{get_pct(portal_committed, total_applications)} In-Pipeline", COLOR_COMMITTED), unsafe_allow_html=True)
+with r2_cols[2]:
+    st.markdown(render_square_kpi("Committed Rem.", portal_committed, f"{get_pct(portal_committed, total_applications)} In-Pipeline", COLOR_COMMITTED), unsafe_allow_html=True)
 
-with r3_c2:
-    st.markdown(render_compact_kpi("Committed Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned", COLOR_COMMITTED), unsafe_allow_html=True)
+with r2_cols[3]:
+    st.markdown(render_square_kpi("Committed Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned", COLOR_COMMITTED), unsafe_allow_html=True)
 
-with r3_c3:
-    st.markdown(render_compact_kpi("Committed Pending", portal_pending, f"{get_pct(portal_pending, total_applications)} Pending Action", COLOR_COMMITTED), unsafe_allow_html=True)
+with r2_cols[4]:
+    st.markdown(render_square_kpi("Committed Pending", portal_pending, f"{get_pct(portal_pending, total_applications)} Pending Action", COLOR_COMMITTED), unsafe_allow_html=True)
 
-with r3_c4:
+with r2_cols[5]:
     st.empty()
 
 
