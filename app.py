@@ -250,13 +250,40 @@ def clean_phone(series):
         .str.strip()
     )
 
+def parse_mixed_dates(val):
+    """
+    Robust element-wise parser for mixed ISO (YYYY-MM-DD) and UK (DD/MM/YYYY) formats.
+    Ensures 2026-06-12 and 12/06/2026 both parse to 12th June 2026.
+    """
+    if pd.isna(val) or str(val).strip() in ["", "(blank)", "nan", "none"]:
+        return pd.NaT
+    
+    val_str = str(val).strip()
+    
+    # 1. Check for ISO Format: YYYY-MM-DD (e.g. 2026-06-12 00:00:00)
+    iso_match = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})", val_str)
+    if iso_match:
+        year, month, day = iso_match.groups()
+        try:
+            return pd.Timestamp(year=int(year), month=int(month), day=int(day))
+        except ValueError:
+            pass
+
+    # 2. Check for UK Format: DD/MM/YYYY (e.g. 12/06/2026)
+    uk_match = re.match(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})", val_str)
+    if uk_match:
+        day, month, year = uk_match.groups()
+        try:
+            return pd.Timestamp(year=int(year), month=int(month), day=int(day))
+        except ValueError:
+            pass
+
+    # Fallback parser
+    return pd.to_datetime(val_str, errors="coerce", dayfirst=True)
+
 def parse_date_to_datetime(series):
-    """Converts mixed string dates/timestamps safely into datetime objects for filtering."""
-    return pd.to_datetime(
-        series,
-        errors="coerce",
-        dayfirst=True
-    )
+    """Applies the mixed date parser safely across a series."""
+    return series.apply(parse_mixed_dates)
 
 def format_date_ddmmyyyy(series):
     """Parses dates safely and converts them into standardized dd/mm/yyyy strings."""
