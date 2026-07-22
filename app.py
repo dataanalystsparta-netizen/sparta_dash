@@ -244,10 +244,6 @@ def load_sheet(sheet_name):
 # ==========================================================
 
 def clean_phone(series):
-    """
-    Cleans phone numbers aggressively by stripping non-digits, leading zeros, 
-    and trailing spaces so '07123...' matches '7123...' across sheets.
-    """
     return (
         series.astype(str)
         .str.replace(r"\D", "", regex=True)
@@ -304,15 +300,12 @@ def categorize_quality_status(val):
     if val_str in ["", "(blank)", "nan", "none"]:
         return "Pending"
     
-    # Approved
     if "appr" in val_str:
         return "Approved"
     
-    # Rework
     if "rework" in val_str:
         return "Rework"
     
-    # Cancelled
     if any(k in val_str for k in ["cancel", "reject", "hold", "duplicat", "inbound", "n/a", "rec in accessible"]):
         return "Cancelled"
     
@@ -327,24 +320,18 @@ def categorize_welcome_status(val):
     if val_str in ["", "(blank)", "nan", "none"]:
         return "Pending"
     
-    # Done
     if "done" in val_str:
         return "Done"
     
-    # Cancelled
     if any(k in val_str for k in ["cancel", "reject", "hold"]):
         return "Cancelled"
     
-    # Pending
     if any(k in val_str for k in ["pending", "follow", "paperwork", "wrong", "ring"]):
         return "Pending"
     
     return "Pending"
 
 def categorize_portal_status(val):
-    """
-    Refined status classification to catch status variations accurately.
-    """
     if pd.isna(val):
         return "Committed"
     
@@ -353,25 +340,16 @@ def categorize_portal_status(val):
     if val_str in ["", "(blank)", "nan", "none"]:
         return "Committed"
     
-    # 1. Cancelled
     if any(k in val_str for k in ["cancel", "reject", "to be cancelled"]):
         return "Cancelled"
     
-    # 2. Live
     if any(k in val_str for k in ["live", "active", "completed"]):
         return "Live"
     
-    # 3. Committed / Pipeline
     if any(k in val_str for k in ["commit", "pending", "in progress", "processing"]):
         return "Committed"
     
     return "Committed"
-
-
-
-
-
-
 
 # ==========================================================
 # APP HEADER
@@ -442,7 +420,7 @@ def load_sparta():
     # Keep parsed Datetime object for internal calculations
     df["Sale Date Clean"] = parse_date_to_datetime(df["Sale Date"])
 
-    # Format all display date columns explicitly to dd/mm/yyyy string format
+    # Format display date columns explicitly
     date_columns = [
         "Sale Date",
         "Quality Date",
@@ -454,7 +432,7 @@ def load_sparta():
     for col in date_columns:
         df[col] = format_date_ddmmyyyy(df[col])
 
-    # Standardize Quality and Welcome Statuses using clean categorization logic
+    # Standardize Statuses
     df["Quality Status Clean"] = df["Quality Status"].apply(categorize_quality_status)
     df["Welcome Status Clean"] = df["Welcome Status"].apply(categorize_welcome_status)
 
@@ -500,7 +478,12 @@ def load_sparta2():
     df = df[keep_columns].copy()
     df["Telephone No."] = clean_phone(df["Telephone No."])
 
-    # Format all portal dates to dd/mm/yyyy
+    # Keep internal parsed datetime for sheet 2 date filtering
+    df["Portal Date Clean"] = parse_date_to_datetime(df["Live Date"])
+    if df["Portal Date Clean"].isna().all() and "Standardized Date" in df.columns:
+        df["Portal Date Clean"] = parse_date_to_datetime(df["Standardized Date"])
+
+    # Format portal display dates
     df["Live Date"] = format_date_ddmmyyyy(df["Live Date"])
     df["Standardized Date"] = format_date_ddmmyyyy(df["Standardized Date"])
 
@@ -526,17 +509,14 @@ def build_master_dataframe(app_df, portal_df):
     apps = app_df.copy()
     portal = portal_df.copy()
 
-    # Exclude empty telephone numbers
-    portal = portal[portal["Telephone No."] != ""].copy()
-
-    # Keep the LAST updated record for each telephone number to get the latest status
-    portal = portal.drop_duplicates(
+    # Deduplicate portal records keeping the latest updated row
+    portal_clean = portal.drop_duplicates(
         subset="Telephone No.",
         keep="last"
     )
 
     master = apps.merge(
-        portal,
+        portal_clean,
         on="Telephone No.",
         how="left",
         suffixes=("", "_portal")
@@ -549,26 +529,12 @@ master_raw_df = build_master_dataframe(
     sparta2_df
 )
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ==========================================================
 # TOP DATE FILTER SECTION
 # ==========================================================
 
-st.subheader("📅 Filter by Sale Date")
+st.subheader("📅 Filter Date Range")
 
-# Use internal datetime column for filter range bounds
 valid_dates = master_raw_df["Sale Date Clean"].dropna()
 min_date = valid_dates.min().date() if not valid_dates.empty else datetime.today().date()
 max_date = valid_dates.max().date() if not valid_dates.empty else datetime.today().date()
@@ -593,20 +559,24 @@ with filter_col2:
         format="DD/MM/YYYY"
     )
 
-# Apply Date Filter across Master Dataframe
+# Filter Application Sheet by Sale Date
 if start_date <= end_date:
-    date_mask = (
+    app_date_mask = (
         (master_raw_df["Sale Date Clean"].dt.date >= start_date) & 
         (master_raw_df["Sale Date Clean"].dt.date <= end_date)
     )
-    master_df = master_raw_df[date_mask].copy()
+    master_df = master_raw_df[app_date_mask].copy()
+    
+    # Filter Portal Sheet independently using Sheet 2 Date Column for Portal KPIs
+    portal_date_mask = (
+        (sparta2_df["Portal Date Clean"].dt.date >= start_date) & 
+        (sparta2_df["Portal Date Clean"].dt.date <= end_date)
+    )
+    portal_filtered_df = sparta2_df[portal_date_mask].copy()
 else:
     st.error("Error: Start Date must be earlier than or equal to End Date.")
     master_df = master_raw_df.copy()
-
-# Drop temporary parsing column before rendering tables
-if "Sale Date Clean" in master_df.columns:
-    master_df = master_df.drop(columns=["Sale Date Clean"])
+    portal_filtered_df = sparta2_df.copy()
 
 st.divider()
 
@@ -626,7 +596,7 @@ def get_pct(part, total):
         return "0.0%"
     return f"{(part / total * 100):.1f}%"
 
-# Calculations based on FILTERED master_df
+# Application KPIs calculated from filtered Sparta (master_df)
 total_applications = len(master_df)
 
 q_approved = count_status(master_df, "Quality Status Clean", "Approved")
@@ -638,14 +608,13 @@ wc_done = count_status(master_df, "Welcome Status Clean", "Done")
 wc_cancelled = count_status(master_df, "Welcome Status Clean", "Cancelled")
 wc_pending = count_status(master_df, "Welcome Status Clean", "Pending")
 
-portal_live = count_status(master_df, "Portal Status Clean", "Live")
-portal_committed = count_status(master_df, "Portal Status Clean", "Committed")
-portal_cancelled = count_status(master_df, "Portal Status Clean", "Cancelled")
+# Portal KPIs calculated directly from filtered Sparta2 (portal_filtered_df)
+portal_live = count_status(portal_filtered_df, "Portal Status Clean", "Live")
+portal_committed = count_status(portal_filtered_df, "Portal Status Clean", "Committed")
+portal_cancelled = count_status(portal_filtered_df, "Portal Status Clean", "Cancelled")
 
-# Define 11 Columns for clean layout
 cols = st.columns(11)
 
-# Card Data Definition: (Label, Count Value, Delta Subtext String)
 kpis = [
     ("Applications", total_applications, "100% Base"),
     ("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified"),
@@ -660,7 +629,6 @@ kpis = [
     ("Live Status: Canc.", portal_cancelled, f"{get_pct(portal_cancelled, total_applications)} Churned")
 ]
 
-# Render through st.metric
 for col, (label, val, delta_sub) in zip(cols, kpis):
     with col:
         st.metric(
@@ -669,27 +637,20 @@ for col, (label, val, delta_sub) in zip(cols, kpis):
             delta=delta_sub
         )
 
-
-
-
-
-
-
 # ==========================================================
 # KPI DEBUG & STATUS BREAKDOWN DRILLDOWN
 # ==========================================================
 
-with st.expander("🔍 KPI Status Breakdown & Mapping Inspector", expanded=True):
+with st.expander("🔍 KPI Status Breakdown & Mapping Inspector", expanded=False):
     st.markdown("### Raw vs Cleaned Status Audit")
     
     col_debug1, col_debug2, col_debug3 = st.columns(3)
     
     with col_debug1:
-        st.subheader("1. Quality Status Breakdown")
-        
-        # Raw vs Cleaned comparison for Quality Status
+        st.subheader("1. Quality Status Breakdown (Sheet 1)")
+        q_cols = [c for c in ["Quality Status", "Quality Status Clean"] if c in master_df.columns]
         q_breakdown = (
-            master_df.groupby(["Quality Status", "Quality Status Clean"], dropna=False)
+            master_df.groupby(q_cols, dropna=False)
             .size()
             .reset_index(name="Record Count")
             .sort_values(by="Record Count", ascending=False)
@@ -697,11 +658,10 @@ with st.expander("🔍 KPI Status Breakdown & Mapping Inspector", expanded=True)
         st.dataframe(q_breakdown, use_container_width=True, hide_index=True)
 
     with col_debug2:
-        st.subheader("2. Welcome Status Breakdown")
-        
-        # Raw vs Cleaned comparison for Welcome Status
+        st.subheader("2. Welcome Status Breakdown (Sheet 1)")
+        w_cols = [c for c in ["Welcome Status", "Welcome Status Clean"] if c in master_df.columns]
         w_breakdown = (
-            master_df.groupby(["Welcome Status", "Welcome Status Clean"], dropna=False)
+            master_df.groupby(w_cols, dropna=False)
             .size()
             .reset_index(name="Record Count")
             .sort_values(by="Record Count", ascending=False)
@@ -709,11 +669,10 @@ with st.expander("🔍 KPI Status Breakdown & Mapping Inspector", expanded=True)
         st.dataframe(w_breakdown, use_container_width=True, hide_index=True)
 
     with col_debug3:
-        st.subheader("3. Portal / Live Status Breakdown")
-        
-        # Raw vs Cleaned comparison for Portal Status
+        st.subheader("3. Portal Status Breakdown (Sheet 2 Date Filter)")
+        p_cols = [c for c in ["Portal Status", "Portal Status Clean"] if c in portal_filtered_df.columns]
         p_breakdown = (
-            master_df.groupby(["Portal Status", "Portal Status Clean"], dropna=False)
+            portal_filtered_df.groupby(p_cols, dropna=False)
             .size()
             .reset_index(name="Record Count")
             .sort_values(by="Record Count", ascending=False)
@@ -722,10 +681,9 @@ with st.expander("🔍 KPI Status Breakdown & Mapping Inspector", expanded=True)
 
     st.divider()
 
-    # Match / Merge Audit
     total_apps = len(master_df)
-    matched_apps = master_df["Portal Status"].notna().sum()
-    unmatched_apps = master_df["Portal Status"].isna().sum()
+    matched_apps = master_df["Portal Status"].notna().sum() if "Portal Status" in master_df.columns else 0
+    unmatched_apps = master_df["Portal Status"].isna().sum() if "Portal Status" in master_df.columns else total_apps
 
     m_col1, m_col2, m_col3 = st.columns(3)
     m_col1.metric("Total Applications (Filtered)", f"{total_apps:,}")
@@ -737,29 +695,9 @@ with st.expander("🔍 KPI Status Breakdown & Mapping Inspector", expanded=True)
         delta_color="inverse" if unmatched_apps > 0 else "normal"
     )
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Cleanup helper columns after KPIs & Inspector render
+if "Sale Date Clean" in master_df.columns:
+    master_df = master_df.drop(columns=["Sale Date Clean"])
 
 # ==========================================================
 # DATA PREVIEW
@@ -774,14 +712,15 @@ tab1, tab2, tab3 = st.tabs([
     "Master Dataset"
 ])
 
-# Filter individual dataframes for Preview tabs
 filtered_sparta = sparta_df[
     (sparta_df["Sale Date Clean"].dt.date >= start_date) & 
     (sparta_df["Sale Date Clean"].dt.date <= end_date)
-].drop(columns=["Sale Date Clean"]) if start_date <= end_date else sparta_df.drop(columns=["Sale Date Clean"])
+].drop(columns=["Sale Date Clean"], errors="ignore") if start_date <= end_date else sparta_df.drop(columns=["Sale Date Clean"], errors="ignore")
+
+filtered_sparta2 = portal_filtered_df.drop(columns=["Portal Date Clean"], errors="ignore")
 
 with tab1:
-    st.caption(f"{len(filtered_sparta):,} records (Filtered)")
+    st.caption(f"{len(filtered_sparta):,} records (Filtered by Sale Date)")
     st.dataframe(
         filtered_sparta,
         use_container_width=True,
@@ -790,9 +729,9 @@ with tab1:
     )
 
 with tab2:
-    st.caption(f"{len(sparta2_df):,} records")
+    st.caption(f"{len(filtered_sparta2):,} records (Filtered by Portal Date)")
     st.dataframe(
-        sparta2_df,
+        filtered_sparta2,
         use_container_width=True,
         height=500,
         hide_index=True
