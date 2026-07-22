@@ -20,33 +20,64 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS to keep st.metric cards ultra-compact and aligned
+# Custom CSS for Dynamic Card Colors
 st.markdown("""
 <style>
-    /* Reduce vertical padding in metric cards to keep them tight */
+    /* Base Metric Card Styling */
     [data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        padding: 6px 8px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        border-radius: 6px !important;
+        padding: 8px 6px !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
+        border: 1px solid #cbd5e1 !important;
     }
     [data-testid="stMetricLabel"] {
-        font-size: 0.65rem !important;
+        font-size: 0.62rem !important;
         font-weight: 700 !important;
-        text-transform: uppercase;
-        color: #64748b;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        text-transform: uppercase !important;
+        color: #1e293b !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
     }
     [data-testid="stMetricValue"] {
-        font-size: 1.15rem !important;
+        font-size: 1.1rem !important;
         font-weight: 800 !important;
-        color: #0f172a;
+        color: #0f172a !important;
     }
     [data-testid="stMetricDelta"] {
         font-size: 0.65rem !important;
+        font-weight: 700 !important;
+    }
+
+    /* Col 1: Applications (Blue) */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(1) [data-testid="stMetric"] {
+        background-color: #eff6ff !important;
+        border-top: 4px solid #2563eb !important;
+    }
+
+    /* Cols 2, 5, 8: Approved / Passed / Live (Green) */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(2) [data-testid="stMetric"],
+    div[data-testid="stHorizontalBlock"] > div:nth-child(5) [data-testid="stMetric"],
+    div[data-testid="stHorizontalBlock"] > div:nth-child(8) [data-testid="stMetric"] {
+        background-color: #f0fdf4 !important;
+        border-top: 4px solid #16a34a !important;
+    }
+
+    /* Cols 3, 7, 9, 11: Rework / Pending (Yellow/Amber) */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(3) [data-testid="stMetric"],
+    div[data-testid="stHorizontalBlock"] > div:nth-child(7) [data-testid="stMetric"],
+    div[data-testid="stHorizontalBlock"] > div:nth-child(9) [data-testid="stMetric"],
+    div[data-testid="stHorizontalBlock"] > div:nth-child(11) [data-testid="stMetric"] {
+        background-color: #fefce8 !important;
+        border-top: 4px solid #ca8a04 !important;
+    }
+
+    /* Cols 4, 6, 10: Cancelled / Rejected (Red) */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(4) [data-testid="stMetric"],
+    div[data-testid="stHorizontalBlock"] > div:nth-child(6) [data-testid="stMetric"],
+    div[data-testid="stHorizontalBlock"] > div:nth-child(10) [data-testid="stMetric"] {
+        background-color: #fef2f2 !important;
+        border-top: 4px solid #dc2626 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -97,7 +128,6 @@ def load_sheet(sheet_name):
             .execute()
         )
     except Exception:
-        # Retry with fresh service instance if socket dropped
         service = get_google_service()
         result = (
             service.spreadsheets()
@@ -314,7 +344,7 @@ master_df = build_master_dataframe(
 )
 
 # ==========================================================
-# TOP KPI SECTION (NATIVE STREAMLIT METRICS - 11 COLUMNS)
+# TOP KPI SECTION (11 NATIVE METRICS - COLOR CODED)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
@@ -348,36 +378,47 @@ portal_pending = count_status(master_df, "Portal Status", ["Pending", "In Progre
 # Define 11 equal-width columns
 cols = st.columns(11)
 
+# 1. Base (Blue)
 with cols[0]:
     st.metric(label="Applications", value=f"{total_applications:,}", delta="100% Base")
 
+# 2. QA Approved (Green)
 with cols[1]:
     st.metric(label="QA Approved", value=f"{q_approved:,}", delta=get_pct(q_approved, total_applications))
 
+# 3. QA Rework (Yellow)
 with cols[2]:
     st.metric(label="QA Rework", value=f"{q_rework:,}", delta=get_pct(q_rework, total_applications))
 
+# 4. QA Cancelled (Red)
 with cols[3]:
     st.metric(label="QA Cancelled", value=f"{q_cancelled:,}", delta=get_pct(q_cancelled, total_applications), delta_color="inverse")
 
+# 5. Welcome Done (Green)
 with cols[4]:
     st.metric(label="Welcome Done", value=f"{wc_done:,}", delta=get_pct(wc_done, total_applications))
 
+# 6. Welcome Cancel (Red)
 with cols[5]:
     st.metric(label="Welcome Cancel", value=f"{wc_cancelled:,}", delta=get_pct(wc_cancelled, total_applications), delta_color="inverse")
 
+# 7. Welcome Pending (Yellow)
 with cols[6]:
     st.metric(label="Welcome Pend.", value=f"{wc_pending:,}", delta=get_pct(wc_pending, total_applications))
 
+# 8. Live Deals (Green)
 with cols[7]:
     st.metric(label="Live Deals", value=f"{portal_live:,}", delta=get_pct(portal_live, total_applications))
 
+# 9. Committed Rem. (Yellow)
 with cols[8]:
     st.metric(label="Committed Rem.", value=f"{portal_committed:,}", delta=get_pct(portal_committed, total_applications))
 
+# 10. Comm. Cancel (Red)
 with cols[9]:
     st.metric(label="Comm. Cancel", value=f"{portal_cancelled:,}", delta=get_pct(portal_cancelled, total_applications), delta_color="inverse")
 
+# 11. Comm. Pending (Yellow)
 with cols[10]:
     st.metric(label="Comm. Pend.", value=f"{portal_pending:,}", delta=get_pct(portal_pending, total_applications))
 
