@@ -160,7 +160,7 @@ APPLICATION_SHEET = "Sparta"
 LIVE_SHEET = "Sparta2"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-NEW_ADVISORS = ["Edwin","Ravikant","Shubhodeep","Subhodeep"
+NEW_ADVISORS = ["Edwin","Ravikant","Shubhodeep","Subhodeep","Priyanshu"
     # Add advisor names here
 ]
 
@@ -172,7 +172,7 @@ LEFT_ADVISORS = ["Gaurav","Guru","Niki","Shaheen","Manmeet","Gungun","Aman","Ran
 
                 "Tokivi","Sangeeta","Monica","Khushbu","Vijay","Mehak","Khushboo","Yash","Khusboo","Manshay","Manmet",
                  "Lakshay","Veer","Ashima","Rishabh",
-                 "Aarti","Abhay","Diwakar", "Vishal","Sneha","Swarali","Pawan"
+                 "Aarti","Abhay","Diwakar", "Vishal","Sneha","Swarali","Pawan","Nishant","Kushal","Sudhanshu"
     # Add left advisor names here
 ]
 
