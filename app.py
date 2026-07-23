@@ -79,40 +79,6 @@ st.markdown("""
     [data-testid="stMetricDelta"] svg {
         display: none !important; /* Hide native arrow icons */
     }
-
-    /* TOP ACCENT STRIPS + SOFT LIGHT BACKGROUNDS BY COLUMN (1 to 11) */
-    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetric"] { border-top: 4px solid #3b82f6 !important; background-color: #eff6ff !important; }
-    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetricDelta"] { color: #1d4ed8 !important; }
-
-    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] { border-top: 4px solid #10b981 !important; background-color: #f0fdf4 !important; }
-    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetricDelta"] { color: #15803d !important; }
-
-    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetric"] { border-top: 4px solid #f59e0b !important; background-color: #fefce8 !important; }
-    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetricDelta"] { color: #b45309 !important; }
-
-    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetric"] { border-top: 4px solid #ef4444 !important; background-color: #fef2f2 !important; }
-    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
-
-    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetric"] { border-top: 4px solid #f97316 !important; background-color: #fff7ed !important; }
-    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetricDelta"] { color: #c2410c !important; }
-
-    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetric"] { border-top: 4px solid #10b981 !important; background-color: #f0fdf4 !important; }
-    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetricDelta"] { color: #15803d !important; }
-
-    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetric"] { border-top: 4px solid #ef4444 !important; background-color: #fef2f2 !important; }
-    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
-
-    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetric"] { border-top: 4px solid #f59e0b !important; background-color: #fefce8 !important; }
-    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetricDelta"] { color: #b45309 !important; }
-
-    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetric"] { border-top: 4px solid #14b8a6 !important; background-color: #f0fdfa !important; }
-    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetricDelta"] { color: #0f766e !important; }
-
-    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetric"] { border-top: 4px solid #f59e0b !important; background-color: #fefce8 !important; }
-    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetricDelta"] { color: #b45309 !important; }
-
-    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetric"] { border-top: 4px solid #ef4444 !important; background-color: #fef2f2 !important; }
-    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -346,7 +312,7 @@ else:
     filtered_portal_df = sparta2_df.copy()
 
 # ==========================================================
-# TOP KPI SECTION
+# TOP KPI SECTION (CARDS HIDE IF VALUE IS 0)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
@@ -373,8 +339,7 @@ portal_live = count_status(filtered_portal_df, "Portal Status Clean", "Live")
 portal_committed = count_status(filtered_portal_df, "Portal Status Clean", "Committed")
 portal_cancelled = count_status(filtered_portal_df, "Portal Status Clean", "Cancelled")
 
-cols = st.columns(11)
-kpis = [
+all_kpis = [
     ("Applications", total_applications, "100% Base"),
     ("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified"),
     ("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework"),
@@ -388,12 +353,20 @@ kpis = [
     ("Live Status: Canc.", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} Churned")
 ]
 
-for col, (label, val, delta_sub) in zip(cols, kpis):
-    with col:
-        st.metric(label=label, value=f"{val:,}", delta=delta_sub)
+# 1. Filter out cards where value is 0
+active_kpis = [kpi for kpi in all_kpis if kpi[1] > 0]
+
+# 2. Render remaining active cards dynamically across columns
+if active_kpis:
+    cols = st.columns(len(active_kpis))
+    for col, (label, val, delta_sub) in zip(cols, active_kpis):
+        with col:
+            st.metric(label=label, value=f"{val:,}", delta=delta_sub)
+else:
+    st.info("No active KPI data available for the selected filters.")
 
 # ==========================================================
-# ADVISOR PERFORMANCE MATRIX (WITH BADGE PILL STYLING)
+# ADVISOR PERFORMANCE MATRIX (TABLE REPORT)
 # ==========================================================
 
 st.divider()
@@ -401,7 +374,7 @@ st.subheader("👥 Sales Executive Performance Breakdown")
 
 if "Advisor" in master_df.columns and not master_df.empty:
     
-    # Aggregate metrics
+    # Aggregate raw numeric metrics
     advisor_summary = (
         master_df.groupby("Advisor", dropna=False)
         .agg(
@@ -420,7 +393,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
         .reset_index()
     )
 
-    # Percentage string formats for exact pill badge styling
+    # Calculate raw percentages before formatting
     qa_pct = (advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan) * 100).fillna(0.0)
     live_pct = (advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan) * 100).fillna(0.0)
 
@@ -446,7 +419,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
     advisor_summary["SALES EXECUTIVE"] = advisor_summary["SALES EXECUTIVE"].replace("", "Unassigned").fillna("Unassigned")
     advisor_summary = advisor_summary.sort_values(by="APPLICATIONS", ascending=False)
 
-    # Reorder columns
     display_cols = [
         "SALES EXECUTIVE",
         "APPLICATIONS",
@@ -466,10 +438,44 @@ if "Advisor" in master_df.columns and not master_df.empty:
     
     table_data = advisor_summary[display_cols].copy()
 
-    # Apply Pill Badge Styler Function
+    # ------------------------------------------------------
+    # RULE: HIDE ENTIRE COLUMN IF ALL VALUES ARE 0 (OR "0.0%")
+    # ------------------------------------------------------
+    cols_to_keep = []
+    for col in table_data.columns:
+        if col == "SALES EXECUTIVE":
+            cols_to_keep.append(col)
+            continue
+        
+        col_vals = table_data[col]
+        
+        # Check numeric 0 or string equivalents ("0", "0.0%", "0%")
+        is_all_zero = col_vals.apply(
+            lambda v: str(v).strip().replace("%", "").replace(".0", "") in ["0", ""]
+        ).all()
+        
+        if not is_all_zero:
+            cols_to_keep.append(col)
+
+    table_data = table_data[cols_to_keep].copy()
+
+    # ------------------------------------------------------
+    # RULE: REPLACE INDIVIDUAL 0 VALUES WITH "-"
+    # ------------------------------------------------------
+    for col in table_data.columns:
+        if col != "SALES EXECUTIVE":
+            table_data[col] = table_data[col].astype(object)
+            table_data[col] = table_data[col].apply(
+                lambda v: "-" if str(v).strip() in ["0", "0.0%", "0%"] else v
+            )
+
+    # Pill Badge Styler Function for remaining percentage columns
     def apply_pill_badge(val, high_thresh=70.0, mid_thresh=50.0):
+        val_str = str(val).replace("%", "").strip()
+        if val_str == "-":
+            return ""
         try:
-            num = float(str(val).replace("%", ""))
+            num = float(val_str)
         except ValueError:
             return ""
         
@@ -480,19 +486,17 @@ if "Advisor" in master_df.columns and not master_df.empty:
         else:
             return "background-color: #ffe4e6; color: #9f1239; font-weight: 700; border-radius: 12px; padding: 3px 10px;"
 
-    # Flexible Styler method (handles map for Pandas 2.1+ and applymap for older Pandas)
     styler = table_data.style
     map_func = getattr(styler, "map", getattr(styler, "applymap", None))
 
-    styled_df = (
-        map_func(lambda v: apply_pill_badge(v, 70.0, 50.0), subset=["QA Pass Rate %"])
-        if map_func else styler
-    )
     if map_func:
-        styled_df = map_func(lambda v: apply_pill_badge(v, 15.0, 8.0), subset=["Live Conversion %"])
+        if "QA Pass Rate %" in table_data.columns:
+            styler = map_func(lambda v: apply_pill_badge(v, 70.0, 50.0), subset=["QA Pass Rate %"])
+        if "Live Conversion %" in table_data.columns:
+            styler = map_func(lambda v: apply_pill_badge(v, 15.0, 8.0), subset=["Live Conversion %"])
 
     st.dataframe(
-        styled_df,
+        styler,
         use_container_width=True,
         hide_index=True,
         height=520
