@@ -346,15 +346,21 @@ def categorize_portal_status(val):
     if val_str in ["", "(blank)", "nan", "none"]:
         return "Committed"
     
-    # Cancelled: Cancelled, Rejected, To be cancelled
+    # 1. Direct exact matches
+    if val_str == "live":
+        return "Live"
+    if val_str in ["cancelled", "rejected"]:
+        return "Cancelled"
+    if val_str in ["committed", "pending"]:
+        return "Committed"
+
+    # 2. Keyword matches
     if any(k in val_str for k in ["cancel", "reject"]):
         return "Cancelled"
     
-    # Live: Live, Active, Completed
     if any(k in val_str for k in ["live", "active", "completed"]):
         return "Live"
     
-    # Committed: Pending, In Progress, Processing, etc.
     if any(k in val_str for k in ["commit", "pending", "in progress", "processing"]):
         return "Committed"
     
