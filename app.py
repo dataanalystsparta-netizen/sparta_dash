@@ -254,14 +254,14 @@ def clean_phone(series):
 def parse_mixed_dates(val):
     """
     Robust element-wise parser for mixed ISO (YYYY-MM-DD) and UK (DD/MM/YYYY) formats.
-    Ensures 2026-06-12 and 12/06/2026 both parse to 12th June 2026.
+    Ensures 2026-01-12 and 12/01/2026 both parse to 12th January 2026.
     """
     if pd.isna(val) or str(val).strip() in ["", "(blank)", "nan", "none"]:
         return pd.NaT
     
     val_str = str(val).strip()
     
-    # 1. Check for ISO Format: YYYY-MM-DD (e.g. 2026-06-12 00:00:00)
+    # 1. Check for ISO Format: YYYY-MM-DD (e.g. 2026-01-12 00:00:00)
     iso_match = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})", val_str)
     if iso_match:
         year, month, day = iso_match.groups()
@@ -270,7 +270,7 @@ def parse_mixed_dates(val):
         except ValueError:
             pass
 
-    # 2. Check for UK Format: DD/MM/YYYY (e.g. 12/06/2026)
+    # 2. Check for UK Format: DD/MM/YYYY (e.g. 12/01/2026)
     uk_match = re.match(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})", val_str)
     if uk_match:
         day, month, year = uk_match.groups()
@@ -308,7 +308,7 @@ def categorize_quality_status(val):
     if "rework" in val_str:
         return "Rework"
     
-    # Cancelled
+    # Cancelled / Rejected
     if any(k in val_str for k in ["cancel", "reject", "hold", "duplicat", "inbound", "n/a", "rec in accessible"]):
         return "Cancelled"
     
@@ -327,7 +327,7 @@ def categorize_welcome_status(val):
     if "done" in val_str:
         return "Done"
     
-    # Cancelled
+    # Cancelled / Rejected
     if any(k in val_str for k in ["cancel", "reject", "hold"]):
         return "Cancelled"
     
@@ -338,6 +338,10 @@ def categorize_welcome_status(val):
     return "Pending"
 
 def categorize_portal_status(val):
+    """
+    Standardizes Portal / Live status.
+    Explicitly categorizes both 'Cancelled' and 'Rejected' (and variants) as 'Cancelled'.
+    """
     if pd.isna(val):
         return "Committed"
     
@@ -346,21 +350,15 @@ def categorize_portal_status(val):
     if val_str in ["", "(blank)", "nan", "none"]:
         return "Committed"
     
-    # 1. Direct exact matches
-    if val_str == "live":
-        return "Live"
-    if val_str in ["cancelled", "rejected"]:
-        return "Cancelled"
-    if val_str in ["committed", "pending"]:
-        return "Committed"
-
-    # 2. Keyword matches
+    # Cancelled: Cancelled, Rejected, To be cancelled
     if any(k in val_str for k in ["cancel", "reject"]):
         return "Cancelled"
     
+    # Live: Live, Active, Completed
     if any(k in val_str for k in ["live", "active", "completed"]):
         return "Live"
     
+    # Committed: Pending, In Progress, Processing, etc.
     if any(k in val_str for k in ["commit", "pending", "in progress", "processing"]):
         return "Committed"
     
