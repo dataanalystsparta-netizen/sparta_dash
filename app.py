@@ -168,7 +168,9 @@ CUSTOMER_SERVICE_ADVISORS = [
     # Add customer service advisor names here
 ]
 
-LEFT_ADVISORS = [
+LEFT_ADVISORS = ["Gaurav","Guru","Niki","Shaheen","Manmeet","Gungun","Aman","Rani","Archana","Deepali","Supreme",
+
+                "Tokivi","Sangeeta","Monica","Khushbu","Vijay","Mehak","Khushboo","Yash"
     # Add left advisor names here
 ]
 
