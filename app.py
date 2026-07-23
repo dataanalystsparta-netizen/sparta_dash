@@ -160,18 +160,21 @@ APPLICATION_SHEET = "Sparta"
 LIVE_SHEET = "Sparta2"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
+
 NEW_ADVISORS = [
     # Add advisor names here
 ]
 
-CUSTOMER_SERVICE_ADVISORS = [
+CUSTOMER_SERVICE_ADVISORS = ["Santosh Joshi","Ravi","Ravi Inbound","Vijender"
     # Add customer service advisor names here
 ]
 
-LEFT_ADVISORS = [
+LEFT_ADVISORS = ["Gaurav","Guru","Niki","Shaheen","Manmeet","Gungun","Aman","Rani","Archana","Deepali","Supreme",
+
+                "Tokivi","Sangeeta","Monica","Khushbu","Vijay","Mehak","Khushboo","Yash","Khusboo","Manshay","Manmet"
+                 "Lakshay","Veer"
     # Add left advisor names here
 ]
-
 def get_google_service():
     credentials = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
