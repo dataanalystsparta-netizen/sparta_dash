@@ -159,7 +159,11 @@ SPREADSHEET_ID = "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ"
 APPLICATION_SHEET = "Sparta"
 LIVE_SHEET = "Sparta2"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-
+NEW_ADVISORS = [
+    "John Doe",
+    "Jane Smith",
+    # Add or remove advisor names here
+]
 def get_google_service():
     credentials = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
@@ -711,6 +715,17 @@ if "Advisor" in master_df.columns and not master_df.empty:
             row["Live Conversion % Val"], high_thresh=15.0, mid_thresh=8.0
         )
         html_code += f"<td>{pill_html}</td>"
+      elif col == "SALES EXECUTIVE":
+        name = str(row[col])
+        
+        # Check if advisor is in the manual list (case-insensitive check for safety)
+        is_new = name.strip().lower() in [a.strip().lower() for a in NEW_ADVISORS]
+        
+        # Optional: If you want to flag BOTH manually listed advisors AND anyone with <= 5 applications:
+        # is_new = (name.strip().lower() in [a.strip().lower() for a in NEW_ADVISORS]) or (row["APPLICATIONS"] <= 5)
+        
+        tag_html = '<span class="new-tag">New</span>' if is_new else ""
+        html_code += f"<td>{name}{tag_html}</td>"
 
       else:
         val = row[col]
