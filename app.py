@@ -160,21 +160,18 @@ APPLICATION_SHEET = "Sparta"
 LIVE_SHEET = "Sparta2"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-
-NEW_ADVISORS = ["Ravikant","Priyanshu","Edwin", "Subhodeep", "Shubhodeep","Vishal", "Kajal"
+NEW_ADVISORS = [
     # Add advisor names here
 ]
 
-CUSTOMER_SERVICE_ADVISORS = ["Santosh Joshi","Ravi","Ravi Inbound","Vijender","Ravikant"
+CUSTOMER_SERVICE_ADVISORS = [
     # Add customer service advisor names here
 ]
 
-LEFT_ADVISORS = ["Gaurav","Guru","Niki","Shaheen","Manmeet","Gungun","Aman","Rani","Archana","Deepali","Supreme",
-
-                "Tokivi","Sangeeta","Pawan","Ashima","Monica","Khushbu","Vijay","Mehak","Khushboo","Yash","Khusboo","Manshay","Manmet",
-                 "Lakshay","Rishabh","Veer","Sudhanshu","Nishant","Paras","Abhay","Aarti", "Kushal","Sneha","Swarali","Diwakar"
+LEFT_ADVISORS = [
     # Add left advisor names here
 ]
+
 def get_google_service():
     credentials = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
@@ -346,6 +343,21 @@ def build_master_dataframe(app_df, portal_df):
 
 master_raw_df = build_master_dataframe(sparta_df, sparta2_df)
 
+# Assign Month_Year globally to raw dataset for unrestricted monthly breakdown
+if "Sale Date Clean" in master_raw_df.columns and not master_raw_df["Sale Date Clean"].dropna().empty:
+    master_raw_df["Month_Year"] = master_raw_df["Sale Date Clean"].dt.strftime("%B %Y")
+    master_raw_df["Period_Sort"] = master_raw_df["Sale Date Clean"].dt.to_period("M")
+else:
+    master_raw_df["Month_Year"] = "Unknown"
+    master_raw_df["Period_Sort"] = pd.Period("2026-01", freq="M")
+
+if "Sale Date Clean" in sparta2_df.columns and not sparta2_df["Sale Date Clean"].dropna().empty:
+    sparta2_df["Month_Year"] = sparta2_df["Sale Date Clean"].dt.strftime("%B %Y")
+    sparta2_df["Period_Sort"] = sparta2_df["Sale Date Clean"].dt.to_period("M")
+else:
+    sparta2_df["Month_Year"] = "Unknown"
+    sparta2_df["Period_Sort"] = pd.Period("2026-01", freq="M")
+
 # ==========================================================
 # FILTERS SECTION
 # ==========================================================
@@ -353,7 +365,6 @@ master_raw_df = build_master_dataframe(sparta_df, sparta2_df)
 st.subheader("📅 Filters")
 
 if "Sale Date Clean" in master_raw_df.columns and not master_raw_df["Sale Date Clean"].dropna().empty:
-    master_raw_df["Month_Year"] = master_raw_df["Sale Date Clean"].dt.strftime("%B %Y")
     available_months = ["All Months"] + list(
         master_raw_df["Sale Date Clean"].dt.to_period("M").drop_duplicates().sort_values(ascending=False).dt.strftime("%B %Y")
     )
@@ -394,7 +405,6 @@ if start_date <= end_date:
     master_df = master_raw_df[date_mask].copy()
 
     if "Sale Date Clean" in sparta2_df.columns:
-        sparta2_df["Month_Year"] = sparta2_df["Sale Date Clean"].dt.strftime("%B %Y")
         portal_date_mask = (sparta2_df["Sale Date Clean"].dt.date >= start_date) & (sparta2_df["Sale Date Clean"].dt.date <= end_date)
         if selected_month != "All Months":
             portal_date_mask = portal_date_mask & (sparta2_df["Month_Year"] == selected_month)
@@ -484,6 +494,156 @@ if visible_kpis:
             st.markdown(card_html, unsafe_allow_html=True)
 else:
     st.info("No active KPIs for the selected filters.")
+
+# ==========================================================
+# MONTHLY KPI BREAKDOWN TABLE (INDEPENDENT OF TOP DATE FILTERS)
+# ==========================================================
+
+st.divider()
+st.subheader("📅 Monthly KPI Breakdown")
+
+# Use master_raw_df and sparta2_df completely independent of date filters
+monthly_app_df = master_raw_df.dropna(subset=["Period_Sort"]).copy()
+monthly_portal_df = sparta2_df.dropna(subset=["Period_Sort"]).copy()
+
+all_periods = sorted(list(set(monthly_app_df["Period_Sort"]).union(set(monthly_portal_df["Period_Sort"]))), reverse=True)
+
+if all_periods:
+    monthly_rows = []
+    for period in all_periods:
+        m_str = period.strftime("%B %Y")
+        
+        m_app = monthly_app_df[monthly_app_df["Period_Sort"] == period]
+        m_portal = monthly_portal_df[monthly_portal_df["Period_Sort"] == period]
+        
+        m_total_apps = len(m_app)
+        m_portal_total = len(m_portal)
+        
+        m_qa_approved = count_status(m_app, "Quality Status Clean", "Approved")
+        m_qa_rework = count_status(m_app, "Quality Status Clean", "Rework")
+        m_qa_cancelled = count_status(m_app, "Quality Status Clean", "Cancelled")
+        m_qa_pending = count_status(m_app, "Quality Status Clean", "Pending")
+        
+        m_wc_done = count_status(m_app, "Welcome Status Clean", "Done")
+        m_wc_cancelled = count_status(m_app, "Welcome Status Clean", "Cancelled")
+        m_wc_pending = count_status(m_app, "Welcome Status Clean", "Pending")
+        
+        m_p_live = count_status(m_portal, "Portal Status Clean", "Live")
+        m_p_committed = count_status(m_portal, "Portal Status Clean", "Committed")
+        m_p_cancelled = count_status(m_portal, "Portal Status Clean", "Cancelled")
+        
+        monthly_rows.append({
+            "MONTH": m_str,
+            "APPLICATIONS": m_total_apps,
+            "QA APPROVED": m_qa_approved,
+            "QA REWORK": m_qa_rework,
+            "QA CANCELLED": m_qa_cancelled,
+            "QA PENDING": m_qa_pending,
+            "WELCOME DONE": m_wc_done,
+            "WELCOME CANCELLED": m_wc_cancelled,
+            "WELCOME PENDING": m_wc_pending,
+            "COMMITTED REM.": m_p_committed,
+            "LIVE": m_p_live,
+            "LIVE CANCELLED": m_p_cancelled
+        })
+    
+    monthly_summary_df = pd.DataFrame(monthly_rows)
+    
+    # Optional totals row at the bottom
+    totals_row = {
+        "MONTH": "Total",
+        "APPLICATIONS": monthly_summary_df["APPLICATIONS"].sum(),
+        "QA APPROVED": monthly_summary_df["QA APPROVED"].sum(),
+        "QA REWORK": monthly_summary_df["QA REWORK"].sum(),
+        "QA CANCELLED": monthly_summary_df["QA CANCELLED"].sum(),
+        "QA PENDING": monthly_summary_df["QA PENDING"].sum(),
+        "WELCOME DONE": monthly_summary_df["WELCOME DONE"].sum(),
+        "WELCOME CANCELLED": monthly_summary_df["WELCOME CANCELLED"].sum(),
+        "WELCOME PENDING": monthly_summary_df["WELCOME PENDING"].sum(),
+        "COMMITTED REM.": monthly_summary_df["COMMITTED REM."].sum(),
+        "LIVE": monthly_summary_df["LIVE"].sum(),
+        "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum(),
+    }
+    monthly_summary_df = pd.concat([monthly_summary_df, pd.DataFrame([totals_row])], ignore_index=True)
+    
+    # Render table matching executive styling
+    m_html = """
+    <style>
+        .monthly-kpi-table-container {
+            width: 100%;
+            overflow-x: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            margin-bottom: 20px;
+        }
+        .monthly-kpi-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 0.88rem;
+            background-color: #ffffff;
+        }
+        .monthly-kpi-table th {
+            padding: 12px 14px;
+            font-weight: 800;
+            font-size: 0.78rem;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            text-align: center;
+            border-bottom: 2px solid #e2e8f0;
+            border-right: 1px solid #f1f5f9;
+            background-color: #f8fafc;
+            color: #475569;
+        }
+        .monthly-kpi-table th:first-child {
+            text-align: left;
+        }
+        .monthly-kpi-table td {
+            padding: 10px 14px;
+            text-align: center;
+            border-bottom: 1px solid #f1f5f9;
+            border-right: 1px solid #f8fafc;
+            color: #1e293b;
+        }
+        .monthly-kpi-table td:first-child {
+            text-align: left;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .monthly-kpi-table tr:last-child {
+            font-weight: 800;
+            background-color: #f8fafc;
+            border-top: 2px solid #cbd5e1;
+        }
+        .monthly-kpi-table tr:hover:not(:last-child) {
+            background-color: #f8fafc;
+        }
+    </style>
+    <div class="monthly-kpi-table-container">
+        <table class="monthly-kpi-table">
+            <thead>
+                <tr>
+    """
+    for col_name in monthly_summary_df.columns:
+        m_html += f"<th>{col_name}</th>"
+    m_html += "</tr></thead><tbody>"
+    
+    for _, row in monthly_summary_df.iterrows():
+        m_html += "<tr>"
+        for i, col_name in enumerate(monthly_summary_df.columns):
+            val = row[col_name]
+            if i == 0:
+                m_html += f"<td>{val}</td>"
+            else:
+                formatted_val = "-" if val == 0 else f"{val:,}"
+                m_html += f"<td>{formatted_val}</td>"
+        m_html += "</tr>"
+        
+    m_html += "</tbody></table></div>"
+    st.markdown(m_html, unsafe_allow_html=True)
+else:
+    st.info("No monthly data available for the KPI summary table.")
 
 # ==========================================================
 # ADVISOR PERFORMANCE MATRIX (EXACT IMAGE PILL BADGE DESIGN)
