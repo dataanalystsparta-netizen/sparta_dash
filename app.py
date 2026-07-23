@@ -161,7 +161,7 @@ LIVE_SHEET = "Sparta2"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 
-NEW_ADVISORS = [
+NEW_ADVISORS = ["Ravikant","Priyanshu","Edwin"
     # Add advisor names here
 ]
 
@@ -172,7 +172,7 @@ CUSTOMER_SERVICE_ADVISORS = ["Santosh Joshi","Ravi","Ravi Inbound","Vijender"
 LEFT_ADVISORS = ["Gaurav","Guru","Niki","Shaheen","Manmeet","Gungun","Aman","Rani","Archana","Deepali","Supreme",
 
                 "Tokivi","Sangeeta","Monica","Khushbu","Vijay","Mehak","Khushboo","Yash","Khusboo","Manshay","Manmet"
-                 "Lakshay","Veer"
+                 "Lakshay","Veer","Sudhanshu","Nishant","Paras"
     # Add left advisor names here
 ]
 def get_google_service():
