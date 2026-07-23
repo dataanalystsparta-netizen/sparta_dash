@@ -496,15 +496,18 @@ else:
     st.info("No active KPIs for the selected filters.")
 
 # ==========================================================
-# MONTHLY KPI BREAKDOWN TABLE (INDEPENDENT OF TOP DATE FILTERS)
+# MONTHLY KPI BREAKDOWN TABLE (2026 ONLY, INDEPENDENT OF TOP FILTERS, WITH PERCENTAGES & COLORS)
 # ==========================================================
 
 st.divider()
-st.subheader("📅 Monthly KPI Breakdown")
+st.subheader("📅 Monthly KPI Breakdown (2026)")
 
-# Use master_raw_df and sparta2_df completely independent of date filters
+# Filter for year 2026 exclusively and independent of top date filters
 monthly_app_df = master_raw_df.dropna(subset=["Period_Sort"]).copy()
+monthly_app_df = monthly_app_df[monthly_app_df["Period_Sort"].dt.year == 2026]
+
 monthly_portal_df = sparta2_df.dropna(subset=["Period_Sort"]).copy()
+monthly_portal_df = monthly_portal_df[monthly_portal_df["Period_Sort"].dt.year == 2026]
 
 all_periods = sorted(list(set(monthly_app_df["Period_Sort"]).union(set(monthly_portal_df["Period_Sort"]))), reverse=True)
 
@@ -536,6 +539,7 @@ if all_periods:
             "MONTH": m_str,
             "APPLICATIONS": m_total_apps,
             "QA APPROVED": m_qa_approved,
+            "QA Pass Rate % Val": (m_qa_approved / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             "QA REWORK": m_qa_rework,
             "QA CANCELLED": m_qa_cancelled,
             "QA PENDING": m_qa_pending,
@@ -544,16 +548,23 @@ if all_periods:
             "WELCOME PENDING": m_wc_pending,
             "COMMITTED REM.": m_p_committed,
             "LIVE": m_p_live,
+            "Live Conversion % Val": (m_p_live / m_portal_total * 100) if m_portal_total > 0 else 0.0,
             "LIVE CANCELLED": m_p_cancelled
         })
     
     monthly_summary_df = pd.DataFrame(monthly_rows)
     
-    # Optional totals row at the bottom
+    # Calculate totals for summary row
+    tot_apps = monthly_summary_df["APPLICATIONS"].sum()
+    tot_portal = monthly_portal_df.shape[0] if not monthly_portal_df.empty else 0
+    tot_qa_app = monthly_summary_df["QA APPROVED"].sum()
+    tot_live = monthly_summary_df["LIVE"].sum()
+    
     totals_row = {
         "MONTH": "Total",
-        "APPLICATIONS": monthly_summary_df["APPLICATIONS"].sum(),
-        "QA APPROVED": monthly_summary_df["QA APPROVED"].sum(),
+        "APPLICATIONS": tot_apps,
+        "QA APPROVED": tot_qa_app,
+        "QA Pass Rate % Val": (tot_qa_app / tot_apps * 100) if tot_apps > 0 else 0.0,
         "QA REWORK": monthly_summary_df["QA REWORK"].sum(),
         "QA CANCELLED": monthly_summary_df["QA CANCELLED"].sum(),
         "QA PENDING": monthly_summary_df["QA PENDING"].sum(),
@@ -561,12 +572,48 @@ if all_periods:
         "WELCOME CANCELLED": monthly_summary_df["WELCOME CANCELLED"].sum(),
         "WELCOME PENDING": monthly_summary_df["WELCOME PENDING"].sum(),
         "COMMITTED REM.": monthly_summary_df["COMMITTED REM."].sum(),
-        "LIVE": monthly_summary_df["LIVE"].sum(),
+        "LIVE": tot_live,
+        "Live Conversion % Val": (tot_live / tot_portal * 100) if tot_portal > 0 else 0.0,
         "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum(),
     }
     monthly_summary_df = pd.concat([monthly_summary_df, pd.DataFrame([totals_row])], ignore_index=True)
     
-    # Render table matching executive styling
+    # Helper to style percentage pills in monthly table
+    def render_monthly_pill(val_float, high_thresh=70.0, mid_thresh=50.0):
+        val_str = f"{val_float:.1f}%"
+        if val_float >= high_thresh:
+            bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
+        elif val_float >= mid_thresh:
+            bg, color, border = "#fef3c7", "#b45309", "#fde68a"
+        else:
+            bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
+        return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 2px 8px; font-weight: 700; font-size: 0.78rem; display: inline-block;">{val_str}</span>'
+
+    # Color-coded header styles matching executive theme
+    m_header_styles = {
+        "MONTH": "background-color: #f1f5f9; color: #334155;",
+        "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
+        "QA APPROVED": "background-color: #f0fdf4; color: #15803d;",
+        "QA Pass Rate %": "background-color: #f0fdf4; color: #15803d;",
+        "QA REWORK": "background-color: #fefce8; color: #a16207;",
+        "QA CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
+        "QA PENDING": "background-color: #fff7ed; color: #c2410c;",
+        "WELCOME DONE": "background-color: #f0fdf4; color: #15803d;",
+        "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
+        "WELCOME PENDING": "background-color: #fefce8; color: #a16207;",
+        "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
+        "LIVE": "background-color: #f0fdfa; color: #0f766e;",
+        "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
+        "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
+    }
+
+    display_columns = [
+        "MONTH", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
+        "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
+        "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
+        "LIVE", "Live Conversion %", "LIVE CANCELLED"
+    ]
+
     m_html = """
     <style>
         .monthly-kpi-table-container {
@@ -593,8 +640,6 @@ if all_periods:
             text-align: center;
             border-bottom: 2px solid #e2e8f0;
             border-right: 1px solid #f1f5f9;
-            background-color: #f8fafc;
-            color: #475569;
         }
         .monthly-kpi-table th:first-child {
             text-align: left;
@@ -625,17 +670,24 @@ if all_periods:
             <thead>
                 <tr>
     """
-    for col_name in monthly_summary_df.columns:
-        m_html += f"<th>{col_name}</th>"
+    for col_name in display_columns:
+        th_style = m_header_styles.get(col_name, "background-color: #f8fafc; color: #475569;")
+        m_html += f'<th style="{th_style}">{col_name}</th>'
     m_html += "</tr></thead><tbody>"
     
     for _, row in monthly_summary_df.iterrows():
         m_html += "<tr>"
-        for i, col_name in enumerate(monthly_summary_df.columns):
-            val = row[col_name]
-            if i == 0:
-                m_html += f"<td>{val}</td>"
+        for col_name in display_columns:
+            if col_name == "MONTH":
+                m_html += f"<td>{row['MONTH']}</td>"
+            elif col_name == "QA Pass Rate %":
+                pill = render_monthly_pill(row["QA Pass Rate % Val"], high_thresh=70.0, mid_thresh=50.0)
+                m_html += f"<td>{pill}</td>"
+            elif col_name == "Live Conversion %":
+                pill = render_monthly_pill(row["Live Conversion % Val"], high_thresh=15.0, mid_thresh=8.0)
+                m_html += f"<td>{pill}</td>"
             else:
+                val = row[col_name]
                 formatted_val = "-" if val == 0 else f"{val:,}"
                 m_html += f"<td>{formatted_val}</td>"
         m_html += "</tr>"
@@ -643,7 +695,7 @@ if all_periods:
     m_html += "</tbody></table></div>"
     st.markdown(m_html, unsafe_allow_html=True)
 else:
-    st.info("No monthly data available for the KPI summary table.")
+    st.info("No 2026 monthly data available for the KPI summary table.")
 
 # ==========================================================
 # ADVISOR PERFORMANCE MATRIX (EXACT IMAGE PILL BADGE DESIGN)
