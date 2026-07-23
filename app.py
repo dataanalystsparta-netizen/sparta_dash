@@ -520,7 +520,6 @@ if all_periods:
         m_portal = monthly_portal_df[monthly_portal_df["Period_Sort"] == period]
         
         m_total_apps = len(m_app)
-        m_portal_total = len(m_portal)
         
         m_qa_approved = count_status(m_app, "Quality Status Clean", "Approved")
         m_qa_rework = count_status(m_app, "Quality Status Clean", "Rework")
@@ -544,11 +543,12 @@ if all_periods:
             "QA CANCELLED": m_qa_cancelled,
             "QA PENDING": m_qa_pending,
             "WELCOME DONE": m_wc_done,
+            "Welcome Done % Val": (m_wc_done / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             "WELCOME CANCELLED": m_wc_cancelled,
             "WELCOME PENDING": m_wc_pending,
             "COMMITTED REM.": m_p_committed,
             "LIVE": m_p_live,
-            "Live Conversion % Val": (m_p_live / m_portal_total * 100) if m_portal_total > 0 else 0.0,
+            "Live Conversion % Val": (m_p_live / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             "LIVE CANCELLED": m_p_cancelled
         })
     
@@ -556,8 +556,8 @@ if all_periods:
     
     # Calculate totals for summary row
     tot_apps = monthly_summary_df["APPLICATIONS"].sum()
-    tot_portal = monthly_portal_df.shape[0] if not monthly_portal_df.empty else 0
     tot_qa_app = monthly_summary_df["QA APPROVED"].sum()
+    tot_wc_done = monthly_summary_df["WELCOME DONE"].sum()
     tot_live = monthly_summary_df["LIVE"].sum()
     
     totals_row = {
@@ -568,12 +568,13 @@ if all_periods:
         "QA REWORK": monthly_summary_df["QA REWORK"].sum(),
         "QA CANCELLED": monthly_summary_df["QA CANCELLED"].sum(),
         "QA PENDING": monthly_summary_df["QA PENDING"].sum(),
-        "WELCOME DONE": monthly_summary_df["WELCOME DONE"].sum(),
+        "WELCOME DONE": tot_wc_done,
+        "Welcome Done % Val": (tot_wc_done / tot_apps * 100) if tot_apps > 0 else 0.0,
         "WELCOME CANCELLED": monthly_summary_df["WELCOME CANCELLED"].sum(),
         "WELCOME PENDING": monthly_summary_df["WELCOME PENDING"].sum(),
         "COMMITTED REM.": monthly_summary_df["COMMITTED REM."].sum(),
         "LIVE": tot_live,
-        "Live Conversion % Val": (tot_live / tot_portal * 100) if tot_portal > 0 else 0.0,
+        "Live Conversion % Val": (tot_live / tot_apps * 100) if tot_apps > 0 else 0.0,
         "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum(),
     }
     monthly_summary_df = pd.concat([monthly_summary_df, pd.DataFrame([totals_row])], ignore_index=True)
@@ -599,6 +600,7 @@ if all_periods:
         "QA CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
         "QA PENDING": "background-color: #fff7ed; color: #c2410c;",
         "WELCOME DONE": "background-color: #f0fdf4; color: #15803d;",
+        "Welcome Done %": "background-color: #f0fdf4; color: #15803d;",
         "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
         "WELCOME PENDING": "background-color: #fefce8; color: #a16207;",
         "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
@@ -610,8 +612,8 @@ if all_periods:
     display_columns = [
         "MONTH", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
         "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
-        "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
-        "LIVE", "Live Conversion %", "LIVE CANCELLED"
+        "Welcome Done %", "WELCOME CANCELLED", "WELCOME PENDING",
+        "COMMITTED REM.", "LIVE", "Live Conversion %", "LIVE CANCELLED"
     ]
 
     m_html = """
@@ -682,6 +684,9 @@ if all_periods:
                 m_html += f"<td>{row['MONTH']}</td>"
             elif col_name == "QA Pass Rate %":
                 pill = render_monthly_pill(row["QA Pass Rate % Val"], high_thresh=70.0, mid_thresh=50.0)
+                m_html += f"<td>{pill}</td>"
+            elif col_name == "Welcome Done %":
+                pill = render_monthly_pill(row["Welcome Done % Val"], high_thresh=70.0, mid_thresh=50.0)
                 m_html += f"<td>{pill}</td>"
             elif col_name == "Live Conversion %":
                 pill = render_monthly_pill(row["Live Conversion % Val"], high_thresh=15.0, mid_thresh=8.0)
