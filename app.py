@@ -427,7 +427,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
     advisor_summary["QA Pass Rate %"] = qa_pct.round(1).astype(str) + "%"
     advisor_summary["Live Conversion %"] = live_pct.round(1).astype(str) + "%"
 
-    # Rename Columns to match standard reference layout
+    # Rename Columns
     advisor_summary = advisor_summary.rename(columns={
         "Advisor": "SALES EXECUTIVE",
         "Applications": "APPLICATIONS",
@@ -466,7 +466,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
     
     table_data = advisor_summary[display_cols].copy()
 
-    # Apply Pill Badge Styler
+    # Apply Pill Badge Styler Function
     def apply_pill_badge(val, high_thresh=70.0, mid_thresh=50.0):
         try:
             num = float(str(val).replace("%", ""))
@@ -480,11 +480,16 @@ if "Advisor" in master_df.columns and not master_df.empty:
         else:
             return "background-color: #ffe4e6; color: #9f1239; font-weight: 700; border-radius: 12px; padding: 3px 10px;"
 
+    # Flexible Styler method (handles map for Pandas 2.1+ and applymap for older Pandas)
+    styler = table_data.style
+    map_func = getattr(styler, "map", getattr(styler, "applymap", None))
+
     styled_df = (
-        table_data.style
-        .applymap(lambda v: apply_pill_badge(v, 70.0, 50.0), subset=["QA Pass Rate %"])
-        .applymap(lambda v: apply_pill_badge(v, 15.0, 8.0), subset=["Live Conversion %"])
+        map_func(lambda v: apply_pill_badge(v, 70.0, 50.0), subset=["QA Pass Rate %"])
+        if map_func else styler
     )
+    if map_func:
+        styled_df = map_func(lambda v: apply_pill_badge(v, 15.0, 8.0), subset=["Live Conversion %"])
 
     st.dataframe(
         styled_df,
