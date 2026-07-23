@@ -1,173 +1,502 @@
-# ==========================================================
-# PART 1: PAGE CONFIGURATION, HELPERS, DATA CLEANING & FILTERS
-# ==========================================================
-
-import streamlit as st
-import pandas as pd
-import numpy as np
+import re
 from datetime import datetime
-import gspread
-from google.oauth2.service_account import Credentials
 
-# 1. Page Configuration
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+
+
+# ==========================================================
+# PAGE CONFIG
+# ==========================================================
+
 st.set_page_config(
-    page_title="Sparta Sales Executive Dashboard",
+    page_title="Sparta Sales Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling & Metrics Container Fixes
+# Custom CSS for Native st.metric Styling matching card design + individual soft background tints
 st.markdown("""
-    <style>
-        .block-container {
-            padding-top: 1.5rem;
-            padding-bottom: 2rem;
-        }
-        div[data-testid="stHorizontalBlock"] > div {
-            display: flex;
-            flex-direction: column;
-        }
-    </style>
+<style>
+    /* Card Container Base */
+    [data-testid="stMetric"] {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 8px 4px !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        text-align: center !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    /* Centered Text Layout */
+    [data-testid="stMetric"] > div {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    /* Card Title (Upper Label) */
+    [data-testid="stMetricLabel"] {
+        font-size: 0.58rem !important;
+        font-weight: 700 !important;
+        text-transform: uppercase;
+        color: #475569;
+        letter-spacing: 0.3px;
+        margin-bottom: 2px;
+        justify-content: center !important;
+    }
+    
+    [data-testid="stMetricLabel"] p {
+        font-size: 0.58rem !important;
+        font-weight: 700 !important;
+        margin: 0 !important;
+    }
+
+    /* Card Main Value */
+    [data-testid="stMetricValue"] {
+        font-size: 1.3rem !important;
+        font-weight: 800 !important;
+        color: #0f172a !important;
+        line-height: 1.1;
+        margin-bottom: 2px;
+    }
+
+    /* Card Subtext (Delta) */
+    [data-testid="stMetricDelta"] {
+        font-size: 0.62rem !important;
+        font-weight: 700 !important;
+        justify-content: center !important;
+    }
+    
+    [data-testid="stMetricDelta"] svg {
+        display: none !important; /* Hide native arrow icons */
+    }
+
+    /* INDIVIDUAL ACCENT STRIPS + SOFT LIGHT BACKGROUNDS BY COLUMN */
+    
+    /* Col 1: Soft Blue */
+    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetric"] { 
+        border-top: 4px solid #3b82f6 !important; background-color: #eff6ff !important; 
+    }
+    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetricDelta"] { color: #1d4ed8 !important; }
+
+    /* Col 2: Soft Green */
+    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] { 
+        border-top: 4px solid #10b981 !important; background-color: #f0fdf4 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetricDelta"] { color: #15803d !important; }
+
+    /* Col 3: Soft Yellow */
+    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetric"] { 
+        border-top: 4px solid #f59e0b !important; background-color: #fefce8 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetricDelta"] { color: #b45309 !important; }
+
+    /* Col 4: Soft Red */
+    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetric"] { 
+        border-top: 4px solid #ef4444 !important; background-color: #fef2f2 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
+
+    /* Col 5: Soft Orange */
+    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetric"] { 
+        border-top: 4px solid #f97316 !important; background-color: #fff7ed !important; 
+    }
+    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetricDelta"] { color: #c2410c !important; }
+
+    /* Col 6: Soft Green */
+    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetric"] { 
+        border-top: 4px solid #10b981 !important; background-color: #f0fdf4 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetricDelta"] { color: #15803d !important; }
+
+    /* Col 7: Soft Red */
+    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetric"] { 
+        border-top: 4px solid #ef4444 !important; background-color: #fef2f2 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
+
+    /* Col 8: Soft Yellow */
+    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetric"] { 
+        border-top: 4px solid #f59e0b !important; background-color: #fefce8 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetricDelta"] { color: #b45309 !important; }
+
+    /* Col 9: Soft Teal */
+    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetric"] { 
+        border-top: 4px solid #14b8a6 !important; background-color: #f0fdfa !important; 
+    }
+    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetricDelta"] { color: #0f766e !important; }
+
+    /* Col 10: Soft Yellow */
+    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetric"] { 
+        border-top: 4px solid #f59e0b !important; background-color: #fefce8 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetricDelta"] { color: #b45309 !important; }
+
+    /* Col 11: Soft Red */
+    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetric"] { 
+        border-top: 4px solid #ef4444 !important; background-color: #fef2f2 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
+</style>
 """, unsafe_allow_html=True)
-
-# 2. Google Sheets Connection & Data Loading Helpers
-@st.cache_resource
-def init_google_connection():
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    try:
-        if "gcp_service_account" in st.secrets:
-            creds_dict = dict(st.secrets["gcp_service_account"])
-            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-            client = gspread.authorize(creds)
-            return client
-    except Exception as e:
-        st.error(f"Error connecting to Google Sheets via secrets: {e}")
-    return None
-
-@st.cache_data(ttl=600)
-def load_data_from_gsheets(sheet_url, worksheet_name):
-    client = init_google_connection()
-    if not client:
-        return pd.DataFrame()
-    try:
-        sheet = client.open_by_url(sheet_url)
-        worksheet = sheet.worksheet(worksheet_name)
-        data = worksheet.get_all_records()
-        return pd.DataFrame(data)
-    except Exception as e:
-        # Fixed error handling to correctly display error text even if exception object stringifies strangely
-        st.error(f"Failed to load data from Google Sheets: {e}")
-        return pd.DataFrame()
-
-# Sheet URLs & Names (Update these URLs with your actual Google Sheets URLs)
-SPARTA_SHEET_URL = "https://docs.google.com/spreadsheets/d/your_applications_sheet_id"
-PORTAL_SHEET_URL = "https://docs.google.com/spreadsheets/d/your_portal_sheet_id"
-
-sparta_df = load_data_from_gsheets(SPARTA_SHEET_URL, "Applications")
-sparta2_df = load_data_from_gsheets(PORTAL_SHEET_URL, "Portal")
-
-# Fallback if empty for preview/testing
-if sparta_df.empty:
-    sparta_df = pd.DataFrame(columns=["Sale Date", "Advisor", "Quality Status", "Welcome Status", "Customer Name"])
-if sparta2_df.empty:
-    sparta2_df = pd.DataFrame(columns=["Sale Date", "Portal Status", "Customer Name"])
-
-# 3. Data Cleaning & Standardization Functions
-def clean_status_value(val):
-    if pd.isna(val):
-        return "Pending"
-    v_str = str(val).strip().capitalize()
-    if v_str in ["App", "Approve", "Approved", "Pass", "Clean"]:
-        return "Approved"
-    elif v_str in ["Cancel", "Cancelled", "Canceled", "Rejected", "Fail"]:
-        return "Cancelled"
-    elif v_str in ["Rework", "Review", "Correction"]:
-        return "Rework"
-    elif v_str in ["Done", "Complete", "Completed"]:
-        return "Done"
-    elif v_str in ["Live", "Active"]:
-        return "Live"
-    elif v_str in ["Committed", "Commit"]:
-        return "Committed"
-    elif v_str in ["Pending", "In progress", ""]:
-        return "Pending"
-    return v_str
-
-def parse_flexible_date(series):
-    s_cleaned = series.astype(str).str.strip().replace(["None", "nan", "NaT", ""], np.nan)
-    dt_parsed = pd.to_datetime(s_cleaned, format="%d/%m/%Y %H:%M:%S", errors="coerce")
-    mask_nat = dt_parsed.isna() & s_cleaned.notna()
-    if mask_nat.any():
-        dt_parsed.loc[mask_nat] = pd.to_datetime(s_cleaned[mask_nat], format="%d/%m/%Y", errors="coerce")
-    mask_nat = dt_parsed.isna() & s_cleaned.notna()
-    if mask_nat.any():
-        dt_parsed.loc[mask_nat] = pd.to_datetime(s_cleaned[mask_nat], errors="coerce")
-    return dt_parsed
-
-# Clean Applications Data
-if "Sale Date" in sparta_df.columns:
-    sparta_df["Sale Date Clean"] = parse_flexible_date(sparta_df["Sale Date"])
-    sparta_df["Period_Sort"] = sparta_df["Sale Date Clean"].dt.to_period("M").dt.to_timestamp()
-
-if "Quality Status" in sparta_df.columns:
-    sparta_df["Quality Status Clean"] = sparta_df["Quality Status"].apply(clean_status_value)
-else:
-    sparta_df["Quality Status Clean"] = "Pending"
-
-if "Welcome Status" in sparta_df.columns:
-    sparta_df["Welcome Status Clean"] = sparta_df["Welcome Status"].apply(clean_status_value)
-else:
-    sparta_df["Welcome Status Clean"] = "Pending"
-
-# Clean Portal Data
-if "Sale Date" in sparta2_df.columns:
-    sparta2_df["Sale Date Clean"] = parse_flexible_date(sparta2_df["Sale Date"])
-    sparta2_df["Period_Sort"] = sparta2_df["Sale Date Clean"].dt.to_period("M").dt.to_timestamp()
-
-if "Portal Status" in sparta2_df.columns:
-    sparta2_df["Portal Status Clean"] = sparta2_df["Portal Status"].apply(clean_status_value)
-else:
-    sparta2_df["Portal Status Clean"] = "Pending"
-
-# Merge / Master Datasets
-master_raw_df = sparta_df.copy()
-master_df = master_raw_df.copy()
-
-# Helper counting function
-def count_status(df, col, status):
-    if col in df.columns:
-        return int((df[col] == status).sum())
-    return 0
-
-# 4. Sidebar Global Filters & Advisor Tag Configurations
-st.sidebar.header("🔍 Dashboard Filters")
-
-# Date Filters
-min_date = master_raw_df["Sale Date Clean"].min() if not master_raw_df.empty and "Sale Date Clean" in master_raw_df.columns else pd.to_datetime("2026-01-01")
-max_date = master_raw_df["Sale Date Clean"].max() if not master_raw_df.empty and "Sale Date Clean" in master_raw_df.columns else datetime.now()
-
-if pd.isna(min_date): min_date = pd.to_datetime("2026-01-01")
-if pd.isna(max_date): max_date = datetime.now()
-
-start_date = st.sidebar.date_input("Start Date", value=min_date.date() if hasattr(min_date, "date") else min_date)
-end_date = st.sidebar.date_input("End Date", value=max_date.date() if hasattr(max_date, "date") else max_date)
-
-# Apply Date Filtering to Master Data
-if "Sale Date Clean" in master_df.columns:
-    master_df = master_df[(master_df["Sale Date Clean"].dt.date >= start_date) & (master_df["Sale Date Clean"].dt.date <= end_date)]
-
-# Advisor Lists & Tags
-NEW_ADVISORS = ["Advisor A", "Advisor B"]
-CUSTOMER_SERVICE_ADVISORS = ["Advisor C"]
-LEFT_ADVISORS = ["Advisor D"]
 
 
 # ==========================================================
-# PART 2: MONTHLY KPI BREAKDOWN & EXECUTIVE PERFORMANCE MATRIX
+# CONSTANTS & GOOGLE SHEETS CONNECTION
+# ==========================================================
+
+SPREADSHEET_ID = "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ"
+APPLICATION_SHEET = "Sparta"
+LIVE_SHEET = "Sparta2"
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+
+NEW_ADVISORS = [
+    # Add advisor names here
+]
+
+CUSTOMER_SERVICE_ADVISORS = [
+    # Add customer service advisor names here
+]
+
+LEFT_ADVISORS = [
+    # Add left advisor names here
+]
+
+def get_google_service():
+    credentials = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=SCOPES
+    )
+    return build("sheets", "v4", credentials=credentials, cache_discovery=False)
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_sheet(sheet_name):
+    service = get_google_service()
+    try:
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID, range=sheet_name
+        ).execute()
+    except Exception:
+        service = get_google_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID, range=sheet_name
+        ).execute()
+
+    values = result.get("values", [])
+    if not values:
+        return pd.DataFrame()
+
+    headers, rows = values[0], values[1:]
+    max_cols = len(headers)
+    cleaned_rows = [
+        r + [""] * (max_cols - len(r)) if len(r) < max_cols else r[:max_cols]
+        for r in rows
+    ]
+    return pd.DataFrame(cleaned_rows, columns=headers)
+
+# ==========================================================
+# HELPER & DATA CLEANING FUNCTIONS
+# ==========================================================
+
+def clean_phone(series):
+    return series.astype(str).str.replace(r"\D", "", regex=True).str.lstrip("0").str.strip()
+
+def parse_mixed_dates(val):
+    if pd.isna(val) or str(val).strip() in ["", "(blank)", "nan", "none"]:
+        return pd.NaT
+    val_str = str(val).strip()
+    iso_match = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})", val_str)
+    if iso_match:
+        year, month, day = iso_match.groups()
+        try: return pd.Timestamp(year=int(year), month=int(month), day=int(day))
+        except ValueError: pass
+
+    uk_match = re.match(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})", val_str)
+    if uk_match:
+        day, month, year = uk_match.groups()
+        try: return pd.Timestamp(year=int(year), month=int(month), day=int(day))
+        except ValueError: pass
+
+    return pd.to_datetime(val_str, errors="coerce", dayfirst=True)
+
+def parse_date_to_datetime(series):
+    return series.apply(parse_mixed_dates)
+
+def format_date_ddmmyyyy(series):
+    parsed = parse_date_to_datetime(series)
+    return parsed.dt.strftime("%d/%m/%Y").fillna("")
+
+def categorize_quality_status(val):
+    if pd.isna(val): return "Pending"
+    val_str = str(val).strip().lower()
+    if val_str in ["", "(blank)", "nan", "none"]: return "Pending"
+    if "appr" in val_str: return "Approved"
+    if "rework" in val_str: return "Rework"
+    if any(k in val_str for k in ["cancel", "reject", "hold", "duplicat", "inbound", "n/a", "rec in accessible"]): return "Cancelled"
+    return "Cancelled"
+
+def categorize_welcome_status(val):
+    if pd.isna(val): return "Pending"
+    val_str = str(val).strip().lower()
+    if val_str in ["", "(blank)", "nan", "none"]: return "Pending"
+    if "done" in val_str: return "Done"
+    if any(k in val_str for k in ["cancel", "reject", "hold"]): return "Cancelled"
+    if any(k in val_str for k in ["pending", "follow", "paperwork", "wrong", "ring"]): return "Pending"
+    return "Pending"
+
+def categorize_portal_status(val):
+    if pd.isna(val): return "Committed"
+    val_str = str(val).strip().lower()
+    if val_str in ["", "(blank)", "nan", "none"]: return "Committed"
+    if any(k in val_str for k in ["cancel", "reject"]): return "Cancelled"
+    if any(k in val_str for k in ["live", "pending", "active", "completed"]): return "Live"
+    if any(k in val_str for k in ["commit", "in progress", "processing"]): return "Committed"
+    return "Committed"
+
+# ==========================================================
+# APP HEADER
+# ==========================================================
+
+st.title("📊 Sparta Sales Dashboard")
+st.caption(f"Last refresh : {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
+st.divider()
+
+# ==========================================================
+# LOAD DATASETS
+# ==========================================================
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_sparta():
+    df = load_sheet(APPLICATION_SHEET)
+    rename_map = {
+        "Advisor": "Advisor", "Sale Date": "Sale Date", "Customer Name": "Customer Name",
+        "CLI": "Telephone No.", "Quality Date": "Quality Date", "Quality Status": "Quality Status",
+        "Quality Remarks": "Quality Remarks", "Welcome call Remarks": "Welcome Remarks",
+        "Status": "Welcome Status", "Cancellation Sub-text": "Welcome Cancellation",
+        "WCD date": "Welcome Date", "Provisioning": "Provisioning Status",
+        "Prov Date": "Provisioning Date", "Current Provider": "Current Provider",
+        "Packageoffered": "Package", "Dashboard_Month": "Dashboard Month",
+        "Standardized_Date": "Standardized Date"
+    }
+    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
+    keep_columns = [c for c in list(rename_map.values()) if c in df.columns]
+    df = df[keep_columns].copy()
+    df["Telephone No."] = clean_phone(df["Telephone No."])
+    df["Sale Date Clean"] = parse_date_to_datetime(df["Sale Date"])
+
+    for col in ["Sale Date", "Quality Date", "Welcome Date", "Provisioning Date", "Standardized Date"]:
+        if col in df.columns:
+            df[col] = format_date_ddmmyyyy(df[col])
+
+    if "Quality Status" in df.columns: df["Quality Status Clean"] = df["Quality Status"].apply(categorize_quality_status)
+    if "Welcome Status" in df.columns: df["Welcome Status Clean"] = df["Welcome Status"].apply(categorize_welcome_status)
+    return df
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_sparta2():
+    df = load_sheet(LIVE_SHEET)
+    rename_map = {
+        "Sale Date": "Sale Date", "Telephone No.": "Telephone No.",
+        "Committed Date": "Live Date", "Status": "Portal Status",
+        "LetterStatus": "Letter Status", "CallStatus": "Call Status",
+        "Comments": "Comments", "Voice of Customer": "Voice of Customer",
+        "Cancellation Reason": "Portal Cancellation", "Dashboard_Month": "Dashboard Month",
+        "Standardized_Date": "Standardized Date"
+    }
+    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
+    keep_columns = [c for c in list(rename_map.values()) if c in df.columns]
+    df = df[keep_columns].copy()
+    df["Telephone No."] = clean_phone(df["Telephone No."])
+
+    if "Sale Date" in df.columns:
+        df["Sale Date Clean"] = parse_date_to_datetime(df["Sale Date"])
+        df["Sale Date"] = format_date_ddmmyyyy(df["Sale Date"])
+
+    for date_col in ["Live Date", "Standardized Date"]:
+        if date_col in df.columns:
+            df[date_col] = format_date_ddmmyyyy(df[date_col])
+
+    if "Portal Status" in df.columns: df["Portal Status Clean"] = df["Portal Status"].apply(categorize_portal_status)
+    return df
+
+with st.spinner("Loading Google Sheets..."):
+    sparta_df = load_sparta()
+    sparta2_df = load_sparta2()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def build_master_dataframe(app_df, portal_df):
+    apps = app_df.copy()
+    portal = portal_df.copy()
+    portal = portal[portal["Telephone No."] != ""].copy() if "Telephone No." in portal.columns else portal
+    portal = portal.drop_duplicates(subset="Telephone No.", keep="last")
+    return apps.merge(portal, on="Telephone No.", how="left", suffixes=("", "_portal"))
+
+master_raw_df = build_master_dataframe(sparta_df, sparta2_df)
+
+# Assign Month_Year globally to raw dataset for unrestricted monthly breakdown
+if "Sale Date Clean" in master_raw_df.columns and not master_raw_df["Sale Date Clean"].dropna().empty:
+    master_raw_df["Month_Year"] = master_raw_df["Sale Date Clean"].dt.strftime("%B %Y")
+    master_raw_df["Period_Sort"] = master_raw_df["Sale Date Clean"].dt.to_period("M")
+else:
+    master_raw_df["Month_Year"] = "Unknown"
+    master_raw_df["Period_Sort"] = pd.Period("2026-01", freq="M")
+
+if "Sale Date Clean" in sparta2_df.columns and not sparta2_df["Sale Date Clean"].dropna().empty:
+    sparta2_df["Month_Year"] = sparta2_df["Sale Date Clean"].dt.strftime("%B %Y")
+    sparta2_df["Period_Sort"] = sparta2_df["Sale Date Clean"].dt.to_period("M")
+else:
+    sparta2_df["Month_Year"] = "Unknown"
+    sparta2_df["Period_Sort"] = pd.Period("2026-01", freq="M")
+
+# ==========================================================
+# FILTERS SECTION
+# ==========================================================
+
+st.subheader("📅 Filters")
+
+if "Sale Date Clean" in master_raw_df.columns and not master_raw_df["Sale Date Clean"].dropna().empty:
+    available_months = ["All Months"] + list(
+        master_raw_df["Sale Date Clean"].dt.to_period("M").drop_duplicates().sort_values(ascending=False).dt.strftime("%B %Y")
+    )
+else:
+    available_months = ["All Months"]
+
+valid_dates = master_raw_df["Sale Date Clean"].dropna() if "Sale Date Clean" in master_raw_df.columns else pd.Series()
+min_date = valid_dates.min().date() if not valid_dates.empty else datetime.today().date()
+max_date = valid_dates.max().date() if not valid_dates.empty else datetime.today().date()
+
+filter_col1, filter_col2, filter_col3 = st.columns([1, 1, 1])
+
+with filter_col1:
+    selected_month = st.selectbox("Select Month", options=available_months, index=0)
+
+with filter_col2:
+    start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, format="DD/MM/YYYY")
+
+with filter_col3:
+    end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, format="DD/MM/YYYY")
+
+# Tag inclusion toggles
+st.markdown("##### Tag Visibility Filters")
+tag_col1, tag_col2, tag_col3, tag_col4 = st.columns([1, 1, 1, 1])
+with tag_col1:
+    include_new = st.checkbox("Include 'New' Agents", value=True)
+with tag_col2:
+    include_cs = st.checkbox("Include 'Customer Service' Agents", value=True)
+with tag_col3:
+    include_left = st.checkbox("Include 'Left' Agents", value=False)
+with tag_col4:
+    include_untagged = st.checkbox("Include Untagged Names", value=True)
+
+if start_date <= end_date:
+    date_mask = (master_raw_df["Sale Date Clean"].dt.date >= start_date) & (master_raw_df["Sale Date Clean"].dt.date <= end_date)
+    if selected_month != "All Months":
+        date_mask = date_mask & (master_raw_df["Month_Year"] == selected_month)
+    master_df = master_raw_df[date_mask].copy()
+
+    if "Sale Date Clean" in sparta2_df.columns:
+        portal_date_mask = (sparta2_df["Sale Date Clean"].dt.date >= start_date) & (sparta2_df["Sale Date Clean"].dt.date <= end_date)
+        if selected_month != "All Months":
+            portal_date_mask = portal_date_mask & (sparta2_df["Month_Year"] == selected_month)
+        filtered_portal_df = sparta2_df[portal_date_mask].copy()
+    else:
+        filtered_portal_df = sparta2_df.copy()
+else:
+    st.error("Error: Start Date must be earlier than or equal to End Date.")
+    master_df = master_raw_df.copy()
+    filtered_portal_df = sparta2_df.copy()
+
+# ==========================================================
+# TOP KPI SECTION (CARDS HIDE WHEN VALUE = 0 & FIXED COLORS)
+# ==========================================================
+
+st.subheader("📌 Key Performance Indicators")
+
+def count_status(df, column, target_val):
+    return (df[column] == target_val).sum() if column in df.columns else 0
+
+def get_pct(part, total):
+    return "0.0%" if total == 0 else f"{(part / total * 100):.1f}%"
+
+total_applications = len(master_df)
+portal_total = len(filtered_portal_df)
+
+q_approved = count_status(master_df, "Quality Status Clean", "Approved")
+q_rework = count_status(master_df, "Quality Status Clean", "Rework")
+q_cancelled = count_status(master_df, "Quality Status Clean", "Cancelled")
+q_pending = count_status(master_df, "Quality Status Clean", "Pending")
+
+wc_done = count_status(master_df, "Welcome Status Clean", "Done")
+wc_cancelled = count_status(master_df, "Welcome Status Clean", "Cancelled")
+wc_pending = count_status(master_df, "Welcome Status Clean", "Pending")
+
+portal_live = count_status(filtered_portal_df, "Portal Status Clean", "Live")
+portal_committed = count_status(filtered_portal_df, "Portal Status Clean", "Committed")
+portal_cancelled = count_status(filtered_portal_df, "Portal Status Clean", "Cancelled")
+
+# Each item: (Label, Value, Subtext/Delta, Top Border Color, Background Color, Delta Text Color)
+all_kpis = [
+    ("Applications", total_applications, "100% Base", "#3b82f6", "#eff6ff", "#1d4ed8"),
+    ("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified", "#10b981", "#f0fdf4", "#15803d"),
+    ("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", "#f59e0b", "#fefce8", "#b45309"),
+    ("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected", "#ef4444", "#fef2f2", "#b91c1c"),
+    ("Quality Pending", q_pending, f"{get_pct(q_pending, total_applications)} Pending", "#f97316", "#fff7ed", "#c2410c"),
+    ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed", "#10b981", "#f0fdf4", "#15803d"),
+    ("Welcome Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled", "#ef4444", "#fef2f2", "#b91c1c"),
+    ("Welcome Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending", "#f59e0b", "#fefce8", "#b45309"),
+    ("Live Status: Live", portal_live, f"{get_pct(portal_live, portal_total)} Live/Pend.", "#14b8a6", "#f0fdfa", "#0f766e"),
+    ("Live Status: Comm.", portal_committed, f"{get_pct(portal_committed, portal_total)} Pipeline", "#f59e0b", "#fefce8", "#b45309"),
+    ("Live Status: Canc.", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} Churned", "#ef4444", "#fef2f2", "#b91c1c")
+]
+
+# Filter out any KPI where value == 0
+visible_kpis = [kpi for kpi in all_kpis if kpi[1] > 0]
+
+if visible_kpis:
+    cols = st.columns(len(visible_kpis))
+    for col, (label, val, delta_sub, border_col, bg_col, delta_col) in zip(cols, visible_kpis):
+        with col:
+            card_html = f"""
+            <div style="
+                border: 1px solid #e2e8f0;
+                border-top: 4px solid {border_col};
+                background-color: {bg_col};
+                border-radius: 8px;
+                padding: 8px 4px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+                text-align: center;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            ">
+                <div style="font-size: 0.58rem; font-weight: 700; text-transform: uppercase; color: #475569; letter-spacing: 0.3px; margin-bottom: 2px;">
+                    {label}
+                </div>
+                <div style="font-size: 1.3rem; font-weight: 800; color: #0f172a; line-height: 1.1; margin-bottom: 2px;">
+                    {val:,}
+                </div>
+                <div style="font-size: 0.62rem; font-weight: 700; color: {delta_col}; margin-top: 2px;">
+                    {delta_sub}
+                </div>
+            </div>
+            """
+            st.markdown(card_html, unsafe_allow_html=True)
+else:
+    st.info("No active KPIs for the selected filters.")
+
+# ==========================================================
+# MONTHLY KPI BREAKDOWN TABLE (2026 ONLY, INDEPENDENT OF TOP FILTERS, WITH PERCENTAGES & COLORS)
 # ==========================================================
 
 st.divider()
@@ -392,21 +721,6 @@ if all_periods:
     st.markdown(m_html, unsafe_allow_html=True)
 else:
     st.info("No 2026 monthly data available for the KPI summary table.")
-
-# ==========================================================
-# TAG VISIBILITY FILTERS (RELOCATED HERE)
-# ==========================================================
-
-st.markdown("##### ⚙️ Sales Executive View Filters")
-filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
-with filter_col1:
-    include_new = st.checkbox("Include New", value=True)
-with filter_col2:
-    include_cs = st.checkbox("Include Customer Service", value=True)
-with filter_col3:
-    include_left = st.checkbox("Include Left", value=False)
-with filter_col4:
-    include_untagged = st.checkbox("Include Untagged", value=True)
 
 # ==========================================================
 # ADVISOR PERFORMANCE MATRIX (EXACT IMAGE PILL BADGE DESIGN)
@@ -722,7 +1036,6 @@ else:
 # ==========================================================
 
 if "Sale Date Clean" in master_df.columns: master_df = master_df.drop(columns=["Sale Date Clean"])
-filtered_portal_df = sparta2_df.copy()
 if "Sale Date Clean" in filtered_portal_df.columns: filtered_portal_df = filtered_portal_df.drop(columns=["Sale Date Clean"])
 
 st.divider()
