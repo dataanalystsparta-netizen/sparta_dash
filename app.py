@@ -247,8 +247,8 @@ def categorize_portal_status(val):
     val_str = str(val).strip().lower()
     if val_str in ["", "(blank)", "nan", "none"]: return "Committed"
     if any(k in val_str for k in ["cancel", "reject"]): return "Cancelled"
-    if any(k in val_str for k in ["live", "active", "completed"]): return "Live"
-    if any(k in val_str for k in ["commit", "pending", "in progress", "processing"]): return "Committed"
+    if any(k in val_str for k in ["live", "pending", "active", "completed"]): return "Live"
+    if any(k in val_str for k in ["commit", "in progress", "processing"]): return "Committed"
     return "Committed"
 
 # ==========================================================
