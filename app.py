@@ -159,11 +159,19 @@ SPREADSHEET_ID = "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ"
 APPLICATION_SHEET = "Sparta"
 LIVE_SHEET = "Sparta2"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+
 NEW_ADVISORS = [
-    "John Doe",
-    "Jane Smith",
-    # Add or remove advisor names here
+    # Add advisor names here
 ]
+
+CUSTOMER_SERVICE_ADVISORS = [
+    # Add customer service advisor names here
+]
+
+LEFT_ADVISORS = [
+    # Add left advisor names here
+]
+
 def get_google_service():
     credentials = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
@@ -364,6 +372,16 @@ with filter_col2:
 with filter_col3:
     end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, format="DD/MM/YYYY")
 
+# Tag inclusion toggles
+st.markdown("##### Tag Visibility Filters")
+tag_col1, tag_col2, tag_col3 = st.columns([1, 1, 1])
+with tag_col1:
+    include_new = st.checkbox("Include 'New' Agents", value=True)
+with tag_col2:
+    include_cs = st.checkbox("Include 'Customer Service' Agents", value=True)
+with tag_col3:
+    include_left = st.checkbox("Include 'Left' Agents", value=False)
+
 if start_date <= end_date:
     date_mask = (master_raw_df["Sale Date Clean"].dt.date >= start_date) & (master_raw_df["Sale Date Clean"].dt.date <= end_date)
     if selected_month != "All Months":
@@ -490,195 +508,249 @@ if "Advisor" in master_df.columns and not master_df.empty:
         .reset_index()
     )
 
-    # 2. Calculate percentage floats BEFORE column rename (Fixes KeyError)
-    advisor_summary["QA Pass Rate % Val"] = (
-        (advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
-    ).fillna(0.0)
+    # 2. Filter rows based on inclusion checkboxes for tagged advisors
+    def filter_tagged_rows(row):
+        name = str(row["Advisor"]).strip().lower()
+        
+        is_new = name in [a.strip().lower() for a in NEW_ADVISORS]
+        is_cs = name in [a.strip().lower() for a in CUSTOMER_SERVICE_ADVISORS]
+        is_left = name in [a.strip().lower() for a in LEFT_ADVISORS]
+        
+        if is_new and not include_new:
+            return False
+        if is_cs and not include_cs:
+            return False
+        if is_left and not include_left:
+            return False
+        return True
 
-    advisor_summary["Live Conversion % Val"] = (
-        (advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
-    ).fillna(0.0)
+    advisor_summary = advisor_summary[advisor_summary.apply(filter_tagged_rows, axis=1)].copy()
 
-    # 3. Rename columns to match display standards
-    advisor_summary = advisor_summary.rename(
-        columns={
-            "Advisor": "SALES EXECUTIVE",
-            "Applications": "APPLICATIONS",
-            "QA_Approved": "QA APPROVED",
-            "QA_Rework": "QA REWORK",
-            "QA_Cancelled": "QA CANCELLED",
-            "QA_Pending": "QA PENDING",
-            "Welcome_Done": "WELCOME DONE",
-            "Welcome_Cancelled": "WELCOME CANCELLED",
-            "Welcome_Pending": "WELCOME PENDING",
-            "Committed": "COMMITTED REM.",
-            "Live": "LIVE",
-            "Live_Cancelled": "LIVE CANCELLED",
-        }
-    )
+    if advisor_summary.empty:
+        st.info("No sales records match the selected tag filters.")
+    else:
+        # 3. Calculate percentage floats BEFORE column rename
+        advisor_summary["QA Pass Rate % Val"] = (
+            (advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
+        ).fillna(0.0)
 
-    advisor_summary["SALES EXECUTIVE"] = (
-        advisor_summary["SALES EXECUTIVE"]
-        .replace("", "Unassigned")
-        .fillna("Unassigned")
-    )
-    advisor_summary = advisor_summary.sort_values(by="APPLICATIONS", ascending=False)
+        advisor_summary["Live Conversion % Val"] = (
+            (advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
+        ).fillna(0.0)
 
-    # Determine visible columns (Hide columns where sum is 0)
-    numeric_cols = [
-        "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
-        "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED"
-    ]
+        # 4. Rename columns to match display standards
+        advisor_summary = advisor_summary.rename(
+            columns={
+                "Advisor": "SALES EXECUTIVE",
+                "Applications": "APPLICATIONS",
+                "QA_Approved": "QA APPROVED",
+                "QA_Rework": "QA REWORK",
+                "QA_Cancelled": "QA CANCELLED",
+                "QA_Pending": "QA PENDING",
+                "Welcome_Done": "WELCOME DONE",
+                "Welcome_Cancelled": "WELCOME CANCELLED",
+                "Welcome_Pending": "WELCOME PENDING",
+                "Committed": "COMMITTED REM.",
+                "Live": "LIVE",
+                "Live_Cancelled": "LIVE CANCELLED",
+            }
+        )
 
-    base_col_order = [
-        "SALES EXECUTIVE", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
-        "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
-        "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
-        "LIVE", "LIVE CANCELLED", "Live Conversion %"
-    ]
+        advisor_summary["SALES EXECUTIVE"] = (
+            advisor_summary["SALES EXECUTIVE"]
+            .replace("", "Unassigned")
+            .fillna("Unassigned")
+        )
+        advisor_summary = advisor_summary.sort_values(by="APPLICATIONS", ascending=False)
 
-    visible_cols = ["SALES EXECUTIVE"]
-    for col in base_col_order[1:]:
-        if col in numeric_cols:
-            if (advisor_summary[col] > 0).any():
-                visible_cols.append(col)
-        elif col == "QA Pass Rate %":
-            if "QA APPROVED" in visible_cols:
-                visible_cols.append(col)
-        elif col == "Live Conversion %":
-            if "LIVE" in visible_cols:
-                visible_cols.append(col)
+        # Determine visible columns (Hide columns where sum is 0)
+        numeric_cols = [
+            "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
+            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED"
+        ]
 
-    # 4. Helper to style percentage badges
-    def render_pill(val_float, high_thresh=70.0, mid_thresh=50.0):
-        val_str = f"{val_float:.1f}%"
-        if val_float >= high_thresh:
-            bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
-        elif val_float >= mid_thresh:
-            bg, color, border = "#fef3c7", "#b45309", "#fde68a"
-        else:
-            bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
+        base_col_order = [
+            "SALES EXECUTIVE", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
+            "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
+            "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
+            "LIVE", "LIVE CANCELLED", "Live Conversion %"
+        ]
 
-        return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 3px 12px; font-weight: 700; font-size: 0.82rem; display: inline-block;">{val_str}</span>'
-
-    # Header styling configuration
-    header_styles = {
-        "SALES EXECUTIVE": "background-color: #f1f5f9; color: #334155;",
-        "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
-        "QA APPROVED": "background-color: #f0fdf4; color: #15803d;",
-        "QA Pass Rate %": "background-color: #f0fdf4; color: #15803d;",
-        "QA REWORK": "background-color: #fefce8; color: #a16207;",
-        "QA CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-        "QA PENDING": "background-color: #fff7ed; color: #c2410c;",
-        "WELCOME DONE": "background-color: #f0fdf4; color: #15803d;",
-        "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-        "WELCOME PENDING": "background-color: #fefce8; color: #a16207;",
-        "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
-        "LIVE": "background-color: #f0fdfa; color: #0f766e;",
-        "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-        "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
-    }
-
-    # 5. Generate Custom HTML Table
-    html_code = """
-    <style>
-        .custom-perf-table-container {
-            width: 100%;
-            overflow-x: auto;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-            margin-bottom: 20px;
-        }
-        .custom-perf-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            font-size: 0.88rem;
-            background-color: #ffffff;
-        }
-        .custom-perf-table th {
-            padding: 12px 14px;
-            font-weight: 800;
-            font-size: 0.78rem;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-            text-align: center;
-            border-bottom: 2px solid #e2e8f0;
-            border-right: 1px solid #f1f5f9;
-        }
-        .custom-perf-table th:first-child {
-            text-align: left;
-        }
-        .custom-perf-table td {
-            padding: 10px 14px;
-            text-align: center;
-            border-bottom: 1px solid #f1f5f9;
-            border-right: 1px solid #f8fafc;
-            color: #1e293b;
-        }
-        .custom-perf-table td:first-child {
-            text-align: left;
-            font-weight: 700;
-            color: #0f172a;
-        }
-        .custom-perf-table tr:hover {
-            background-color: #f8fafc;
-        }
-        .new-tag {
-            background-color: #ede9fe;
-            color: #6d28d9;
-            font-size: 0.68rem;
-            font-weight: 700;
-            padding: 2px 6px;
-            border-radius: 6px;
-            margin-left: 6px;
-            display: inline-block;
-            vertical-align: middle;
-        }
-    </style>
-    <div class="custom-perf-table-container">
-        <table class="custom-perf-table">
-            <thead>
-                <tr>
-    """
-
-    # Add header row
-    for col in visible_cols:
-        style = header_styles.get(col, "background-color: #f8fafc; color: #475569;")
-        html_code += f'<th style="{style}">{col}</th>'
-    html_code += "</tr></thead><tbody>"
-
-    # Add data rows
-# Add data rows
-    for _, row in advisor_summary.iterrows():
-        html_code += "<tr>"
-        for col in visible_cols:
-            if col == "SALES EXECUTIVE":
-                name = str(row[col])
-                is_new = name.strip().lower() in [a.strip().lower() for a in NEW_ADVISORS]
-                tag_html = '<span class="new-tag">New</span>' if is_new else ""
-                html_code += f"<td>{name}{tag_html}</td>"
-
+        visible_cols = ["SALES EXECUTIVE"]
+        for col in base_col_order[1:]:
+            if col in numeric_cols:
+                if (advisor_summary[col] > 0).any():
+                    visible_cols.append(col)
             elif col == "QA Pass Rate %":
-                pill_html = render_pill(row["QA Pass Rate % Val"], high_thresh=70.0, mid_thresh=50.0)
-                html_code += f"<td>{pill_html}</td>"
-
+                if "QA APPROVED" in visible_cols:
+                    visible_cols.append(col)
             elif col == "Live Conversion %":
-                pill_html = render_pill(row["Live Conversion % Val"], high_thresh=15.0, mid_thresh=8.0)
-                html_code += f"<td>{pill_html}</td>"
+                if "LIVE" in visible_cols:
+                    visible_cols.append(col)
 
+        # 5. Helper to style percentage badges
+        def render_pill(val_float, high_thresh=70.0, mid_thresh=50.0):
+            val_str = f"{val_float:.1f}%"
+            if val_float >= high_thresh:
+                bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
+            elif val_float >= mid_thresh:
+                bg, color, border = "#fef3c7", "#b45309", "#fde68a"
             else:
-                val = row[col]
-                formatted_val = "-" if val == 0 else f"{val:,}"
-                html_code += f"<td>{formatted_val}</td>"
+                bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
 
-        html_code += "</tr>"
+            return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 3px 12px; font-weight: 700; font-size: 0.82rem; display: inline-block;">{val_str}</span>'
 
-    html_code += "</tbody></table></div>"
+        # Header styling configuration
+        header_styles = {
+            "SALES EXECUTIVE": "background-color: #f1f5f9; color: #334155;",
+            "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
+            "QA APPROVED": "background-color: #f0fdf4; color: #15803d;",
+            "QA Pass Rate %": "background-color: #f0fdf4; color: #15803d;",
+            "QA REWORK": "background-color: #fefce8; color: #a16207;",
+            "QA CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
+            "QA PENDING": "background-color: #fff7ed; color: #c2410c;",
+            "WELCOME DONE": "background-color: #f0fdf4; color: #15803d;",
+            "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
+            "WELCOME PENDING": "background-color: #fefce8; color: #a16207;",
+            "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
+            "LIVE": "background-color: #f0fdfa; color: #0f766e;",
+            "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
+            "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
+        }
 
-    # Render table
-    st.markdown(html_code, unsafe_allow_html=True)
+        # 6. Generate Custom HTML Table
+        html_code = """
+        <style>
+            .custom-perf-table-container {
+                width: 100%;
+                overflow-x: auto;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+                margin-bottom: 20px;
+            }
+            .custom-perf-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                font-size: 0.88rem;
+                background-color: #ffffff;
+            }
+            .custom-perf-table th {
+                padding: 12px 14px;
+                font-weight: 800;
+                font-size: 0.78rem;
+                letter-spacing: 0.5px;
+                text-transform: uppercase;
+                text-align: center;
+                border-bottom: 2px solid #e2e8f0;
+                border-right: 1px solid #f1f5f9;
+            }
+            .custom-perf-table th:first-child {
+                text-align: left;
+            }
+            .custom-perf-table td {
+                padding: 10px 14px;
+                text-align: center;
+                border-bottom: 1px solid #f1f5f9;
+                border-right: 1px solid #f8fafc;
+                color: #1e293b;
+            }
+            .custom-perf-table td:first-child {
+                text-align: left;
+                font-weight: 700;
+                color: #0f172a;
+            }
+            .custom-perf-table tr:hover {
+                background-color: #f8fafc;
+            }
+            .new-tag {
+                background-color: #ede9fe;
+                color: #6d28d9;
+                font-size: 0.68rem;
+                font-weight: 700;
+                padding: 2px 6px;
+                border-radius: 6px;
+                margin-left: 6px;
+                display: inline-block;
+                vertical-align: middle;
+            }
+            .cs-tag {
+                background-color: #e0f2fe;
+                color: #0369a1;
+                font-size: 0.68rem;
+                font-weight: 700;
+                padding: 2px 6px;
+                border-radius: 6px;
+                margin-left: 6px;
+                display: inline-block;
+                vertical-align: middle;
+            }
+            .left-tag {
+                background-color: #fee2e2;
+                color: #991b1b;
+                font-size: 0.68rem;
+                font-weight: 700;
+                padding: 2px 6px;
+                border-radius: 6px;
+                margin-left: 6px;
+                display: inline-block;
+                vertical-align: middle;
+            }
+        </style>
+        <div class="custom-perf-table-container">
+            <table class="custom-perf-table">
+                <thead>
+                    <tr>
+        """
+
+        # Add header row
+        for col in visible_cols:
+            style = header_styles.get(col, "background-color: #f8fafc; color: #475569;")
+            html_code += f'<th style="{style}">{col}</th>'
+        html_code += "</tr></thead><tbody>"
+
+        # Add data rows
+        for _, row in advisor_summary.iterrows():
+            html_code += "<tr>"
+            for col in visible_cols:
+                if col == "SALES EXECUTIVE":
+                    name = str(row[col])
+                    clean_name = name.strip().lower()
+                    
+                    is_new = clean_name in [a.strip().lower() for a in NEW_ADVISORS]
+                    is_cs = clean_name in [a.strip().lower() for a in CUSTOMER_SERVICE_ADVISORS]
+                    is_left = clean_name in [a.strip().lower() for a in LEFT_ADVISORS]
+                    
+                    tags_html = ""
+                    if is_new:
+                        tags_html += '<span class="new-tag">New</span>'
+                    if is_cs:
+                        tags_html += '<span class="cs-tag">Customer Service</span>'
+                    if is_left:
+                        tags_html += '<span class="left-tag">Left</span>'
+                        
+                    html_code += f"<td>{name}{tags_html}</td>"
+
+                elif col == "QA Pass Rate %":
+                    pill_html = render_pill(row["QA Pass Rate % Val"], high_thresh=70.0, mid_thresh=50.0)
+                    html_code += f"<td>{pill_html}</td>"
+
+                elif col == "Live Conversion %":
+                    pill_html = render_pill(row["Live Conversion % Val"], high_thresh=15.0, mid_thresh=8.0)
+                    html_code += f"<td>{pill_html}</td>"
+
+                else:
+                    val = row[col]
+                    formatted_val = "-" if val == 0 else f"{val:,}"
+                    html_code += f"<td>{formatted_val}</td>"
+
+            html_code += "</tr>"
+
+        html_code += "</tbody></table></div>"
+
+        # Render table
+        st.markdown(html_code, unsafe_allow_html=True)
 
 else:
     st.info("No sales records available for the selected date or month filter.")
