@@ -579,12 +579,32 @@ if all_periods:
     }
     monthly_summary_df = pd.concat([monthly_summary_df, pd.DataFrame([totals_row])], ignore_index=True)
     
-    # Helper to style percentage pills in monthly table
-    def render_monthly_pill(val_float, high_thresh=70.0, mid_thresh=50.0):
+    # Helpers to style percentage pills in monthly table based on updated rule thresholds
+    def render_monthly_qa_pill(val_float):
         val_str = f"{val_float:.1f}%"
-        if val_float >= high_thresh:
+        if val_float >= 75.0:
             bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
-        elif val_float >= mid_thresh:
+        elif val_float >= 51.0:
+            bg, color, border = "#fef3c7", "#b45309", "#fde68a"
+        else:
+            bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
+        return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 2px 8px; font-weight: 700; font-size: 0.78rem; display: inline-block;">{val_str}</span>'
+
+    def render_monthly_welcome_pill(val_float):
+        val_str = f"{val_float:.1f}%"
+        if val_float >= 61.0:
+            bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
+        elif val_float >= 51.0:
+            bg, color, border = "#fef3c7", "#b45309", "#fde68a"
+        else:
+            bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
+        return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 2px 8px; font-weight: 700; font-size: 0.78rem; display: inline-block;">{val_str}</span>'
+
+    def render_monthly_live_pill(val_float):
+        val_str = f"{val_float:.1f}%"
+        if val_float >= 41.0:
+            bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
+        elif val_float >= 21.0:
             bg, color, border = "#fef3c7", "#b45309", "#fde68a"
         else:
             bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
@@ -683,13 +703,13 @@ if all_periods:
             if col_name == "MONTH":
                 m_html += f"<td>{row['MONTH']}</td>"
             elif col_name == "QA Pass Rate %":
-                pill = render_monthly_pill(row["QA Pass Rate % Val"], high_thresh=70.0, mid_thresh=50.0)
+                pill = render_monthly_qa_pill(row["QA Pass Rate % Val"])
                 m_html += f"<td>{pill}</td>"
             elif col_name == "Welcome Done %":
-                pill = render_monthly_pill(row["Welcome Done % Val"], high_thresh=70.0, mid_thresh=50.0)
+                pill = render_monthly_welcome_pill(row["Welcome Done % Val"])
                 m_html += f"<td>{pill}</td>"
             elif col_name == "Live Conversion %":
-                pill = render_monthly_pill(row["Live Conversion % Val"], high_thresh=15.0, mid_thresh=8.0)
+                pill = render_monthly_live_pill(row["Live Conversion % Val"])
                 m_html += f"<td>{pill}</td>"
             else:
                 val = row[col_name]
@@ -820,16 +840,35 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 if "LIVE" in visible_cols:
                     visible_cols.append(col)
 
-        # 5. Helper to style percentage badges
-        def render_pill(val_float, high_thresh=70.0, mid_thresh=50.0):
+        # 5. Helpers to style percentage badges with updated rule thresholds
+        def render_qa_pill(val_float):
             val_str = f"{val_float:.1f}%"
-            if val_float >= high_thresh:
+            if val_float >= 75.0:
                 bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
-            elif val_float >= mid_thresh:
+            elif val_float >= 51.0:
                 bg, color, border = "#fef3c7", "#b45309", "#fde68a"
             else:
                 bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
+            return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 3px 12px; font-weight: 700; font-size: 0.82rem; display: inline-block;">{val_str}</span>'
 
+        def render_welcome_pill(val_float):
+            val_str = f"{val_float:.1f}%"
+            if val_float >= 61.0:
+                bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
+            elif val_float >= 51.0:
+                bg, color, border = "#fef3c7", "#b45309", "#fde68a"
+            else:
+                bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
+            return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 3px 12px; font-weight: 700; font-size: 0.82rem; display: inline-block;">{val_str}</span>'
+
+        def render_live_pill(val_float):
+            val_str = f"{val_float:.1f}%"
+            if val_float >= 41.0:
+                bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
+            elif val_float >= 21.0:
+                bg, color, border = "#fef3c7", "#b45309", "#fde68a"
+            else:
+                bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
             return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 3px 12px; font-weight: 700; font-size: 0.82rem; display: inline-block;">{val_str}</span>'
 
         # Header styling configuration
@@ -966,15 +1005,15 @@ if "Advisor" in master_df.columns and not master_df.empty:
                     html_code += f"<td>{name}{tags_html}</td>"
 
                 elif col == "QA Pass Rate %":
-                    pill_html = render_pill(row["QA Pass Rate % Val"], high_thresh=70.0, mid_thresh=50.0)
+                    pill_html = render_qa_pill(row["QA Pass Rate % Val"])
                     html_code += f"<td>{pill_html}</td>"
 
                 elif col == "Welcome Done %":
-                    pill_html = render_pill(row["Welcome Done % Val"], high_thresh=70.0, mid_thresh=50.0)
+                    pill_html = render_welcome_pill(row["Welcome Done % Val"])
                     html_code += f"<td>{pill_html}</td>"
 
                 elif col == "Live Conversion %":
-                    pill_html = render_pill(row["Live Conversion % Val"], high_thresh=15.0, mid_thresh=8.0)
+                    pill_html = render_live_pill(row["Live Conversion % Val"])
                     html_code += f"<td>{pill_html}</td>"
 
                 else:
