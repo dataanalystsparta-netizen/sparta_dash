@@ -172,7 +172,7 @@ LEFT_ADVISORS = ["Gaurav","Guru","Niki","Shaheen","Manmeet","Gungun","Aman","Ran
 
                 "Tokivi","Sangeeta","Monica","Khushbu","Vijay","Mehak","Khushboo","Yash","Khusboo","Manshay","Manmet",
                  "Lakshay","Veer","Ashima","Rishabh",
-                 "Aarti","Abhay"
+                 "Aarti","Abhay","Diwakar", "Vishal","Sneha","Swarali","Pawan"
     # Add left advisor names here
 ]
 
