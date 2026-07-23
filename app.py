@@ -461,6 +461,7 @@ if visible_kpis:
             st.markdown(card_html, unsafe_allow_html=True)
 else:
     st.info("No active KPIs for the selected filters.")
+
 # ==========================================================
 # ADVISOR PERFORMANCE MATRIX (EXACT IMAGE PILL BADGE DESIGN)
 # ==========================================================
@@ -470,160 +471,116 @@ st.subheader("👥 Sales Executive Performance Breakdown")
 
 if "Advisor" in master_df.columns and not master_df.empty:
 
-  # 1. Aggregate metrics
-  advisor_summary = (
-      master_df.groupby("Advisor", dropna=False)
-      .agg(
-          Applications=("Advisor", "count"),
-          QA_Approved=(
-              "Quality Status Clean",
-              lambda x: (x == "Approved").sum(),
-          ),
-          QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
-          QA_Cancelled=(
-              "Quality Status Clean",
-              lambda x: (x == "Cancelled").sum(),
-          ),
-          QA_Pending=("Quality Status Clean", lambda x: (x == "Pending").sum()),
-          Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
-          Welcome_Cancelled=(
-              "Welcome Status Clean",
-              lambda x: (x == "Cancelled").sum(),
-          ),
-          Welcome_Pending=(
-              "Welcome Status Clean",
-              lambda x: (x == "Pending").sum(),
-          ),
-          Committed=("Portal Status Clean", lambda x: (x == "Committed").sum()),
-          Live=("Portal Status Clean", lambda x: (x == "Live").sum()),
-          Live_Cancelled=(
-              "Portal Status Clean",
-              lambda x: (x == "Cancelled").sum(),
-          ),
-      )
-      .reset_index()
-  )
+    # 1. Aggregate metrics
+    advisor_summary = (
+        master_df.groupby("Advisor", dropna=False)
+        .agg(
+            Applications=("Advisor", "count"),
+            QA_Approved=("Quality Status Clean", lambda x: (x == "Approved").sum()),
+            QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
+            QA_Cancelled=("Quality Status Clean", lambda x: (x == "Cancelled").sum()),
+            QA_Pending=("Quality Status Clean", lambda x: (x == "Pending").sum()),
+            Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
+            Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
+            Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
+            Committed=("Portal Status Clean", lambda x: (x == "Committed").sum()),
+            Live=("Portal Status Clean", lambda x: (x == "Live").sum()),
+            Live_Cancelled=("Portal Status Clean", lambda x: (x == "Cancelled").sum()),
+        )
+        .reset_index()
+    )
 
-  # 2. Calculate percentage floats BEFORE column rename (Fixes KeyError)
-  advisor_summary["QA Pass Rate % Val"] = (
-      (
-          advisor_summary["QA_Approved"]
-          / advisor_summary["Applications"].replace(0, np.nan)
-      )
-      * 100
-  ).fillna(0.0)
+    # 2. Calculate percentage floats BEFORE column rename (Fixes KeyError)
+    advisor_summary["QA Pass Rate % Val"] = (
+        (advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
+    ).fillna(0.0)
 
-  advisor_summary["Live Conversion % Val"] = (
-      (
-          advisor_summary["Live"]
-          / advisor_summary["Applications"].replace(0, np.nan)
-      )
-      * 100
-  ).fillna(0.0)
+    advisor_summary["Live Conversion % Val"] = (
+        (advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
+    ).fillna(0.0)
 
-  # 3. Rename columns to match display standards
-  advisor_summary = advisor_summary.rename(
-      columns={
-          "Advisor": "SALES EXECUTIVE",
-          "Applications": "APPLICATIONS",
-          "QA_Approved": "QA APPROVED",
-          "QA_Rework": "QA REWORK",
-          "QA_Cancelled": "QA CANCELLED",
-          "QA_Pending": "QA PENDING",
-          "Welcome_Done": "WELCOME DONE",
-          "Welcome_Cancelled": "WELCOME CANCELLED",
-          "Welcome_Pending": "WELCOME PENDING",
-          "Committed": "COMMITTED REM.",
-          "Live": "LIVE",
-          "Live_Cancelled": "LIVE CANCELLED",
-      }
-  )
+    # 3. Rename columns to match display standards
+    advisor_summary = advisor_summary.rename(
+        columns={
+            "Advisor": "SALES EXECUTIVE",
+            "Applications": "APPLICATIONS",
+            "QA_Approved": "QA APPROVED",
+            "QA_Rework": "QA REWORK",
+            "QA_Cancelled": "QA CANCELLED",
+            "QA_Pending": "QA PENDING",
+            "Welcome_Done": "WELCOME DONE",
+            "Welcome_Cancelled": "WELCOME CANCELLED",
+            "Welcome_Pending": "WELCOME PENDING",
+            "Committed": "COMMITTED REM.",
+            "Live": "LIVE",
+            "Live_Cancelled": "LIVE CANCELLED",
+        }
+    )
 
-  advisor_summary["SALES EXECUTIVE"] = (
-      advisor_summary["SALES EXECUTIVE"]
-      .replace("", "Unassigned")
-      .fillna("Unassigned")
-  )
-  advisor_summary = advisor_summary.sort_values(
-      by="APPLICATIONS", ascending=False
-  )
+    advisor_summary["SALES EXECUTIVE"] = (
+        advisor_summary["SALES EXECUTIVE"]
+        .replace("", "Unassigned")
+        .fillna("Unassigned")
+    )
+    advisor_summary = advisor_summary.sort_values(by="APPLICATIONS", ascending=False)
 
-  # Determine visible columns (Hide columns where sum is 0)
-  numeric_cols = [
-      "APPLICATIONS",
-      "QA APPROVED",
-      "QA REWORK",
-      "QA CANCELLED",
-      "QA PENDING",
-      "WELCOME DONE",
-      "WELCOME CANCELLED",
-      "WELCOME PENDING",
-      "COMMITTED REM.",
-      "LIVE",
-      "LIVE CANCELLED",
-  ]
+    # Determine visible columns (Hide columns where sum is 0)
+    numeric_cols = [
+        "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
+        "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED"
+    ]
 
-  base_col_order = [
-      "SALES EXECUTIVE",
-      "APPLICATIONS",
-      "QA APPROVED",
-      "QA Pass Rate %",
-      "QA REWORK",
-      "QA CANCELLED",
-      "QA PENDING",
-      "WELCOME DONE",
-      "WELCOME CANCELLED",
-      "WELCOME PENDING",
-      "COMMITTED REM.",
-      "LIVE",
-      "LIVE CANCELLED",
-      "Live Conversion %",
-  ]
+    base_col_order = [
+        "SALES EXECUTIVE", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
+        "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
+        "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
+        "LIVE", "LIVE CANCELLED", "Live Conversion %"
+    ]
 
-  visible_cols = ["SALES EXECUTIVE"]
-  for col in base_col_order[1:]:
-    if col in numeric_cols:
-      if (advisor_summary[col] > 0).any():
-        visible_cols.append(col)
-    elif col == "QA Pass Rate %":
-      if "QA APPROVED" in visible_cols:
-        visible_cols.append(col)
-    elif col == "Live Conversion %":
-      if "LIVE" in visible_cols:
-        visible_cols.append(col)
+    visible_cols = ["SALES EXECUTIVE"]
+    for col in base_col_order[1:]:
+        if col in numeric_cols:
+            if (advisor_summary[col] > 0).any():
+                visible_cols.append(col)
+        elif col == "QA Pass Rate %":
+            if "QA APPROVED" in visible_cols:
+                visible_cols.append(col)
+        elif col == "Live Conversion %":
+            if "LIVE" in visible_cols:
+                visible_cols.append(col)
 
-  # 4. Helper to style percentage badges
-  def render_pill(val_float, high_thresh=70.0, mid_thresh=50.0):
-    val_str = f"{val_float:.1f}%"
-    if val_float >= high_thresh:
-      bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
-    elif val_float >= mid_thresh:
-      bg, color, border = "#fef3c7", "#b45309", "#fde68a"
-    else:
-      bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
+    # 4. Helper to style percentage badges
+    def render_pill(val_float, high_thresh=70.0, mid_thresh=50.0):
+        val_str = f"{val_float:.1f}%"
+        if val_float >= high_thresh:
+            bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
+        elif val_float >= mid_thresh:
+            bg, color, border = "#fef3c7", "#b45309", "#fde68a"
+        else:
+            bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
 
-    return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 3px 12px; font-weight: 700; font-size: 0.82rem; display: inline-block;">{val_str}</span>'
+        return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 3px 12px; font-weight: 700; font-size: 0.82rem; display: inline-block;">{val_str}</span>'
 
-  # Header styling configuration
-  header_styles = {
-      "SALES EXECUTIVE": "background-color: #f1f5f9; color: #334155;",
-      "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
-      "QA APPROVED": "background-color: #f0fdf4; color: #15803d;",
-      "QA Pass Rate %": "background-color: #f0fdf4; color: #15803d;",
-      "QA REWORK": "background-color: #fefce8; color: #a16207;",
-      "QA CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-      "QA PENDING": "background-color: #fff7ed; color: #c2410c;",
-      "WELCOME DONE": "background-color: #f0fdf4; color: #15803d;",
-      "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-      "WELCOME PENDING": "background-color: #fefce8; color: #a16207;",
-      "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
-      "LIVE": "background-color: #f0fdfa; color: #0f766e;",
-      "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-      "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
-  }
+    # Header styling configuration
+    header_styles = {
+        "SALES EXECUTIVE": "background-color: #f1f5f9; color: #334155;",
+        "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
+        "QA APPROVED": "background-color: #f0fdf4; color: #15803d;",
+        "QA Pass Rate %": "background-color: #f0fdf4; color: #15803d;",
+        "QA REWORK": "background-color: #fefce8; color: #a16207;",
+        "QA CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
+        "QA PENDING": "background-color: #fff7ed; color: #c2410c;",
+        "WELCOME DONE": "background-color: #f0fdf4; color: #15803d;",
+        "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
+        "WELCOME PENDING": "background-color: #fefce8; color: #a16207;",
+        "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
+        "LIVE": "background-color: #f0fdfa; color: #0f766e;",
+        "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
+        "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
+    }
 
-  # 5. Generate Custom HTML Table
-  html_code = """
+    # 5. Generate Custom HTML Table
+    html_code = """
     <style>
         .custom-perf-table-container {
             width: 100%;
@@ -686,61 +643,48 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 <tr>
     """
 
-  # Add header row
-  for col in visible_cols:
-    style = header_styles.get(
-        col, "background-color: #f8fafc; color: #475569;"
-    )
-    html_code += f'<th style="{style}">{col}</th>'
-  html_code += "</tr></thead><tbody>"
-
-  # Add data rows
-  for _, row in advisor_summary.iterrows():
-    html_code += "<tr>"
+    # Add header row
     for col in visible_cols:
-      if col == "SALES EXECUTIVE":
-        name = str(row[col])
-        is_new = row["APPLICATIONS"] <= 5
-        tag_html = '<span class="new-tag">New</span>' if is_new else ""
-        html_code += f"<td>{name}{tag_html}</td>"
+        style = header_styles.get(col, "background-color: #f8fafc; color: #475569;")
+        html_code += f'<th style="{style}">{col}</th>'
+    html_code += "</tr></thead><tbody>"
 
-      elif col == "QA Pass Rate %":
-        pill_html = render_pill(
-            row["QA Pass Rate % Val"], high_thresh=70.0, mid_thresh=50.0
-        )
-        html_code += f"<td>{pill_html}</td>"
+    # Add data rows
+    for _, row in advisor_summary.iterrows():
+        html_code += "<tr>"
+        for col in visible_cols:
+            if col == "SALES EXECUTIVE":
+                name = str(row[col])
+                is_in_list = name.strip().lower() in [a.strip().lower() for a in NEW_ADVISORS]
+                is_low_volume = row["APPLICATIONS"] <= 5
+                is_new = is_in_list or is_low_volume
+                
+                tag_html = '<span class="new-tag">New</span>' if is_new else ""
+                html_code += f"<td>{name}{tag_html}</td>"
 
-      elif col == "Live Conversion %":
-        pill_html = render_pill(
-            row["Live Conversion % Val"], high_thresh=15.0, mid_thresh=8.0
-        )
-        html_code += f"<td>{pill_html}</td>"
-      elif col == "SALES EXECUTIVE":
-        name = str(row[col])
-        
-        # Check if advisor is in the manual list (case-insensitive check for safety)
-        is_new = name.strip().lower() in [a.strip().lower() for a in NEW_ADVISORS]
-        
-        # Optional: If you want to flag BOTH manually listed advisors AND anyone with <= 5 applications:
-        # is_new = (name.strip().lower() in [a.strip().lower() for a in NEW_ADVISORS]) or (row["APPLICATIONS"] <= 5)
-        
-        tag_html = '<span class="new-tag">New</span>' if is_new else ""
-        html_code += f"<td>{name}{tag_html}</td>"
+            elif col == "QA Pass Rate %":
+                pill_html = render_pill(row["QA Pass Rate % Val"], high_thresh=70.0, mid_thresh=50.0)
+                html_code += f"<td>{pill_html}</td>"
 
-      else:
-        val = row[col]
-        formatted_val = "-" if val == 0 else f"{val:,}"
-        html_code += f"<td>{formatted_val}</td>"
+            elif col == "Live Conversion %":
+                pill_html = render_pill(row["Live Conversion % Val"], high_thresh=15.0, mid_thresh=8.0)
+                html_code += f"<td>{pill_html}</td>"
 
-    html_code += "</tr>"
+            else:
+                val = row[col]
+                formatted_val = "-" if val == 0 else f"{val:,}"
+                html_code += f"<td>{formatted_val}</td>"
 
-  html_code += "</tbody></table></div>"
+        html_code += "</tr>"
 
-  # Render table
-  st.markdown(html_code, unsafe_allow_html=True)
+    html_code += "</tbody></table></div>"
+
+    # Render table
+    st.markdown(html_code, unsafe_allow_html=True)
 
 else:
-  st.info("No sales records available for the selected date or month filter.")
+    st.info("No sales records available for the selected date or month filter.")
+
 # ==========================================================
 # FOOTER & PREVIEW TABS
 # ==========================================================
