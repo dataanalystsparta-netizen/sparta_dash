@@ -171,7 +171,7 @@ CUSTOMER_SERVICE_ADVISORS = ["Santosh Joshi","Ravi","Ravi Inbound","Vijender"
 
 LEFT_ADVISORS = ["Gaurav","Guru","Niki","Shaheen","Manmeet","Gungun","Aman","Rani","Archana","Deepali","Supreme",
 
-                "Tokivi","Sangeeta","Pawan","Ashima","Monica","Khushbu","Vijay","Mehak","Khushboo","Yash","Khusboo","Manshay","Manmet"
+                "Tokivi","Sangeeta","Pawan","Ashima","Monica","Khushbu","Vijay","Mehak","Khushboo","Yash","Khusboo","Manshay","Manmet",
                  "Lakshay","Rishabh","Veer","Sudhanshu","Nishant","Paras","Abhay","Aarti", "Kushal","Sneha","Swarali","Diwakar"
     # Add left advisor names here
 ]
