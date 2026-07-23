@@ -656,8 +656,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
             if col == "SALES EXECUTIVE":
                 name = str(row[col])
                 is_in_list = name.strip().lower() in [a.strip().lower() for a in NEW_ADVISORS]
-                is_low_volume = row["APPLICATIONS"] <= 5
-                is_new = is_in_list or is_low_volume
                 
                 tag_html = '<span class="new-tag">New</span>' if is_new else ""
                 html_code += f"<td>{name}{tag_html}</td>"
