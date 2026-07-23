@@ -650,13 +650,13 @@ if "Advisor" in master_df.columns and not master_df.empty:
     html_code += "</tr></thead><tbody>"
 
     # Add data rows
+# Add data rows
     for _, row in advisor_summary.iterrows():
         html_code += "<tr>"
         for col in visible_cols:
             if col == "SALES EXECUTIVE":
                 name = str(row[col])
-                is_in_list = name.strip().lower() in [a.strip().lower() for a in NEW_ADVISORS]
-                
+                is_new = name.strip().lower() in [a.strip().lower() for a in NEW_ADVISORS]
                 tag_html = '<span class="new-tag">New</span>' if is_new else ""
                 html_code += f"<td>{name}{tag_html}</td>"
 
