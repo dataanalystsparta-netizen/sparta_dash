@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Native st.metric Styling matching card design + soft background tints
+# Custom CSS for Native st.metric Styling matching card design + individual soft background tints
 st.markdown("""
 <style>
     /* Card Container Base */
@@ -80,12 +80,73 @@ st.markdown("""
         display: none !important; /* Hide native arrow icons */
     }
 
-    /* TOP ACCENT STRIPS + SOFT LIGHT BACKGROUNDS */
-    [data-testid="stColumn"] [data-testid="stMetric"] { 
-        border-top: 4px solid #3b82f6 !important; 
-        background-color: #eff6ff !important; 
+    /* INDIVIDUAL ACCENT STRIPS + SOFT LIGHT BACKGROUNDS BY COLUMN */
+    
+    /* Col 1: Soft Blue */
+    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetric"] { 
+        border-top: 4px solid #3b82f6 !important; background-color: #eff6ff !important; 
     }
-    [data-testid="stColumn"] [data-testid="stMetricDelta"] { color: #1d4ed8 !important; }
+    [data-testid="stColumn"]:nth-child(1) [data-testid="stMetricDelta"] { color: #1d4ed8 !important; }
+
+    /* Col 2: Soft Green */
+    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] { 
+        border-top: 4px solid #10b981 !important; background-color: #f0fdf4 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(2) [data-testid="stMetricDelta"] { color: #15803d !important; }
+
+    /* Col 3: Soft Yellow */
+    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetric"] { 
+        border-top: 4px solid #f59e0b !important; background-color: #fefce8 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(3) [data-testid="stMetricDelta"] { color: #b45309 !important; }
+
+    /* Col 4: Soft Red */
+    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetric"] { 
+        border-top: 4px solid #ef4444 !important; background-color: #fef2f2 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(4) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
+
+    /* Col 5: Soft Orange */
+    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetric"] { 
+        border-top: 4px solid #f97316 !important; background-color: #fff7ed !important; 
+    }
+    [data-testid="stColumn"]:nth-child(5) [data-testid="stMetricDelta"] { color: #c2410c !important; }
+
+    /* Col 6: Soft Green */
+    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetric"] { 
+        border-top: 4px solid #10b981 !important; background-color: #f0fdf4 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(6) [data-testid="stMetricDelta"] { color: #15803d !important; }
+
+    /* Col 7: Soft Red */
+    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetric"] { 
+        border-top: 4px solid #ef4444 !important; background-color: #fef2f2 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(7) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
+
+    /* Col 8: Soft Yellow */
+    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetric"] { 
+        border-top: 4px solid #f59e0b !important; background-color: #fefce8 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(8) [data-testid="stMetricDelta"] { color: #b45309 !important; }
+
+    /* Col 9: Soft Teal */
+    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetric"] { 
+        border-top: 4px solid #14b8a6 !important; background-color: #f0fdfa !important; 
+    }
+    [data-testid="stColumn"]:nth-child(9) [data-testid="stMetricDelta"] { color: #0f766e !important; }
+
+    /* Col 10: Soft Yellow */
+    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetric"] { 
+        border-top: 4px solid #f59e0b !important; background-color: #fefce8 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(10) [data-testid="stMetricDelta"] { color: #b45309 !important; }
+
+    /* Col 11: Soft Red */
+    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetric"] { 
+        border-top: 4px solid #ef4444 !important; background-color: #fef2f2 !important; 
+    }
+    [data-testid="stColumn"]:nth-child(11) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -360,7 +421,7 @@ all_kpis = [
     ("Live Status: Canc.", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} Churned")
 ]
 
-# REQUIREMENT 1: Filter out any KPI where value == 0
+# Filter out any KPI where value == 0
 visible_kpis = [kpi for kpi in all_kpis if kpi[1] > 0]
 
 if visible_kpis:
@@ -372,7 +433,7 @@ else:
     st.info("No active KPIs for the selected filters.")
 
 # ==========================================================
-# ADVISOR PERFORMANCE MATRIX (REQUIREMENT 2: 0 -> "-" & HIDE FULL 0 COLS)
+# ADVISOR PERFORMANCE MATRIX (0 -> "-" & HIDE FULL 0 COLS)
 # ==========================================================
 
 st.divider()
@@ -443,7 +504,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
         "Live Conversion %"
     ]
 
-    # REQUIREMENT 2: Drop columns where the entire column sum is 0
+    # Drop columns where the entire column sum is 0
     numeric_cols = [
         "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
         "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
@@ -464,7 +525,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
 
     table_data = advisor_summary[keep_cols].copy()
 
-    # REQUIREMENT 2: Replace 0 with "-" for display across numeric columns
+    # Replace 0 with "-" for display across numeric columns
     for num_col in numeric_cols:
         if num_col in table_data.columns:
             table_data[num_col] = table_data[num_col].apply(lambda x: "-" if x == 0 else f"{x:,}")
