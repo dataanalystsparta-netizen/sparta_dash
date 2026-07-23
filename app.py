@@ -380,7 +380,7 @@ else:
     filtered_portal_df = sparta2_df.copy()
 
 # ==========================================================
-# TOP KPI SECTION (CARDS HIDE WHEN VALUE = 0)
+# TOP KPI SECTION (CARDS HIDE WHEN VALUE = 0 & FIXED COLORS)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
@@ -407,18 +407,19 @@ portal_live = count_status(filtered_portal_df, "Portal Status Clean", "Live")
 portal_committed = count_status(filtered_portal_df, "Portal Status Clean", "Committed")
 portal_cancelled = count_status(filtered_portal_df, "Portal Status Clean", "Cancelled")
 
+# Each item: (Label, Value, Subtext/Delta, Top Border Color, Background Color, Delta Text Color)
 all_kpis = [
-    ("Applications", total_applications, "100% Base"),
-    ("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified"),
-    ("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework"),
-    ("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected"),
-    ("Quality Pending", q_pending, f"{get_pct(q_pending, total_applications)} Pending"),
-    ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed"),
-    ("Welcome Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled"),
-    ("Welcome Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending"),
-    ("Live Status: Live", portal_live, f"{get_pct(portal_live, portal_total)} Live/Pend."),
-    ("Live Status: Comm.", portal_committed, f"{get_pct(portal_committed, portal_total)} Pipeline"),
-    ("Live Status: Canc.", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} Churned")
+    ("Applications", total_applications, "100% Base", "#3b82f6", "#eff6ff", "#1d4ed8"),
+    ("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified", "#10b981", "#f0fdf4", "#15803d"),
+    ("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", "#f59e0b", "#fefce8", "#b45309"),
+    ("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected", "#ef4444", "#fef2f2", "#b91c1c"),
+    ("Quality Pending", q_pending, f"{get_pct(q_pending, total_applications)} Pending", "#f97316", "#fff7ed", "#c2410c"),
+    ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed", "#10b981", "#f0fdf4", "#15803d"),
+    ("Welcome Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled", "#ef4444", "#fef2f2", "#b91c1c"),
+    ("Welcome Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending", "#f59e0b", "#fefce8", "#b45309"),
+    ("Live Status: Live", portal_live, f"{get_pct(portal_live, portal_total)} Live/Pend.", "#14b8a6", "#f0fdfa", "#0f766e"),
+    ("Live Status: Comm.", portal_committed, f"{get_pct(portal_committed, portal_total)} Pipeline", "#f59e0b", "#fefce8", "#b45309"),
+    ("Live Status: Canc.", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} Churned", "#ef4444", "#fef2f2", "#b91c1c")
 ]
 
 # Filter out any KPI where value == 0
@@ -426,12 +427,36 @@ visible_kpis = [kpi for kpi in all_kpis if kpi[1] > 0]
 
 if visible_kpis:
     cols = st.columns(len(visible_kpis))
-    for col, (label, val, delta_sub) in zip(cols, visible_kpis):
+    for col, (label, val, delta_sub, border_col, bg_col, delta_col) in zip(cols, visible_kpis):
         with col:
-            st.metric(label=label, value=f"{val:,}", delta=delta_sub)
+            card_html = f"""
+            <div style="
+                border: 1px solid #e2e8f0;
+                border-top: 4px solid {border_col};
+                background-color: {bg_col};
+                border-radius: 8px;
+                padding: 8px 4px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+                text-align: center;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            ">
+                <div style="font-size: 0.58rem; font-weight: 700; text-transform: uppercase; color: #475569; letter-spacing: 0.3px; margin-bottom: 2px;">
+                    {label}
+                </div>
+                <div style="font-size: 1.3rem; font-weight: 800; color: #0f172a; line-height: 1.1; margin-bottom: 2px;">
+                    {val:,}
+                </div>
+                <div style="font-size: 0.62rem; font-weight: 700; color: {delta_col}; margin-top: 2px;">
+                    {delta_sub}
+                </div>
+            </div>
+            """
+            st.markdown(card_html, unsafe_allow_html=True)
 else:
     st.info("No active KPIs for the selected filters.")
-
 # ==========================================================
 # ADVISOR PERFORMANCE MATRIX (EXACT IMAGE PILL BADGE DESIGN)
 # ==========================================================
