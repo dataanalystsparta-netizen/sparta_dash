@@ -759,6 +759,10 @@ if "Advisor" in master_df.columns and not master_df.empty:
             (advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
         ).fillna(0.0)
 
+        advisor_summary["Welcome Done % Val"] = (
+            (advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
+        ).fillna(0.0)
+
         advisor_summary["Live Conversion % Val"] = (
             (advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
         ).fillna(0.0)
@@ -796,7 +800,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
 
         base_col_order = [
             "SALES EXECUTIVE", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
-            "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
+            "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
             "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
             "LIVE", "LIVE CANCELLED", "Live Conversion %"
         ]
@@ -808,6 +812,9 @@ if "Advisor" in master_df.columns and not master_df.empty:
                     visible_cols.append(col)
             elif col == "QA Pass Rate %":
                 if "QA APPROVED" in visible_cols:
+                    visible_cols.append(col)
+            elif col == "Welcome Done %":
+                if "WELCOME DONE" in visible_cols:
                     visible_cols.append(col)
             elif col == "Live Conversion %":
                 if "LIVE" in visible_cols:
@@ -835,6 +842,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
             "QA CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
             "QA PENDING": "background-color: #fff7ed; color: #c2410c;",
             "WELCOME DONE": "background-color: #f0fdf4; color: #15803d;",
+            "Welcome Done %": "background-color: #f0fdf4; color: #15803d;",
             "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
             "WELCOME PENDING": "background-color: #fefce8; color: #a16207;",
             "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
@@ -959,6 +967,10 @@ if "Advisor" in master_df.columns and not master_df.empty:
 
                 elif col == "QA Pass Rate %":
                     pill_html = render_pill(row["QA Pass Rate % Val"], high_thresh=70.0, mid_thresh=50.0)
+                    html_code += f"<td>{pill_html}</td>"
+
+                elif col == "Welcome Done %":
+                    pill_html = render_pill(row["Welcome Done % Val"], high_thresh=70.0, mid_thresh=50.0)
                     html_code += f"<td>{pill_html}</td>"
 
                 elif col == "Live Conversion %":
