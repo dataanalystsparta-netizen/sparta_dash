@@ -1035,27 +1035,3 @@ if "Advisor" in master_df.columns and not master_df.empty:
 else:
     st.info("No sales records available for the selected date or month filter.")
 
-# ==========================================================
-# FOOTER & PREVIEW TABS
-# ==========================================================
-
-if "Sale Date Clean" in master_df.columns: master_df = master_df.drop(columns=["Sale Date Clean"])
-if "Sale Date Clean" in filtered_portal_df.columns: filtered_portal_df = filtered_portal_df.drop(columns=["Sale Date Clean"])
-
-st.divider()
-st.header("📂 Data Preview")
-
-tab1, tab2, tab3 = st.tabs(["Applications", "Portal", "Master Dataset"])
-
-with tab1:
-    st.dataframe(sparta_df.drop(columns=["Sale Date Clean"], errors="ignore"), use_container_width=True, height=450, hide_index=True)
-
-with tab2:
-    st.dataframe(sparta2_df.drop(columns=["Sale Date Clean"], errors="ignore"), use_container_width=True, height=450, hide_index=True)
-
-with tab3:
-    st.dataframe(master_df, use_container_width=True, height=500, hide_index=True)
-
-st.divider()
-st.success("✅ Data loaded successfully")
-st.caption(f"Dashboard refreshed at {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
