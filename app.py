@@ -158,85 +158,6 @@ st.markdown("""
         background-color: #fef2f2 !important; 
     }
     [data-testid="stColumn"]:nth-child(11) [data-testid="stMetricDelta"] { color: #b91c1c !important; }
-
-    /* CUSTOM ADVISOR MATRIX TABLE STYLING */
-    .sparta-table-container {
-        width: 100%;
-        overflow-x: auto;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        margin-top: 15px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-    }
-    .sparta-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        font-size: 13px;
-        color: #1e293b;
-    }
-    .sparta-table th {
-        padding: 12px 14px;
-        font-weight: 800;
-        font-size: 11px;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        border-bottom: 2px solid #cbd5e1;
-        border-right: 1px solid #e2e8f0;
-        text-align: center;
-    }
-    .sparta-table td {
-        padding: 10px 14px;
-        border-bottom: 1px solid #f1f5f9;
-        border-right: 1px solid #f1f5f9;
-        text-align: center;
-    }
-    .sparta-table tr:hover {
-        background-color: #f8fafc;
-    }
-    
-    /* Executive Header Colors */
-    .th-exec { background-color: #f1f5f9; color: #334155; text-align: left !important; }
-    .th-apps { background-color: #eff6ff; color: #1d4ed8; }
-    .th-qa-app { background-color: #f0fdf4; color: #15803d; }
-    .th-qa-rate { background-color: #f0fdf4; color: #15803d; }
-    .th-comm { background-color: #fff7ed; color: #c2410c; }
-    .th-live { background-color: #f0fdfa; color: #0f766e; }
-    .th-conv { background-color: #f0fdfa; color: #0f766e; }
-
-    /* Column Specific Text Styling */
-    .td-exec { text-align: left !important; font-weight: 700; color: #0f172a; }
-    .td-bold { font-weight: 700; color: #334155; }
-
-    /* Status Pills / Badges */
-    .badge-new {
-        background-color: #dbeafe;
-        color: #1e40af;
-        font-size: 9px;
-        font-weight: 800;
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin-left: 8px;
-        text-transform: uppercase;
-    }
-    .pill {
-        display: inline-block;
-        padding: 3px 10px;
-        border-radius: 6px;
-        font-weight: 800;
-        font-size: 11.5px;
-        width: 65px;
-        text-align: center;
-    }
-    .pill-green { background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
-    .pill-yellow { background-color: #fef9c3; color: #a16207; border: 1px solid #fef08a; }
-    .pill-red { background-color: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
-
-    .tr-total {
-        background-color: #f8fafc;
-        font-weight: 800;
-        border-top: 2px solid #cbd5e1;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -603,26 +524,31 @@ master_raw_df = build_master_dataframe(
 # TOP DATE & MONTH FILTER SECTION
 # ==========================================================
 
-st.subheader("📅 Dashboard Filters")
+st.subheader("📅 Filters")
+
+# Extract Month Options from Clean Dates
+if "Sale Date Clean" in master_raw_df.columns and not master_raw_df["Sale Date Clean"].dropna().empty:
+    master_raw_df["Month_Year"] = master_raw_df["Sale Date Clean"].dt.strftime("%B %Y")
+    available_months = ["All Months"] + list(
+        master_raw_df["Sale Date Clean"]
+        .dt.to_period("M")
+        .drop_duplicates()
+        .sort_values(ascending=False)
+        .dt.strftime("%B %Y")
+    )
+else:
+    available_months = ["All Months"]
 
 valid_dates = master_raw_df["Sale Date Clean"].dropna() if "Sale Date Clean" in master_raw_df.columns else pd.Series()
 min_date = valid_dates.min().date() if not valid_dates.empty else datetime.today().date()
 max_date = valid_dates.max().date() if not valid_dates.empty else datetime.today().date()
 
-# Dynamic Month List extraction (YYYY-MM)
-if not valid_dates.empty:
-    available_months = valid_dates.dt.strftime("%B %Y").unique().tolist()
-    # Sort months chronologically
-    sorted_months = sorted(available_months, key=lambda x: datetime.strptime(x, "%B %Y"))
-else:
-    sorted_months = []
-
 filter_col1, filter_col2, filter_col3 = st.columns([1, 1, 1])
 
 with filter_col1:
-    month_option = st.selectbox(
+    selected_month = st.selectbox(
         "Select Month",
-        options=["All Months"] + sorted_months,
+        options=available_months,
         index=0
     )
 
@@ -644,32 +570,33 @@ with filter_col3:
         format="DD/MM/YYYY"
     )
 
-# Filter Logic based on Month dropdown and Date range
-master_df = master_raw_df.copy()
-filtered_portal_df = sparta2_df.copy()
-
-if month_option != "All Months" and "Sale Date Clean" in master_df.columns:
-    month_dt = datetime.strptime(month_option, "%B %Y")
-    month_mask = (master_df["Sale Date Clean"].dt.year == month_dt.year) & (master_df["Sale Date Clean"].dt.month == month_dt.month)
-    master_df = master_df[month_mask]
-
-    if "Sale Date Clean" in filtered_portal_df.columns:
-        p_month_mask = (filtered_portal_df["Sale Date Clean"].dt.year == month_dt.year) & (filtered_portal_df["Sale Date Clean"].dt.month == month_dt.month)
-        filtered_portal_df = filtered_portal_df[p_month_mask]
-else:
-    if start_date <= end_date and "Sale Date Clean" in master_df.columns:
-        date_mask = (
-            (master_df["Sale Date Clean"].dt.date >= start_date) & 
-            (master_df["Sale Date Clean"].dt.date <= end_date)
-        )
-        master_df = master_df[date_mask].copy()
+# Apply Date & Month Filters across Master Dataframe & Portal Dataframe independently
+if start_date <= end_date:
+    date_mask = (
+        (master_raw_df["Sale Date Clean"].dt.date >= start_date) & 
+        (master_raw_df["Sale Date Clean"].dt.date <= end_date)
+    )
+    if selected_month != "All Months":
+        date_mask = date_mask & (master_raw_df["Month_Year"] == selected_month)
         
-        if "Sale Date Clean" in filtered_portal_df.columns:
-            portal_date_mask = (
-                (filtered_portal_df["Sale Date Clean"].dt.date >= start_date) & 
-                (filtered_portal_df["Sale Date Clean"].dt.date <= end_date)
-            )
-            filtered_portal_df = filtered_portal_df[portal_date_mask].copy()
+    master_df = master_raw_df[date_mask].copy()
+    
+    if "Sale Date Clean" in sparta2_df.columns:
+        sparta2_df["Month_Year"] = sparta2_df["Sale Date Clean"].dt.strftime("%B %Y")
+        portal_date_mask = (
+            (sparta2_df["Sale Date Clean"].dt.date >= start_date) & 
+            (sparta2_df["Sale Date Clean"].dt.date <= end_date)
+        )
+        if selected_month != "All Months":
+            portal_date_mask = portal_date_mask & (sparta2_df["Month_Year"] == selected_month)
+            
+        filtered_portal_df = sparta2_df[portal_date_mask].copy()
+    else:
+        filtered_portal_df = sparta2_df.copy()
+else:
+    st.error("Error: Start Date must be earlier than or equal to End Date.")
+    master_df = master_raw_df.copy()
+    filtered_portal_df = sparta2_df.copy()
 
 # ==========================================================
 # TOP KPI SECTION (ST.METRIC 11 COLUMNS)
@@ -731,131 +658,110 @@ for col, (label, val, delta_sub) in zip(cols, kpis):
         )
 
 # ==========================================================
-# CUSTOM ADVISOR PERFORMANCE MATRIX (STYLED HTML TABLE)
+# ADVISOR PERFORMANCE MATRIX (TABLE REPORT)
 # ==========================================================
 
 st.divider()
-st.subheader("👤 Sales Executive Performance Matrix")
+st.subheader("👥 Sales Executive Performance Breakdown")
 
 if "Advisor" in master_df.columns and not master_df.empty:
     
-    # 1. Group by Advisor and calculate metrics
-    adv_df = master_df.groupby("Advisor", dropna=False).agg(
-        Apps=("Advisor", "count"),
-        QA_Approved=("Quality Status Clean", lambda x: (x == "Approved").sum()),
-        Committed_Rem=("Portal Status Clean", lambda x: (x == "Committed").sum()),
-        Live=("Portal Status Clean", lambda x: (x == "Live").sum())
-    ).reset_index()
+    # 1. Aggregate metrics per Sales Executive / Advisor
+    advisor_summary = (
+        master_df.groupby("Advisor", dropna=False)
+        .agg(
+            Applications=("Advisor", "count"),
+            QA_Approved=("Quality Status Clean", lambda x: (x == "Approved").sum()),
+            QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
+            QA_Cancelled=("Quality Status Clean", lambda x: (x == "Cancelled").sum()),
+            QA_Pending=("Quality Status Clean", lambda x: (x == "Pending").sum()),
+            Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
+            Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
+            Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
+            Live=("Portal Status Clean", lambda x: (x == "Live").sum()),
+            Committed=("Portal Status Clean", lambda x: (x == "Committed").sum()),
+            Live_Cancelled=("Portal Status Clean", lambda x: (x == "Cancelled").sum()),
+        )
+        .reset_index()
+    )
 
-    # Clean empty advisor names
-    adv_df["Advisor"] = adv_df["Advisor"].fillna("Unknown").replace("", "Unknown")
-    
-    # Sort alphabetically by Advisor Name
-    adv_df = adv_df.sort_values(by="Advisor", ascending=True)
+    # 2. Add Percentage Metric Calculations (decimal format 0.0 to 1.0 for Streamlit Progress/Percent column)
+    advisor_summary["QA Pass Rate %"] = (
+        advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)
+    ).fillna(0.0)
 
-    # Build HTML Rows
-    table_rows = []
-    
-    tot_apps = adv_df["Apps"].sum()
-    tot_qa_app = adv_df["QA_Approved"].sum()
-    tot_comm = adv_df["Committed_Rem"].sum()
-    tot_live = adv_df["Live"].sum()
+    advisor_summary["Live Conversion %"] = (
+        advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)
+    ).fillna(0.0)
 
-    for _, row in adv_df.iterrows():
-        name = row["Advisor"]
-        apps = row["Apps"]
-        qa_app = row["QA_Approved"]
-        comm = row["Committed_Rem"]
-        live = row["Live"]
+    # Clean up empty advisor names
+    advisor_summary["Advisor"] = advisor_summary["Advisor"].replace("", "Unassigned").fillna("Unassigned")
 
-        # Percentages
-        qa_rate = (qa_app / apps * 100) if apps > 0 else 0.0
-        live_conv = (live / apps * 100) if apps > 0 else 0.0
+    # Default sort by total applications descending
+    advisor_summary = advisor_summary.sort_values(by="Applications", ascending=False)
 
-        # "New" badge for lower production/new agents (e.g. <= 10 apps)
-        badge_html = '<span class="badge-new">New</span>' if apps <= 10 else ''
-
-        # Badge Pill Styling for QA Pass Rate %
-        if qa_rate >= 65:
-            qa_pill = f'<span class="pill pill-green">{qa_rate:.1f}%</span>'
-        elif qa_rate >= 50:
-            qa_pill = f'<span class="pill pill-yellow">{qa_rate:.1f}%</span>'
-        else:
-            qa_pill = f'<span class="pill pill-red">{qa_rate:.1f}%</span>'
-
-        # Badge Pill Styling for Live Conversion %
-        if live_conv >= 14:
-            conv_pill = f'<span class="pill pill-green">{live_conv:.1f}%</span>'
-        elif live_conv >= 8:
-            conv_pill = f'<span class="pill pill-yellow">{live_conv:.1f}%</span>'
-        else:
-            conv_pill = f'<span class="pill pill-red">{live_conv:.1f}%</span>'
-
-        row_html = f"""
-        <tr>
-            <td class="td-exec">{name}{badge_html}</td>
-            <td class="td-bold">{apps}</td>
-            <td>{qa_app}</td>
-            <td>{qa_pill}</td>
-            <td>{comm}</td>
-            <td>{live}</td>
-            <td>{conv_pill}</td>
-        </tr>
-        """
-        table_rows.append(row_html)
-
-    # Overall Summary Row Percentages
-    tot_qa_rate = (tot_qa_app / tot_apps * 100) if tot_apps > 0 else 0.0
-    tot_live_conv = (tot_live / tot_apps * 100) if tot_apps > 0 else 0.0
-
-    tot_qa_pill = f'<span class="pill pill-green">{tot_qa_rate:.1f}%</span>' if tot_qa_rate >= 65 else f'<span class="pill pill-yellow">{tot_qa_rate:.1f}%</span>'
-    tot_conv_pill = f'<span class="pill pill-green">{tot_live_conv:.1f}%</span>' if tot_live_conv >= 14 else f'<span class="pill pill-yellow">{tot_live_conv:.1f}%</span>'
-
-    summary_row_html = f"""
-    <tr class="tr-total">
-        <td class="td-exec">TOTAL / AVERAGE</td>
-        <td class="td-bold">{tot_apps}</td>
-        <td>{tot_qa_app}</td>
-        <td>{tot_qa_pill}</td>
-        <td>{tot_comm}</td>
-        <td>{tot_live}</td>
-        <td>{tot_conv_pill}</td>
-    </tr>
-    """
-
-    # Assemble Full Styled HTML Table
-    table_html = f"""
-    <div class="sparta-table-container">
-        <table class="sparta-table">
-            <thead>
-                <tr>
-                    <th class="th-exec">SALES EXECUTIVE</th>
-                    <th class="th-apps">APPLICATIONS</th>
-                    <th class="th-qa-app">QA APPROVED</th>
-                    <th class="th-qa-rate">QA PASS RATE %</th>
-                    <th class="th-comm">COMMITTED REM.</th>
-                    <th class="th-live">LIVE</th>
-                    <th class="th-conv">LIVE CONVERSION %</th>
-                </tr>
-            </thead>
-            <tbody>
-                {''.join(table_rows)}
-                {summary_row_html}
-            </tbody>
-        </table>
-    </div>
-    """
-
-    st.markdown(table_html, unsafe_allow_html=True)
+    # Render Executive Performance Table via Native st.dataframe Column Configuration
+    st.dataframe(
+        advisor_summary,
+        column_order=[
+            "Advisor",
+            "Applications",
+            "QA_Approved",
+            "QA Pass Rate %",
+            "QA_Rework",
+            "QA_Cancelled",
+            "QA_Pending",
+            "Welcome_Done",
+            "Welcome_Cancelled",
+            "Welcome_Pending",
+            "Committed",
+            "Live",
+            "Live_Cancelled",
+            "Live Conversion %"
+        ],
+        column_config={
+            "Advisor": st.column_config.TextColumn(
+                "Sales Executive", 
+                help="Sales Advisor Name",
+                width="medium"
+            ),
+            "Applications": st.column_config.NumberColumn("Applications", format="%d"),
+            "QA_Approved": st.column_config.NumberColumn("QA Approved", format="%d"),
+            "QA Pass Rate %": st.column_config.ProgressColumn(
+                "QA Pass Rate %",
+                help="QA Approved / Total Applications",
+                format="%.1f%%",
+                min_value=0.0,
+                max_value=1.0,
+            ),
+            "QA_Rework": st.column_config.NumberColumn("QA Rework", format="%d"),
+            "QA_Cancelled": st.column_config.NumberColumn("QA Canc.", format="%d"),
+            "QA_Pending": st.column_config.NumberColumn("QA Pend.", format="%d"),
+            "Welcome_Done": st.column_config.NumberColumn("Welcome Done", format="%d"),
+            "Welcome_Cancelled": st.column_config.NumberColumn("Welcome Canc.", format="%d"),
+            "Welcome_Pending": st.column_config.NumberColumn("Welcome Pend.", format="%d"),
+            "Committed": st.column_config.NumberColumn("Committed Rem.", format="%d"),
+            "Live": st.column_config.NumberColumn("Live", format="%d"),
+            "Live_Cancelled": st.column_config.NumberColumn("Live Canc.", format="%d"),
+            "Live Conversion %": st.column_config.ProgressColumn(
+                "Live Conversion %",
+                help="Live Sales / Total Applications",
+                format="%.1f%%",
+                min_value=0.0,
+                max_value=1.0,
+            ),
+        },
+        use_container_width=True,
+        hide_index=True,
+        height=520
+    )
 
 else:
-    st.info("No Advisor records found for the selected filter.")
+    st.info("No sales records available for the selected date or month filter.")
 
 # ==========================================================
 # KPI DEBUG & STATUS BREAKDOWN DRILLDOWN
 # ==========================================================
-
-st.divider()
 
 with st.expander("🔍 KPI Status Breakdown & Mapping Inspector", expanded=False):
     st.markdown("### Raw vs Cleaned Status Audit")
