@@ -164,14 +164,11 @@ NEW_ADVISORS = [
     # Add advisor names here
 ]
 
-CUSTOMER_SERVICE_ADVISORS = ["Santosh Joshi","Ravi","Ravi Inbound","Vijender"
+CUSTOMER_SERVICE_ADVISORS = [
     # Add customer service advisor names here
 ]
 
-LEFT_ADVISORS = ["Gaurav","Guru","Niki","Shaheen","Manmeet","Gungun","Aman","Rani","Archana","Deepali","Supreme",
-
-                "Tokivi","Sangeeta","Monica","Khushbu","Vijay","Mehak","Khushboo","Yash","Khusboo","Manshay","Manmet"
-                 "Lakshay","Veer"
+LEFT_ADVISORS = [
     # Add left advisor names here
 ]
 
@@ -377,13 +374,15 @@ with filter_col3:
 
 # Tag inclusion toggles
 st.markdown("##### Tag Visibility Filters")
-tag_col1, tag_col2, tag_col3 = st.columns([1, 1, 1])
+tag_col1, tag_col2, tag_col3, tag_col4 = st.columns([1, 1, 1, 1])
 with tag_col1:
     include_new = st.checkbox("Include 'New' Agents", value=True)
 with tag_col2:
     include_cs = st.checkbox("Include 'Customer Service' Agents", value=True)
 with tag_col3:
     include_left = st.checkbox("Include 'Left' Agents", value=False)
+with tag_col4:
+    include_untagged = st.checkbox("Include Untagged Names", value=True)
 
 if start_date <= end_date:
     date_mask = (master_raw_df["Sale Date Clean"].dt.date >= start_date) & (master_raw_df["Sale Date Clean"].dt.date <= end_date)
@@ -511,19 +510,22 @@ if "Advisor" in master_df.columns and not master_df.empty:
         .reset_index()
     )
 
-    # 2. Filter rows based on inclusion checkboxes for tagged advisors
+    # 2. Filter rows based on inclusion checkboxes for tagged & untagged advisors
     def filter_tagged_rows(row):
         name = str(row["Advisor"]).strip().lower()
         
         is_new = name in [a.strip().lower() for a in NEW_ADVISORS]
         is_cs = name in [a.strip().lower() for a in CUSTOMER_SERVICE_ADVISORS]
         is_left = name in [a.strip().lower() for a in LEFT_ADVISORS]
+        is_tagged = is_new or is_cs or is_left
         
         if is_new and not include_new:
             return False
         if is_cs and not include_cs:
             return False
         if is_left and not include_left:
+            return False
+        if not is_tagged and not include_untagged:
             return False
         return True
 
