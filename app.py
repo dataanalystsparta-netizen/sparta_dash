@@ -79,6 +79,13 @@ st.markdown("""
     [data-testid="stMetricDelta"] svg {
         display: none !important; /* Hide native arrow icons */
     }
+
+    /* TOP ACCENT STRIPS + SOFT LIGHT BACKGROUNDS */
+    [data-testid="stColumn"] [data-testid="stMetric"] { 
+        border-top: 4px solid #3b82f6 !important; 
+        background-color: #eff6ff !important; 
+    }
+    [data-testid="stColumn"] [data-testid="stMetricDelta"] { color: #1d4ed8 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -312,7 +319,7 @@ else:
     filtered_portal_df = sparta2_df.copy()
 
 # ==========================================================
-# TOP KPI SECTION (CARDS HIDE IF VALUE IS 0)
+# TOP KPI SECTION (CARDS HIDE WHEN VALUE = 0)
 # ==========================================================
 
 st.subheader("📌 Key Performance Indicators")
@@ -353,20 +360,19 @@ all_kpis = [
     ("Live Status: Canc.", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} Churned")
 ]
 
-# 1. Filter out cards where value is 0
-active_kpis = [kpi for kpi in all_kpis if kpi[1] > 0]
+# REQUIREMENT 1: Filter out any KPI where value == 0
+visible_kpis = [kpi for kpi in all_kpis if kpi[1] > 0]
 
-# 2. Render remaining active cards dynamically across columns
-if active_kpis:
-    cols = st.columns(len(active_kpis))
-    for col, (label, val, delta_sub) in zip(cols, active_kpis):
+if visible_kpis:
+    cols = st.columns(len(visible_kpis))
+    for col, (label, val, delta_sub) in zip(cols, visible_kpis):
         with col:
             st.metric(label=label, value=f"{val:,}", delta=delta_sub)
 else:
-    st.info("No active KPI data available for the selected filters.")
+    st.info("No active KPIs for the selected filters.")
 
 # ==========================================================
-# ADVISOR PERFORMANCE MATRIX (TABLE REPORT)
+# ADVISOR PERFORMANCE MATRIX (REQUIREMENT 2: 0 -> "-" & HIDE FULL 0 COLS)
 # ==========================================================
 
 st.divider()
@@ -374,7 +380,7 @@ st.subheader("👥 Sales Executive Performance Breakdown")
 
 if "Advisor" in master_df.columns and not master_df.empty:
     
-    # Aggregate raw numeric metrics
+    # Aggregate metrics
     advisor_summary = (
         master_df.groupby("Advisor", dropna=False)
         .agg(
@@ -393,7 +399,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
         .reset_index()
     )
 
-    # Calculate raw percentages before formatting
+    # Percentage calculations
     qa_pct = (advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan) * 100).fillna(0.0)
     live_pct = (advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan) * 100).fillna(0.0)
 
@@ -419,7 +425,8 @@ if "Advisor" in master_df.columns and not master_df.empty:
     advisor_summary["SALES EXECUTIVE"] = advisor_summary["SALES EXECUTIVE"].replace("", "Unassigned").fillna("Unassigned")
     advisor_summary = advisor_summary.sort_values(by="APPLICATIONS", ascending=False)
 
-    display_cols = [
+    # Base column order
+    all_display_cols = [
         "SALES EXECUTIVE",
         "APPLICATIONS",
         "QA APPROVED",
@@ -435,47 +442,37 @@ if "Advisor" in master_df.columns and not master_df.empty:
         "LIVE CANCELLED",
         "Live Conversion %"
     ]
+
+    # REQUIREMENT 2: Drop columns where the entire column sum is 0
+    numeric_cols = [
+        "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
+        "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
+        "LIVE", "LIVE CANCELLED"
+    ]
     
-    table_data = advisor_summary[display_cols].copy()
+    keep_cols = ["SALES EXECUTIVE"]
+    for c in all_display_cols[1:]:
+        if c in numeric_cols:
+            if (advisor_summary[c] > 0).any():
+                keep_cols.append(c)
+        elif c == "QA Pass Rate %":
+            if "QA APPROVED" in keep_cols:
+                keep_cols.append(c)
+        elif c == "Live Conversion %":
+            if "LIVE" in keep_cols:
+                keep_cols.append(c)
 
-    # ------------------------------------------------------
-    # RULE: HIDE ENTIRE COLUMN IF ALL VALUES ARE 0 (OR "0.0%")
-    # ------------------------------------------------------
-    cols_to_keep = []
-    for col in table_data.columns:
-        if col == "SALES EXECUTIVE":
-            cols_to_keep.append(col)
-            continue
-        
-        col_vals = table_data[col]
-        
-        # Check numeric 0 or string equivalents ("0", "0.0%", "0%")
-        is_all_zero = col_vals.apply(
-            lambda v: str(v).strip().replace("%", "").replace(".0", "") in ["0", ""]
-        ).all()
-        
-        if not is_all_zero:
-            cols_to_keep.append(col)
+    table_data = advisor_summary[keep_cols].copy()
 
-    table_data = table_data[cols_to_keep].copy()
+    # REQUIREMENT 2: Replace 0 with "-" for display across numeric columns
+    for num_col in numeric_cols:
+        if num_col in table_data.columns:
+            table_data[num_col] = table_data[num_col].apply(lambda x: "-" if x == 0 else f"{x:,}")
 
-    # ------------------------------------------------------
-    # RULE: REPLACE INDIVIDUAL 0 VALUES WITH "-"
-    # ------------------------------------------------------
-    for col in table_data.columns:
-        if col != "SALES EXECUTIVE":
-            table_data[col] = table_data[col].astype(object)
-            table_data[col] = table_data[col].apply(
-                lambda v: "-" if str(v).strip() in ["0", "0.0%", "0%"] else v
-            )
-
-    # Pill Badge Styler Function for remaining percentage columns
+    # Pill Badge styling function
     def apply_pill_badge(val, high_thresh=70.0, mid_thresh=50.0):
-        val_str = str(val).replace("%", "").strip()
-        if val_str == "-":
-            return ""
         try:
-            num = float(val_str)
+            num = float(str(val).replace("%", ""))
         except ValueError:
             return ""
         
@@ -486,6 +483,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
         else:
             return "background-color: #ffe4e6; color: #9f1239; font-weight: 700; border-radius: 12px; padding: 3px 10px;"
 
+    # Flexible Styler method (handles map for Pandas 2.1+ and applymap for older Pandas)
     styler = table_data.style
     map_func = getattr(styler, "map", getattr(styler, "applymap", None))
 
