@@ -520,6 +520,7 @@ if all_periods:
         m_portal = monthly_portal_df[monthly_portal_df["Period_Sort"] == period]
         
         m_total_apps = len(m_app)
+        m_portal_total = len(m_portal)
         
         m_qa_approved = count_status(m_app, "Quality Status Clean", "Approved")
         m_qa_rework = count_status(m_app, "Quality Status Clean", "Rework")
@@ -530,63 +531,50 @@ if all_periods:
         m_wc_cancelled = count_status(m_app, "Welcome Status Clean", "Cancelled")
         m_wc_pending = count_status(m_app, "Welcome Status Clean", "Pending")
         
-        m_p_committed = count_status(m_portal, "Portal Status Clean", "Committed")
         m_p_live = count_status(m_portal, "Portal Status Clean", "Live")
+        m_p_committed = count_status(m_portal, "Portal Status Clean", "Committed")
         m_p_cancelled = count_status(m_portal, "Portal Status Clean", "Cancelled")
         
         monthly_rows.append({
             "MONTH": m_str,
             "APPLICATIONS": m_total_apps,
             "QA APPROVED": m_qa_approved,
-            "QA Approved % Val": (m_qa_approved / m_total_apps * 100) if m_total_apps > 0 else 0.0,
+            "QA Pass Rate % Val": (m_qa_approved / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             "QA REWORK": m_qa_rework,
-            "QA Rework % Val": (m_qa_rework / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             "QA CANCELLED": m_qa_cancelled,
-            "QA Cancelled % Val": (m_qa_cancelled / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             "QA PENDING": m_qa_pending,
-            "QA Pending % Val": (m_qa_pending / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             "WELCOME DONE": m_wc_done,
-            "Welcome Done % Val": (m_wc_done / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             "WELCOME CANCELLED": m_wc_cancelled,
-            "Welcome Cancelled % Val": (m_wc_cancelled / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             "WELCOME PENDING": m_wc_pending,
-            "Welcome Pending % Val": (m_wc_pending / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             "COMMITTED REM.": m_p_committed,
-            "Committed Rem % Val": (m_p_committed / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             "LIVE": m_p_live,
-            "Live % Val": (m_p_live / m_total_apps * 100) if m_total_apps > 0 else 0.0,
-            "LIVE CANCELLED": m_p_cancelled,
-            "Live Cancelled % Val": (m_p_cancelled / m_total_apps * 100) if m_total_apps > 0 else 0.0
+            "Live Conversion % Val": (m_p_live / m_portal_total * 100) if m_portal_total > 0 else 0.0,
+            "LIVE CANCELLED": m_p_cancelled
         })
     
     monthly_summary_df = pd.DataFrame(monthly_rows)
     
     # Calculate totals for summary row
     tot_apps = monthly_summary_df["APPLICATIONS"].sum()
+    tot_portal = monthly_portal_df.shape[0] if not monthly_portal_df.empty else 0
+    tot_qa_app = monthly_summary_df["QA APPROVED"].sum()
+    tot_live = monthly_summary_df["LIVE"].sum()
     
     totals_row = {
         "MONTH": "Total",
         "APPLICATIONS": tot_apps,
-        "QA APPROVED": monthly_summary_df["QA APPROVED"].sum(),
-        "QA Approved % Val": (monthly_summary_df["QA APPROVED"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
+        "QA APPROVED": tot_qa_app,
+        "QA Pass Rate % Val": (tot_qa_app / tot_apps * 100) if tot_apps > 0 else 0.0,
         "QA REWORK": monthly_summary_df["QA REWORK"].sum(),
-        "QA Rework % Val": (monthly_summary_df["QA REWORK"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
         "QA CANCELLED": monthly_summary_df["QA CANCELLED"].sum(),
-        "QA Cancelled % Val": (monthly_summary_df["QA CANCELLED"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
         "QA PENDING": monthly_summary_df["QA PENDING"].sum(),
-        "QA Pending % Val": (monthly_summary_df["QA PENDING"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
         "WELCOME DONE": monthly_summary_df["WELCOME DONE"].sum(),
-        "Welcome Done % Val": (monthly_summary_df["WELCOME DONE"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
         "WELCOME CANCELLED": monthly_summary_df["WELCOME CANCELLED"].sum(),
-        "Welcome Cancelled % Val": (monthly_summary_df["WELCOME CANCELLED"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
         "WELCOME PENDING": monthly_summary_df["WELCOME PENDING"].sum(),
-        "Welcome Pending % Val": (monthly_summary_df["WELCOME PENDING"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
         "COMMITTED REM.": monthly_summary_df["COMMITTED REM."].sum(),
-        "Committed Rem % Val": (monthly_summary_df["COMMITTED REM."].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
-        "LIVE": monthly_summary_df["LIVE"].sum(),
-        "Live % Val": (monthly_summary_df["LIVE"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
+        "LIVE": tot_live,
+        "Live Conversion % Val": (tot_live / tot_portal * 100) if tot_portal > 0 else 0.0,
         "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum(),
-        "Live Cancelled % Val": (monthly_summary_df["LIVE CANCELLED"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0
     }
     monthly_summary_df = pd.concat([monthly_summary_df, pd.DataFrame([totals_row])], ignore_index=True)
     
@@ -606,39 +594,24 @@ if all_periods:
         "MONTH": "background-color: #f1f5f9; color: #334155;",
         "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
         "QA APPROVED": "background-color: #f0fdf4; color: #15803d;",
-        "QA Approved %": "background-color: #f0fdf4; color: #15803d;",
+        "QA Pass Rate %": "background-color: #f0fdf4; color: #15803d;",
         "QA REWORK": "background-color: #fefce8; color: #a16207;",
-        "QA Rework %": "background-color: #fefce8; color: #a16207;",
         "QA CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-        "QA Cancelled %": "background-color: #fef2f2; color: #b91c1c;",
         "QA PENDING": "background-color: #fff7ed; color: #c2410c;",
-        "QA Pending %": "background-color: #fff7ed; color: #c2410c;",
         "WELCOME DONE": "background-color: #f0fdf4; color: #15803d;",
-        "Welcome Done %": "background-color: #f0fdf4; color: #15803d;",
         "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-        "Welcome Cancelled %": "background-color: #fef2f2; color: #b91c1c;",
         "WELCOME PENDING": "background-color: #fefce8; color: #a16207;",
-        "Welcome Pending %": "background-color: #fefce8; color: #a16207;",
         "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
-        "Committed Rem %": "background-color: #fff7ed; color: #c2410c;",
         "LIVE": "background-color: #f0fdfa; color: #0f766e;",
-        "Live %": "background-color: #f0fdfa; color: #0f766e;",
+        "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
         "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-        "Live Cancelled %": "background-color: #fef2f2; color: #b91c1c;",
     }
 
-    m_display_columns = [
-        "MONTH", "APPLICATIONS", 
-        "QA APPROVED", "QA Approved %", 
-        "QA REWORK", "QA Rework %", 
-        "QA CANCELLED", "QA Cancelled %", 
-        "QA PENDING", "QA Pending %", 
-        "WELCOME DONE", "Welcome Done %", 
-        "WELCOME CANCELLED", "Welcome Cancelled %", 
-        "WELCOME PENDING", "Welcome Pending %", 
-        "COMMITTED REM.", "Committed Rem %", 
-        "LIVE", "Live %", 
-        "LIVE CANCELLED", "Live Cancelled %"
+    display_columns = [
+        "MONTH", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
+        "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
+        "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
+        "LIVE", "Live Conversion %", "LIVE CANCELLED"
     ]
 
     m_html = """
@@ -697,40 +670,21 @@ if all_periods:
             <thead>
                 <tr>
     """
-    for col_name in m_display_columns:
+    for col_name in display_columns:
         th_style = m_header_styles.get(col_name, "background-color: #f8fafc; color: #475569;")
         m_html += f'<th style="{th_style}">{col_name}</th>'
     m_html += "</tr></thead><tbody>"
     
     for _, row in monthly_summary_df.iterrows():
         m_html += "<tr>"
-        for col_name in m_display_columns:
+        for col_name in display_columns:
             if col_name == "MONTH":
                 m_html += f"<td>{row['MONTH']}</td>"
-            elif col_name.endswith(" %"):
-                base_key = col_name.replace(" %", "")
-                val_key = f"{base_key} % Val" if base_key != "QA Approved" and base_key != "Live" else f"{base_key} % Val"
-                # Handle precise mapping for keys
-                if base_key == "QA Approved": val_key = "QA Approved % Val"
-                elif base_key == "QA Rework": val_key = "QA Rework % Val"
-                elif base_key == "QA Cancelled": val_key = "QA Cancelled % Val"
-                elif base_key == "QA Pending": val_key = "QA Pending % Val"
-                elif base_key == "Welcome Done": val_key = "Welcome Done % Val"
-                elif base_key == "Welcome Cancelled": val_key = "Welcome Cancelled % Val"
-                elif base_key == "Welcome Pending": val_key = "Welcome Pending % Val"
-                elif base_key == "Committed Rem": val_key = "Committed Rem % Val"
-                elif base_key == "Live": val_key = "Live % Val"
-                elif base_key == "Live Cancelled": val_key = "Live Cancelled % Val"
-                
-                float_val = row.get(val_key, 0.0)
-                # Adjust color thresholds depending on metric type (positive vs negative outcomes)
-                if base_key in ["QA Approved", "Welcome Done", "Live"]:
-                    pill = render_monthly_pill(float_val, high_thresh=50.0, mid_thresh=25.0)
-                elif base_key in ["QA Cancelled", "Welcome Cancelled", "Live Cancelled"]:
-                    # For cancellations, lower is better, but let's use standard pill helper or custom color
-                    pill = render_monthly_pill(float_val, high_thresh=20.0, mid_thresh=10.0)
-                else:
-                    pill = render_monthly_pill(float_val, high_thresh=30.0, mid_thresh=15.0)
+            elif col_name == "QA Pass Rate %":
+                pill = render_monthly_pill(row["QA Pass Rate % Val"], high_thresh=70.0, mid_thresh=50.0)
+                m_html += f"<td>{pill}</td>"
+            elif col_name == "Live Conversion %":
+                pill = render_monthly_pill(row["Live Conversion % Val"], high_thresh=15.0, mid_thresh=8.0)
                 m_html += f"<td>{pill}</td>"
             else:
                 val = row[col_name]
@@ -795,24 +749,14 @@ if "Advisor" in master_df.columns and not master_df.empty:
     if advisor_summary.empty:
         st.info("No sales records match the selected tag filters.")
     else:
-        # 3. Calculate percentage floats for ALL columns using Applications as base
-        advisor_summary["Applications"] = advisor_summary["Applications"]
-        
-        for col_name, raw_col in [
-            ("QA Approved % Val", "QA_Approved"),
-            ("QA Rework % Val", "QA_Rework"),
-            ("QA Cancelled % Val", "QA_Cancelled"),
-            ("QA Pending % Val", "QA_Pending"),
-            ("Welcome Done % Val", "Welcome_Done"),
-            ("Welcome Cancelled % Val", "Welcome_Cancelled"),
-            ("Welcome Pending % Val", "Welcome_Pending"),
-            ("Committed Rem % Val", "Committed"),
-            ("Live % Val", "Live"),
-            ("Live Cancelled % Val", "Live_Cancelled")
-        ]:
-            advisor_summary[col_name] = (
-                (advisor_summary[raw_col] / advisor_summary["Applications"].replace(0, np.nan)) * 100
-            ).fillna(0.0)
+        # 3. Calculate percentage floats BEFORE column rename
+        advisor_summary["QA Pass Rate % Val"] = (
+            (advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
+        ).fillna(0.0)
+
+        advisor_summary["Live Conversion % Val"] = (
+            (advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
+        ).fillna(0.0)
 
         # 4. Rename columns to match display standards
         advisor_summary = advisor_summary.rename(
@@ -845,25 +789,27 @@ if "Advisor" in master_df.columns and not master_df.empty:
             "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED"
         ]
 
-        visible_cols = ["SALES EXECUTIVE", "APPLICATIONS"]
-        for base_c in [
-            ("QA APPROVED", "QA Approved %"),
-            ("QA REWORK", "QA Rework %"),
-            ("QA CANCELLED", "QA Cancelled %"),
-            ("QA PENDING", "QA Pending %"),
-            ("WELCOME DONE", "Welcome Done %"),
-            ("WELCOME CANCELLED", "Welcome Cancelled %"),
-            ("WELCOME PENDING", "Welcome Pending %"),
-            ("COMMITTED REM.", "Committed Rem %"),
-            ("LIVE", "Live %"),
-            ("LIVE CANCELLED", "Live Cancelled %")
-        ]:
-            col_name, pct_name = base_c
-            if col_name in advisor_summary.columns and (advisor_summary[col_name] > 0).any():
-                visible_cols.extend([col_name, pct_name])
+        base_col_order = [
+            "SALES EXECUTIVE", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
+            "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
+            "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
+            "LIVE", "LIVE CANCELLED", "Live Conversion %"
+        ]
+
+        visible_cols = ["SALES EXECUTIVE"]
+        for col in base_col_order[1:]:
+            if col in numeric_cols:
+                if (advisor_summary[col] > 0).any():
+                    visible_cols.append(col)
+            elif col == "QA Pass Rate %":
+                if "QA APPROVED" in visible_cols:
+                    visible_cols.append(col)
+            elif col == "Live Conversion %":
+                if "LIVE" in visible_cols:
+                    visible_cols.append(col)
 
         # 5. Helper to style percentage badges
-        def render_pill(val_float, high_thresh=50.0, mid_thresh=25.0):
+        def render_pill(val_float, high_thresh=70.0, mid_thresh=50.0):
             val_str = f"{val_float:.1f}%"
             if val_float >= high_thresh:
                 bg, color, border = "#d1fae5", "#047857", "#a7f3d0"
@@ -879,25 +825,17 @@ if "Advisor" in master_df.columns and not master_df.empty:
             "SALES EXECUTIVE": "background-color: #f1f5f9; color: #334155;",
             "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
             "QA APPROVED": "background-color: #f0fdf4; color: #15803d;",
-            "QA Approved %": "background-color: #f0fdf4; color: #15803d;",
+            "QA Pass Rate %": "background-color: #f0fdf4; color: #15803d;",
             "QA REWORK": "background-color: #fefce8; color: #a16207;",
-            "QA Rework %": "background-color: #fefce8; color: #a16207;",
             "QA CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-            "QA Cancelled %": "background-color: #fef2f2; color: #b91c1c;",
             "QA PENDING": "background-color: #fff7ed; color: #c2410c;",
-            "QA Pending %": "background-color: #fff7ed; color: #c2410c;",
             "WELCOME DONE": "background-color: #f0fdf4; color: #15803d;",
-            "Welcome Done %": "background-color: #f0fdf4; color: #15803d;",
             "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-            "Welcome Cancelled %": "background-color: #fef2f2; color: #b91c1c;",
             "WELCOME PENDING": "background-color: #fefce8; color: #a16207;",
-            "Welcome Pending %": "background-color: #fefce8; color: #a16207;",
             "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
-            "Committed Rem %": "background-color: #fff7ed; color: #c2410c;",
             "LIVE": "background-color: #f0fdfa; color: #0f766e;",
-            "Live %": "background-color: #f0fdfa; color: #0f766e;",
             "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-            "Live Cancelled %": "background-color: #fef2f2; color: #b91c1c;",
+            "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
         }
 
         # 6. Generate Custom HTML Table
@@ -1014,23 +952,12 @@ if "Advisor" in master_df.columns and not master_df.empty:
                         
                     html_code += f"<td>{name}{tags_html}</td>"
 
-                elif col.endswith(" %"):
-                    base_key = col.replace(" %", "")
-                    # map base column to corresponding val column name
-                    if base_key == "QA Approved": val_key = "QA Approved % Val"
-                    elif base_key == "QA Rework": val_key = "QA Rework % Val"
-                    elif base_key == "QA Cancelled": val_key = "QA Cancelled % Val"
-                    elif base_key == "QA Pending": val_key = "QA Pending % Val"
-                    elif base_key == "Welcome Done": val_key = "Welcome Done % Val"
-                    elif base_key == "Welcome Cancelled": val_key = "Welcome Cancelled % Val"
-                    elif base_key == "Welcome Pending": val_key = "Welcome Pending % Val"
-                    elif base_key == "Committed Rem": val_key = "Committed Rem % Val"
-                    elif base_key == "Live": val_key = "Live % Val"
-                    elif base_key == "Live Cancelled": val_key = "Live Cancelled % Val"
-                    else: val_key = ""
+                elif col == "QA Pass Rate %":
+                    pill_html = render_pill(row["QA Pass Rate % Val"], high_thresh=70.0, mid_thresh=50.0)
+                    html_code += f"<td>{pill_html}</td>"
 
-                    float_val = row.get(val_key, 0.0)
-                    pill_html = render_pill(float_val)
+                elif col == "Live Conversion %":
+                    pill_html = render_pill(row["Live Conversion % Val"], high_thresh=15.0, mid_thresh=8.0)
                     html_code += f"<td>{pill_html}</td>"
 
                 else:
