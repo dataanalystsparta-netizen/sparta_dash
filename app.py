@@ -464,8 +464,6 @@ visible_kpis = [kpi for kpi in all_kpis if kpi[1] > 0]
 
 if visible_kpis:
     cols = st.columns(len(visible_kpis))
-    st.markdown('<div class="kpi-group">', unsafe_allow_html=True)
-    st.markdown("#### 📊 Sales Pipeline Overview")
     for col, (label, val, delta_sub, border_col, bg_col, delta_col) in zip(cols, visible_kpis):
         with col:
             card_html = f"""
@@ -490,17 +488,10 @@ if visible_kpis:
                 </div>
                 <div style="font-size: 0.62rem; font-weight: 700; color: {delta_col}; margin-top: 2px;">
                     {delta_sub}
-                    .kpi-group {
-                        border: 1px solid #e2e8f0;
-                        border-radius: 12px;
-                        padding: 12px;
-                        margin-bottom: 15px;
-                        background: #fafcff;
-                    }
                 </div>
             </div>
             """
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown(card_html, unsafe_allow_html=True)
 else:
     st.info("No active KPIs for the selected filters.")
 
@@ -1040,4 +1031,27 @@ if "Advisor" in master_df.columns and not master_df.empty:
 else:
     st.info("No sales records available for the selected date or month filter.")
 
+# ==========================================================
+# FOOTER & PREVIEW TABS
+# ==========================================================
 
+if "Sale Date Clean" in master_df.columns: master_df = master_df.drop(columns=["Sale Date Clean"])
+if "Sale Date Clean" in filtered_portal_df.columns: filtered_portal_df = filtered_portal_df.drop(columns=["Sale Date Clean"])
+
+st.divider()
+st.header("📂 Data Preview")
+
+tab1, tab2, tab3 = st.tabs(["Applications", "Portal", "Master Dataset"])
+
+with tab1:
+    st.dataframe(sparta_df.drop(columns=["Sale Date Clean"], errors="ignore"), use_container_width=True, height=450, hide_index=True)
+
+with tab2:
+    st.dataframe(sparta2_df.drop(columns=["Sale Date Clean"], errors="ignore"), use_container_width=True, height=450, hide_index=True)
+
+with tab3:
+    st.dataframe(master_df, use_container_width=True, height=500, hide_index=True)
+
+st.divider()
+st.success("✅ Data loaded successfully")
+st.caption(f"Dashboard refreshed at {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
