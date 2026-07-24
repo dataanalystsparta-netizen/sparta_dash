@@ -491,7 +491,7 @@ if visible_kpis:
                 <div style="font-size: 0.62rem; font-weight: 700; color: {delta_col}; margin-top: 2px;">
                     {delta_sub}
                     .kpi-group {
-                                border: 1px solid #e2e8f0;
+                        border: 1px solid #e2e8f0;
                         border-radius: 12px;
                         padding: 12px;
                         margin-bottom: 15px;
