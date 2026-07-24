@@ -17,7 +17,9 @@ st.markdown("""
 <style>
     /* Sticky Table Headers */
     .stTable table thead tr th, 
-    .custom-table th {
+    .custom-table th,
+    .monthly-kpi-table th,
+    .custom-perf-table th {
         position: sticky;
         top: 0;
         z-index: 10;
@@ -100,6 +102,48 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
+# CONFIG & TAG DEFINITIONS
+# ==============================================================================
+NEW_ADVISORS = []
+CUSTOMER_SERVICE_ADVISORS = []
+LEFT_ADVISORS = []
+
+def count_status(df, column, target_status):
+    if column not in df.columns:
+        return 0
+    return (df[column].astype(str).str.strip().str.lower() == str(target_status).lower()).sum()
+
+# ==============================================================================
+# DATA LOADING & PREPARATION
+# ==============================================================================
+@st.cache_data(ttl=300)
+def load_data():
+    # Load primary datasets (Adjust file paths/sheet names if using database/API)
+    try:
+        app_df = pd.read_csv("applications.csv")
+    except Exception:
+        app_df = pd.DataFrame()
+
+    try:
+        portal_df = pd.read_csv("portal.csv")
+    except Exception:
+        portal_df = pd.DataFrame()
+
+    return app_df, portal_df
+
+master_raw_df, sparta2_df = load_data()
+
+# Clean and establish datetime period sorting columns
+for df in [master_raw_df, sparta2_df]:
+    if not df.empty and "Sale Date" in df.columns:
+        df["Sale Date Clean"] = pd.to_datetime(df["Sale Date"], errors="coerce")
+        df["Period_Sort"] = df["Sale Date Clean"].dt.to_period("M").dt.to_timestamp()
+    elif not df.empty:
+        df["Period_Sort"] = pd.NaT
+
+master_df = master_raw_df.copy()
+
+# ==============================================================================
 # HEADER & TOP DATE FILTERS
 # ==============================================================================
 st.title("📊 Lead Conversion & Performance Ledger")
@@ -123,6 +167,18 @@ with col_d2:
     )
 
 st.markdown("---")
+
+# Filter main master_df for Advisor Matrix using top filters
+if not master_df.empty and "Sale Date Clean" in master_df.columns:
+    master_df = master_df[
+        (master_df["Sale Date Clean"].dt.date >= start_date) &
+        (master_df["Sale Date Clean"].dt.date <= end_date)
+    ]
+
+# ==============================================================================
+# SECTION 1: MONTHLY KPI BREAKDOWN (2026)
+# ==============================================================================
+st.subheader("📅 Monthly KPI Breakdown (2026)")
 
 # ==============================================================================
 # SECTION 1: MONTHLY KPI BREAKDOWN (2026)
