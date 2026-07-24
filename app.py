@@ -464,6 +464,8 @@ visible_kpis = [kpi for kpi in all_kpis if kpi[1] > 0]
 
 if visible_kpis:
     cols = st.columns(len(visible_kpis))
+    st.markdown('<div class="kpi-group">', unsafe_allow_html=True)
+    st.markdown("#### 📊 Sales Pipeline Overview")
     for col, (label, val, delta_sub, border_col, bg_col, delta_col) in zip(cols, visible_kpis):
         with col:
             card_html = f"""
@@ -488,10 +490,17 @@ if visible_kpis:
                 </div>
                 <div style="font-size: 0.62rem; font-weight: 700; color: {delta_col}; margin-top: 2px;">
                     {delta_sub}
+                    .kpi-group {
+                                border: 1px solid #e2e8f0;
+                        border-radius: 12px;
+                        padding: 12px;
+                        margin-bottom: 15px;
+                        background: #fafcff;
+                    }
                 </div>
             </div>
             """
-            st.markdown(card_html, unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 else:
     st.info("No active KPIs for the selected filters.")
 
