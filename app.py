@@ -180,12 +180,8 @@ if not master_df.empty and "Sale Date Clean" in master_df.columns:
 # ==============================================================================
 st.subheader("📅 Monthly KPI Breakdown (2026)")
 
-# ==============================================================================
-# SECTION 1: MONTHLY KPI BREAKDOWN (2026)
-# ==============================================================================
-st.subheader("📅 Monthly KPI Breakdown (2026)")
 
-# (Data loading and aggregation logic for Monthly KPIs continues in Part 2)
+
 
 
 # ==========================================================
@@ -208,29 +204,33 @@ with col_m_d2:
     )
 
 # Filter for year 2026 exclusively
-monthly_app_df = master_raw_df.dropna(subset=["Period_Sort"]).copy()
-monthly_app_df = monthly_app_df[
-    (monthly_app_df["Period_Sort"].dt.year == 2026) &
-    (monthly_app_df["Period_Sort"].dt.date >= m_start_date) &
-    (monthly_app_df["Period_Sort"].dt.date <= m_end_date)
-]
+monthly_app_df = master_raw_df.dropna(subset=["Period_Sort"]).copy() if not master_raw_df.empty else pd.DataFrame()
+if not monthly_app_df.empty:
+    monthly_app_df = monthly_app_df[
+        (monthly_app_df["Period_Sort"].dt.year == 2026) &
+        (monthly_app_df["Period_Sort"].dt.date >= m_start_date) &
+        (monthly_app_df["Period_Sort"].dt.date <= m_end_date)
+    ]
 
-monthly_portal_df = sparta2_df.dropna(subset=["Period_Sort"]).copy()
-monthly_portal_df = monthly_portal_df[
-    (monthly_portal_df["Period_Sort"].dt.year == 2026) &
-    (monthly_portal_df["Period_Sort"].dt.date >= m_start_date) &
-    (monthly_portal_df["Period_Sort"].dt.date <= m_end_date)
-]
+monthly_portal_df = sparta2_df.dropna(subset=["Period_Sort"]).copy() if not sparta2_df.empty else pd.DataFrame()
+if not monthly_portal_df.empty:
+    monthly_portal_df = monthly_portal_df[
+        (monthly_portal_df["Period_Sort"].dt.year == 2026) &
+        (monthly_portal_df["Period_Sort"].dt.date >= m_start_date) &
+        (monthly_portal_df["Period_Sort"].dt.date <= m_end_date)
+    ]
 
-all_periods = sorted(list(set(monthly_app_df["Period_Sort"]).union(set(monthly_portal_df["Period_Sort"]))), reverse=True)
+app_periods = set(monthly_app_df["Period_Sort"]) if not monthly_app_df.empty else set()
+portal_periods = set(monthly_portal_df["Period_Sort"]) if not monthly_portal_df.empty else set()
+all_periods = sorted(list(app_periods.union(portal_periods)), reverse=True)
 
 if all_periods:
     monthly_rows = []
     for period in all_periods:
         m_str = period.strftime("%B %Y")
         
-        m_app = monthly_app_df[monthly_app_df["Period_Sort"] == period]
-        m_portal = monthly_portal_df[monthly_portal_df["Period_Sort"] == period]
+        m_app = monthly_app_df[monthly_app_df["Period_Sort"] == period] if not monthly_app_df.empty else pd.DataFrame()
+        m_portal = monthly_portal_df[monthly_portal_df["Period_Sort"] == period] if not monthly_portal_df.empty else pd.DataFrame()
         
         m_total_apps = len(m_app)
         
@@ -471,7 +471,7 @@ st.subheader("👥 Sales Executive Performance Breakdown")
 
 if "Advisor" in master_df.columns and not master_df.empty:
 
-    # 1. Aggregate metrics
+    # Aggregate metrics
     advisor_summary = (
         master_df.groupby("Advisor", dropna=False)
         .agg(
@@ -490,7 +490,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
         .reset_index()
     )
 
-    # 2. Filter rows based on tag inclusion checkboxes
+    # Filter rows based on tag inclusion checkboxes
     def filter_tagged_rows(row):
         name = str(row["Advisor"]).strip().lower()
         
@@ -514,7 +514,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
     if advisor_summary.empty:
         st.info("No sales records match the selected tag filters.")
     else:
-        # 3. Calculate percentage floats BEFORE column rename
         advisor_summary["QA Pass Rate % Val"] = (
             (advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
         ).fillna(0.0)
@@ -527,7 +526,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
             (advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
         ).fillna(0.0)
 
-        # 4. Rename columns
         advisor_summary = advisor_summary.rename(
             columns={
                 "Advisor": "SALES EXECUTIVE",
@@ -552,7 +550,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
         )
         advisor_summary = advisor_summary.sort_values(by="APPLICATIONS", ascending=False)
 
-        # Determine visible columns (Hide zero-sum columns)
         numeric_cols = [
             "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
             "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED"
@@ -580,7 +577,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 if "LIVE" in visible_cols:
                     visible_cols.append(col)
 
-        # 5. Helpers to style percentage badges
         def render_qa_pill(val_float):
             val_str = f"{val_float:.1f}%"
             if val_float >= 75.0:
@@ -611,7 +607,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
             return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 3px 12px; font-weight: 700; font-size: 0.82rem; display: inline-block;">{val_str}</span>'
 
-        # Header styling configuration
         header_styles = {
             "SALES EXECUTIVE": "background-color: #f1f5f9; color: #334155;",
             "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
@@ -630,7 +625,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
             "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
         }
 
-        # 6. Generate Custom HTML Table with Sticky Headers
         html_code = """
         <style>
             .custom-perf-table-container {
@@ -721,13 +715,11 @@ if "Advisor" in master_df.columns and not master_df.empty:
                     <tr>
         """
 
-        # Add header row
         for col in visible_cols:
             style = header_styles.get(col, "background-color: #f8fafc; color: #475569;")
             html_code += f'<th style="{style}">{col}</th>'
         html_code += "</tr></thead><tbody>"
 
-        # Add data rows
         for _, row in advisor_summary.iterrows():
             html_code += "<tr>"
             for col in visible_cols:
@@ -769,10 +761,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
             html_code += "</tr>"
 
         html_code += "</tbody></table></div>"
-
-        # Render table
         st.markdown(html_code, unsafe_allow_html=True)
 
 else:
     st.info("No sales records available for the selected date or month filter.")
-
