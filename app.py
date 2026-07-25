@@ -631,14 +631,14 @@ if all_periods:
         "LIVE": "background-color: #f0fdfa; color: #0f766e;",
         "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
         "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-        "Live Projected": "background-color: #eff6ff; color: #1e40af;"
+        "Projected Live": "background-color: #eff6ff; color: #1e40af;"
     }
 
     display_columns = [
         "MONTH", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
         "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
         "Welcome Done %", "WELCOME CANCELLED", "WELCOME PENDING",
-        "COMMITTED REM.", "LIVE", "Live Conversion %", "LIVE CANCELLED","Live Projected"
+        "COMMITTED REM.", "LIVE", "Live Conversion %", "LIVE CANCELLED","Projected Live"
     ]
 
     m_html = """
@@ -807,7 +807,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 "Committed": "COMMITTED REM.",
                 "Live": "LIVE",
                 "Live_Cancelled": "LIVE CANCELLED",
-                "Projected Live": "Live Projected"
+                "Projected Live": "Projected Live"
             }
         )
 
