@@ -168,7 +168,7 @@ CUSTOMER_SERVICE_ADVISORS = ["Aman","Ravi Inbound","Santosh Joshi","Vijender"
     # Add customer service advisor names here
 ]
 
-LEFT_ADVISORS = ["Gaurav","Guru","Niki","Shaheen","Manmeet","Gungun","Rani","Aman","Archana","Deepali","Sushanshu",
+LEFT_ADVISORS = ["Gaurav","Guru","Niki","Shaheen","Manmeet","Gungun","Rani","Archana","Deepali","Sushanshu",
                  "Supreme","Tokivi","Sangeeta","Vijay","Khushbu","Kushal","Nishant","Pawan","Mehak","Khushboo","Ashima",
                  "Vishal","Aarti","Abhay","Diwakar","Manshay","Khusboo","Manmet","Lakshay","Sneha","Swarali","Monica","Paras",
                  "Veer","Yash"                 
