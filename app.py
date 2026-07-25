@@ -552,8 +552,7 @@ if all_periods:
             "COMMITTED REM.": m_p_committed,
             "LIVE": m_p_live,
             "Live Conversion % Val": (m_p_live / m_total_apps * 100) if m_total_apps > 0 else 0.0,
-            "LIVE CANCELLED": m_p_cancelled,
-            "Live Projection":m_p_live + 0.5 * m_p_committed + 0.25 * m_wc_pending
+            "LIVE CANCELLED": m_p_cancelled
         })
     
     monthly_summary_df = pd.DataFrame(monthly_rows)
@@ -579,7 +578,7 @@ if all_periods:
         "COMMITTED REM.": monthly_summary_df["COMMITTED REM."].sum(),
         "LIVE": tot_live,
         "Live Conversion % Val": (tot_live / tot_apps * 100) if tot_apps > 0 else 0.0,
-        "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum()
+        "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum(),
     }
     monthly_summary_df = pd.concat([monthly_summary_df, pd.DataFrame([totals_row])], ignore_index=True)
     
@@ -631,14 +630,13 @@ if all_periods:
         "LIVE": "background-color: #f0fdfa; color: #0f766e;",
         "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
         "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
-        "Projected Live": "background-color: #eff6ff; color: #1e40af;"
     }
 
     display_columns = [
         "MONTH", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
         "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
         "Welcome Done %", "WELCOME CANCELLED", "WELCOME PENDING",
-        "COMMITTED REM.", "LIVE", "Live Conversion %", "LIVE CANCELLED","Projected Live"
+        "COMMITTED REM.", "LIVE", "Live Conversion %", "LIVE CANCELLED"
     ]
 
     m_html = """
@@ -807,7 +805,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 "Committed": "COMMITTED REM.",
                 "Live": "LIVE",
                 "Live_Cancelled": "LIVE CANCELLED",
-                "Projected Live": "Projected Live"
             }
         )
 
@@ -828,7 +825,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
             "SALES EXECUTIVE", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
             "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
             "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
-            "LIVE", "LIVE CANCELLED", "Live Conversion %","Projected Live"
+            "LIVE", "LIVE CANCELLED", "Live Conversion %"
         ]
 
         visible_cols = ["SALES EXECUTIVE"]
@@ -894,7 +891,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
             "LIVE": "background-color: #f0fdfa; color: #0f766e;",
             "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
             "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
-            "Projected Live": "background-color: #eff6ff; color: #1e40af;",
         }
 
         # 6. Generate Custom HTML Table
