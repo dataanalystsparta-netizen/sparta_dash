@@ -552,7 +552,8 @@ if all_periods:
             "COMMITTED REM.": m_p_committed,
             "LIVE": m_p_live,
             "Live Conversion % Val": (m_p_live / m_total_apps * 100) if m_total_apps > 0 else 0.0,
-            "LIVE CANCELLED": m_p_cancelled
+            "LIVE CANCELLED": m_p_cancelled,
+            "Live Projection":m_p_live + 0.5 * m_p_committed + 0.25 * m_wc_pending
         })
     
     monthly_summary_df = pd.DataFrame(monthly_rows)
@@ -579,6 +580,7 @@ if all_periods:
         "LIVE": tot_live,
         "Live Conversion % Val": (tot_live / tot_apps * 100) if tot_apps > 0 else 0.0,
         "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum(),
+        "Live Projection":(m_p_live + 0.5 * m_p_committed + 0.25 * m_wc_pending).sum()
     }
     monthly_summary_df = pd.concat([monthly_summary_df, pd.DataFrame([totals_row])], ignore_index=True)
     
