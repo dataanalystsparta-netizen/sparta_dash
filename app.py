@@ -462,34 +462,30 @@ def get_raw_breakdown(df, raw_col, clean_col, target_val):
 
 def format_raw_breakdown(df, raw_col, clean_col, target_val):
     """
-    Convert the raw-value counts into HTML tooltip text.
+    Return a plain-text breakdown for the browser's native tooltip.
     """
-    breakdown = get_raw_breakdown(df, raw_col, clean_col, target_val)
+    breakdown = get_raw_breakdown(
+        df,
+        raw_col,
+        clean_col,
+        target_val
+    )
 
     if not breakdown:
         return ""
 
     lines = [
-        f'<div class="tooltip-row">'
-        f'<span>{escape(raw_value)}</span>'
-        f'<strong>{count}</strong>'
-        f'</div>'
+        f"{raw_value}: {count}"
         for raw_value, count in breakdown
     ]
 
     total = sum(count for _, count in breakdown)
 
-    return f"""
-        <div class="tooltip-title">Raw Status Breakdown</div>
-        <div class="tooltip-divider"></div>
-        {''.join(lines)}
-        <div class="tooltip-divider"></div>
-        <div class="tooltip-total">
-            <span>Total</span>
-            <strong>{total}</strong>
-        </div>
-    """
-
+    return (
+        "Raw Status Breakdown\n"
+        + "\n".join(lines)
+        + f"\nTotal: {total}"
+    )
 
 
 
@@ -971,102 +967,7 @@ if all_periods:
         }
         .monthly-kpi-table tr:hover:not(:last-child) {
             background-color: #f8fafc;
-        }
-        /* ==========================================================
-           RAW VALUE HOVER TOOLTIP
-           ========================================================== */
-    .monthly-kpi-tooltip {
-        position: relative;
-        display: inline-block;
-        cursor: help;
-        font-weight: 600;
-    }
-    
-    .monthly-kpi-tooltip .tooltip-content {
-        visibility: hidden;
-        opacity: 0;
-    
-        position: absolute;
-        z-index: 99999;
-    
-        bottom: calc(100% + 8px);
-        left: 50%;
-        transform: translateX(-50%);
-    
-        min-width: 220px;
-        max-width: 320px;
-    
-        background-color: #0f172a;
-        color: #ffffff;
-    
-        padding: 10px 12px;
-        border-radius: 7px;
-    
-        font-size: 0.75rem;
-        font-weight: 400;
-        line-height: 1.45;
-    
-        text-align: left;
-    
-        box-shadow: 0 6px 20px rgba(0,0,0,0.18);
-    
-        transition: opacity 0.15s ease;
-    
-        white-space: normal;
-    }
-    
-    .monthly-kpi-tooltip:hover .tooltip-content {
-        visibility: visible;
-        opacity: 1;
-    }
-    
-    .monthly-kpi-tooltip .tooltip-content::after {
-        content: "";
-        position: absolute;
-    
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-    
-        border-width: 6px;
-        border-style: solid;
-        border-color: #0f172a transparent transparent transparent;
-    }
-    
-    .tooltip-title {
-        font-weight: 800;
-        font-size: 0.78rem;
-        margin-bottom: 5px;
-        color: #ffffff;
-    }
-    
-    .tooltip-divider {
-        border-top: 1px solid rgba(255,255,255,0.20);
-        margin: 5px 0;
-    }
-    
-    .tooltip-row {
-        display: flex;
-        justify-content: space-between;
-        gap: 15px;
-        padding: 2px 0;
-    }
-    
-    .tooltip-row span {
-        color: #e2e8f0;
-    }
-    
-    .tooltip-row strong {
-        color: #ffffff;
-    }
-    
-    .tooltip-total {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 5px;
-        font-weight: 800;
-    }
-        
+        }    
     </style>
     <div class="monthly-kpi-table-container">
         <table class="monthly-kpi-table">
@@ -1113,20 +1014,19 @@ if all_periods:
                 }
 
                 raw_column = tooltip_map.get(col_name)
-
-                if raw_column and row[raw_column]:
-                    tooltip_html = row[raw_column]
-
-                    m_html += f"""
-                        <td>
-                            <div class="monthly-kpi-tooltip">
-                                {formatted_val}
-                                <div class="tooltip-content">
-                                    {tooltip_html}
-                                </div>
-                            </div>
-                        </td>
-                    """
+                if raw_column and row[raw_column] and val != 0:
+                    tooltip_text = str(row[raw_column])
+                
+                    # Escape characters that could interfere with the HTML title attribute
+                    tooltip_text = (
+                        tooltip_text
+                        .replace("&", "&amp;")
+                        .replace('"', "&quot;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                    )
+                
+                    m_html += f'<td title="{tooltip_text}" style="cursor: help;">{formatted_val}</td>'
                 else:
                     m_html += f"<td>{formatted_val}</td>"
         m_html += "</tr>"
