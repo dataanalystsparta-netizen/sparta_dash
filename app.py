@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-
+from html import escape
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -471,10 +471,9 @@ def format_raw_breakdown(df, raw_col, clean_col, target_val):
         return "No raw records"
 
     lines = [
-        f"<div><strong>{raw_value}</strong> &nbsp; {count}</div>"
+        f"<div><strong>{escape(raw_value)}</strong> &nbsp; {count}</div>"
         for raw_value, count in breakdown
     ]
-
     total = sum(count for _, count in breakdown)
 
     return f"""
