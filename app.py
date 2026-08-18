@@ -431,6 +431,63 @@ def count_status(df, column, target_val):
 def get_pct(part, total):
     return "0.0%" if total == 0 else f"{(part / total * 100):.1f}%"
 
+def get_raw_breakdown(df, raw_col, clean_col, target_val):
+    """
+    Return a list of raw values and their counts which contributed
+    to a cleaned/standardized KPI value.
+
+    Example:
+    Cancelled -> Cancelled (11), Rejected (4), Duplicate (2)
+    """
+    if raw_col not in df.columns or clean_col not in df.columns:
+        return []
+
+    mask = df[clean_col] == target_val
+    raw_values = df.loc[mask, raw_col].copy()
+
+    if raw_values.empty:
+        return []
+
+    raw_values = (
+        raw_values
+        .fillna("(blank)")
+        .astype(str)
+        .str.strip()
+        .replace("", "(blank)")
+    )
+
+    counts = raw_values.value_counts()
+
+    return [(str(raw_value), int(count)) for raw_value, count in counts.items()]
+
+
+def format_raw_breakdown(df, raw_col, clean_col, target_val):
+    """
+    Convert the raw-value counts into HTML tooltip text.
+    """
+    breakdown = get_raw_breakdown(df, raw_col, clean_col, target_val)
+
+    if not breakdown:
+        return "No raw records"
+
+    lines = [
+        f"<div><strong>{raw_value}</strong> &nbsp; {count}</div>"
+        for raw_value, count in breakdown
+    ]
+
+    total = sum(count for _, count in breakdown)
+
+    return f"""
+        <div class="tooltip-title">Raw Status Breakdown</div>
+        <div class="tooltip-divider"></div>
+        {''.join(lines)}
+        <div class="tooltip-divider"></div>
+        <div><strong>Total</strong> &nbsp; {total}</div>
+    """
+
+
+
+
 total_applications = len(master_df)
 portal_total = len(filtered_portal_df)
 
@@ -536,23 +593,132 @@ if all_periods:
         m_p_live = count_status(m_portal, "Portal Status Clean", "Live")
         m_p_committed = count_status(m_portal, "Portal Status Clean", "Committed")
         m_p_cancelled = count_status(m_portal, "Portal Status Clean", "Cancelled")
+
+                # ==========================================================
+        # RAW STATUS BREAKDOWNS FOR HOVER TOOLTIPS
+        # ==========================================================
+
+        qa_approved_raw = format_raw_breakdown(
+            m_app,
+            "Quality Status",
+            "Quality Status Clean",
+            "Approved"
+        )
+
+        qa_rework_raw = format_raw_breakdown(
+            m_app,
+            "Quality Status",
+            "Quality Status Clean",
+            "Rework"
+        )
+
+        qa_cancelled_raw = format_raw_breakdown(
+            m_app,
+            "Quality Status",
+            "Quality Status Clean",
+            "Cancelled"
+        )
+
+        qa_pending_raw = format_raw_breakdown(
+            m_app,
+            "Quality Status",
+            "Quality Status Clean",
+            "Pending"
+        )
+
+        welcome_done_raw = format_raw_breakdown(
+            m_app,
+            "Welcome Status",
+            "Welcome Status Clean",
+            "Done"
+        )
+
+        welcome_cancelled_raw = format_raw_breakdown(
+            m_app,
+            "Welcome Status",
+            "Welcome Status Clean",
+            "Cancelled"
+        )
+
+        welcome_pending_raw = format_raw_breakdown(
+            m_app,
+            "Welcome Status",
+            "Welcome Status Clean",
+            "Pending"
+        )
+
+        committed_raw = format_raw_breakdown(
+            m_portal,
+            "Portal Status",
+            "Portal Status Clean",
+            "Committed"
+        )
+
+        live_raw = format_raw_breakdown(
+            m_portal,
+            "Portal Status",
+            "Portal Status Clean",
+            "Live"
+        )
+
+        live_cancelled_raw = format_raw_breakdown(
+            m_portal,
+            "Portal Status",
+            "Portal Status Clean",
+            "Cancelled"
+        )
+
+
+
+
+        
         
         monthly_rows.append({
             "MONTH": m_str,
+
             "APPLICATIONS": m_total_apps,
+
             "QA APPROVED": m_qa_approved,
-            "QA Pass Rate % Val": (m_qa_approved / m_total_apps * 100) if m_total_apps > 0 else 0.0,
+            "QA APPROVED RAW": qa_approved_raw,
+
+            "QA Pass Rate % Val":
+                (m_qa_approved / m_total_apps * 100)
+                if m_total_apps > 0 else 0.0,
+
             "QA REWORK": m_qa_rework,
+            "QA REWORK RAW": qa_rework_raw,
+
             "QA CANCELLED": m_qa_cancelled,
+            "QA CANCELLED RAW": qa_cancelled_raw,
+
             "QA PENDING": m_qa_pending,
+            "QA PENDING RAW": qa_pending_raw,
+
             "WELCOME DONE": m_wc_done,
-            "Welcome Done % Val": (m_wc_done / m_total_apps * 100) if m_total_apps > 0 else 0.0,
+            "WELCOME DONE RAW": welcome_done_raw,
+
+            "Welcome Done % Val":
+                (m_wc_done / m_total_apps * 100)
+                if m_total_apps > 0 else 0.0,
+
             "WELCOME CANCELLED": m_wc_cancelled,
+            "WELCOME CANCELLED RAW": welcome_cancelled_raw,
+
             "WELCOME PENDING": m_wc_pending,
+            "WELCOME PENDING RAW": welcome_pending_raw,
+
             "COMMITTED REM.": m_p_committed,
+            "COMMITTED RAW": committed_raw,
+
             "LIVE": m_p_live,
-            "Live Conversion % Val": (m_p_live / m_total_apps * 100) if m_total_apps > 0 else 0.0,
-            "LIVE CANCELLED": m_p_cancelled
+            "LIVE RAW": live_raw,
+
+            "Live Conversion % Val":
+                (m_p_live / m_total_apps * 100)
+                if m_total_apps > 0 else 0.0,
+
+            "LIVE CANCELLED": m_p_cancelled,
+            "LIVE CANCELLED RAW": live_cancelled_raw
         })
     
     monthly_summary_df = pd.DataFrame(monthly_rows)
@@ -562,23 +728,135 @@ if all_periods:
     tot_qa_app = monthly_summary_df["QA APPROVED"].sum()
     tot_wc_done = monthly_summary_df["WELCOME DONE"].sum()
     tot_live = monthly_summary_df["LIVE"].sum()
+
+
+        # ==========================================================
+    # FULL-YEAR RAW STATUS BREAKDOWNS FOR TOTAL ROW
+    # ==========================================================
+
+    total_qa_approved_raw = format_raw_breakdown(
+        monthly_app_df,
+        "Quality Status",
+        "Quality Status Clean",
+        "Approved"
+    )
+
+    total_qa_rework_raw = format_raw_breakdown(
+        monthly_app_df,
+        "Quality Status",
+        "Quality Status Clean",
+        "Rework"
+    )
+
+    total_qa_cancelled_raw = format_raw_breakdown(
+        monthly_app_df,
+        "Quality Status",
+        "Quality Status Clean",
+        "Cancelled"
+    )
+
+    total_qa_pending_raw = format_raw_breakdown(
+        monthly_app_df,
+        "Quality Status",
+        "Quality Status Clean",
+        "Pending"
+    )
+
+    total_welcome_done_raw = format_raw_breakdown(
+        monthly_app_df,
+        "Welcome Status",
+        "Welcome Status Clean",
+        "Done"
+    )
+
+    total_welcome_cancelled_raw = format_raw_breakdown(
+        monthly_app_df,
+        "Welcome Status",
+        "Welcome Status Clean",
+        "Cancelled"
+    )
+
+    total_welcome_pending_raw = format_raw_breakdown(
+        monthly_app_df,
+        "Welcome Status",
+        "Welcome Status Clean",
+        "Pending"
+    )
+
+    total_committed_raw = format_raw_breakdown(
+        monthly_portal_df,
+        "Portal Status",
+        "Portal Status Clean",
+        "Committed"
+    )
+
+    total_live_raw = format_raw_breakdown(
+        monthly_portal_df,
+        "Portal Status",
+        "Portal Status Clean",
+        "Live"
+    )
+
+    total_live_cancelled_raw = format_raw_breakdown(
+        monthly_portal_df,
+        "Portal Status",
+        "Portal Status Clean",
+        "Cancelled"
+    )
+
+
+    
     
     totals_row = {
         "MONTH": "Total",
+
         "APPLICATIONS": tot_apps,
+
         "QA APPROVED": tot_qa_app,
-        "QA Pass Rate % Val": (tot_qa_app / tot_apps * 100) if tot_apps > 0 else 0.0,
+        "QA APPROVED RAW": total_qa_approved_raw,
+
+        "QA Pass Rate % Val":
+            (tot_qa_app / tot_apps * 100)
+            if tot_apps > 0 else 0.0,
+
         "QA REWORK": monthly_summary_df["QA REWORK"].sum(),
+        "QA REWORK RAW": total_qa_rework_raw,
+
         "QA CANCELLED": monthly_summary_df["QA CANCELLED"].sum(),
+        "QA CANCELLED RAW": total_qa_cancelled_raw,
+
         "QA PENDING": monthly_summary_df["QA PENDING"].sum(),
+        "QA PENDING RAW": total_qa_pending_raw,
+
         "WELCOME DONE": tot_wc_done,
-        "Welcome Done % Val": (tot_wc_done / tot_apps * 100) if tot_apps > 0 else 0.0,
-        "WELCOME CANCELLED": monthly_summary_df["WELCOME CANCELLED"].sum(),
-        "WELCOME PENDING": monthly_summary_df["WELCOME PENDING"].sum(),
-        "COMMITTED REM.": monthly_summary_df["COMMITTED REM."].sum(),
+        "WELCOME DONE RAW": total_welcome_done_raw,
+
+        "Welcome Done % Val":
+            (tot_wc_done / tot_apps * 100)
+            if tot_apps > 0 else 0.0,
+
+        "WELCOME CANCELLED":
+            monthly_summary_df["WELCOME CANCELLED"].sum(),
+        "WELCOME CANCELLED RAW": total_welcome_cancelled_raw,
+
+        "WELCOME PENDING":
+            monthly_summary_df["WELCOME PENDING"].sum(),
+        "WELCOME PENDING RAW": total_welcome_pending_raw,
+
+        "COMMITTED REM.":
+            monthly_summary_df["COMMITTED REM."].sum(),
+        "COMMITTED RAW": total_committed_raw,
+
         "LIVE": tot_live,
-        "Live Conversion % Val": (tot_live / tot_apps * 100) if tot_apps > 0 else 0.0,
-        "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum(),
+        "LIVE RAW": total_live_raw,
+
+        "Live Conversion % Val":
+            (tot_live / tot_apps * 100)
+            if tot_apps > 0 else 0.0,
+
+        "LIVE CANCELLED":
+            monthly_summary_df["LIVE CANCELLED"].sum(),
+        "LIVE CANCELLED RAW": total_live_cancelled_raw,
     }
     monthly_summary_df = pd.concat([monthly_summary_df, pd.DataFrame([totals_row])], ignore_index=True)
     
@@ -689,6 +967,75 @@ if all_periods:
         .monthly-kpi-table tr:hover:not(:last-child) {
             background-color: #f8fafc;
         }
+        /* ==========================================================
+           RAW VALUE HOVER TOOLTIP
+           ========================================================== */
+        
+        .monthly-kpi-tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+            font-weight: 600;
+        }
+        
+        .monthly-kpi-tooltip .tooltip-content {
+            visibility: hidden;
+            opacity: 0;
+            position: absolute;
+            z-index: 9999;
+            bottom: 135%;
+            left: 50%;
+            transform: translateX(-50%);
+            
+            min-width: 220px;
+            max-width: 320px;
+            
+            background-color: #0f172a;
+            color: #ffffff;
+            padding: 10px 12px;
+            border-radius: 7px;
+            
+            font-size: 0.75rem;
+            font-weight: 400;
+            line-height: 1.45;
+            text-align: left;
+            
+            box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+            
+            transition: opacity 0.15s ease;
+            
+            white-space: normal;
+        }
+        
+        .monthly-kpi-tooltip:hover .tooltip-content {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        .monthly-kpi-tooltip .tooltip-content::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -6px;
+            
+            border-width: 6px;
+            border-style: solid;
+            border-color: #0f172a transparent transparent transparent;
+        }
+        
+        .tooltip-title {
+            font-weight: 800;
+            font-size: 0.78rem;
+            margin-bottom: 5px;
+            color: #ffffff;
+        }
+        
+        .tooltip-divider {
+            border-top: 1px solid rgba(255,255,255,0.20);
+            margin: 5px 0;
+        }
+        
     </style>
     <div class="monthly-kpi-table-container">
         <table class="monthly-kpi-table">
@@ -717,7 +1064,40 @@ if all_periods:
             else:
                 val = row[col_name]
                 formatted_val = "-" if val == 0 else f"{val:,}"
-                m_html += f"<td>{formatted_val}</td>"
+
+                # Map visible KPI column to its raw tooltip column
+                tooltip_map = {
+                    "QA APPROVED": "QA APPROVED RAW",
+                    "QA REWORK": "QA REWORK RAW",
+                    "QA CANCELLED": "QA CANCELLED RAW",
+                    "QA PENDING": "QA PENDING RAW",
+
+                    "WELCOME DONE": "WELCOME DONE RAW",
+                    "WELCOME CANCELLED": "WELCOME CANCELLED RAW",
+                    "WELCOME PENDING": "WELCOME PENDING RAW",
+
+                    "COMMITTED REM.": "COMMITTED RAW",
+                    "LIVE": "LIVE RAW",
+                    "LIVE CANCELLED": "LIVE CANCELLED RAW",
+                }
+
+                raw_column = tooltip_map.get(col_name)
+
+                if raw_column and row[raw_column]:
+                    tooltip_html = row[raw_column]
+
+                    m_html += f"""
+                        <td>
+                            <span class="monthly-kpi-tooltip">
+                                {formatted_val}
+                                <span class="tooltip-content">
+                                    {tooltip_html}
+                                </span>
+                            </span>
+                        </td>
+                    """
+                else:
+                    m_html += f"<td>{formatted_val}</td>"
         m_html += "</tr>"
         
     m_html += "</tbody></table></div>"
