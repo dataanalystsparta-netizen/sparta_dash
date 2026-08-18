@@ -4,7 +4,7 @@ from html import escape
 import numpy as np
 import pandas as pd
 import streamlit as st
-
+import streamlit.components.v1 as components
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
@@ -1024,6 +1024,7 @@ if all_periods:
                         .replace('"', "&quot;")
                         .replace("<", "&lt;")
                         .replace(">", "&gt;")
+                        .replace("\n", "&#10;")
                     )
                 
                     m_html += f'<td title="{tooltip_text}" style="cursor: help;">{formatted_val}</td>'
@@ -1032,7 +1033,17 @@ if all_periods:
         m_html += "</tr>"
         
     m_html += "</tbody></table></div>"
-    st.markdown(m_html, unsafe_allow_html=True)
+    
+    table_height = max(
+        150,
+        95 + (len(monthly_summary_df) * 45)
+    )
+    
+    components.html(
+        m_html,
+        height=table_height,
+        scrolling=False
+    )
 else:
     st.info("No 2026 monthly data available for the KPI summary table.")
 
