@@ -160,7 +160,7 @@ APPLICATION_SHEET = "Sparta"
 LIVE_SHEET = "Sparta2"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-NEW_ADVISORS = ["Subhodeep","Ravikant","Priyanshu","Kajal","Edwin"
+NEW_ADVISORS = ["Subhodeep","Ravikant","Priyanshu","Kajal","Aryan"
     # Add advisor names here
 ]
 
