@@ -164,7 +164,7 @@ NEW_ADVISORS = ["Subhodeep","Ravikant","Priyanshu","Kajal","Aryan"
     # Add advisor names here
 ]
 
-CUSTOMER_SERVICE_ADVISORS = ["Aman","Ravi Inbound","Santosh Joshi","Vijender"
+CUSTOMER_SERVICE_ADVISORS = ["Aman","Ravi Inbound","Santosh Joshi","Vijender","Laxmi Narayan"
     # Add customer service advisor names here
 ]
 
