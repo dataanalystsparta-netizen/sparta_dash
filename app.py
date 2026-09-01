@@ -1,18 +1,14 @@
-# (Full app.py content — corrected)
-# Note: This is the same file I sent previously but with the duplicate assignment removed.
-# Paste the entire contents into your app.py to replace the current version.
-
 """
-Updated app.py - implements sticky headers and click-to-sort on both Monthly KPI and Advisor tables.
+Updated app.py - sticky headers, sortable tables, and totals row fixed for monthly table.
 
-Features:
-- Monthly KPI table: sticky header, scrollable body, sortable columns by clicking header (asc/desc).
-- Sales Executive Performance Breakdown (advisor) table: sticky header, scrollable body, sortable columns by clicking header (asc/desc).
-  - Numeric cells include data-sort attributes for robust numeric sorting.
-  - Totals row remains at the bottom after sorting.
-- Default advisor ordering remains descending by APPLICATIONS.
+Key fixes in this version:
+- Monthly totals row is rendered with class="totals-row" so it remains pinned at the bottom after sorting.
+- Monthly and Advisor tables have sticky headers and click-to-sort JS.
+- Advisor table totals row stays pinned as before.
+- The earlier duplicated-column bug (APPLICATIONS) was removed.
 - Data Preview remains commented out.
-- No commits performed; paste into your working copy to test.
+
+Paste this file into your working copy to replace the current app.py.
 """
 
 import logging
@@ -645,12 +641,12 @@ else:
             font-weight: 700;
             color: #0f172a;
         }}
-        .monthly-kpi-table tr:last-child {{
+        .monthly-kpi-table tr.totals-row {{
             font-weight: 800;
             background-color: #f8fafc;
             border-top: 2px solid #cbd5e1;
         }}
-        .monthly-kpi-table tr:hover:not(:last-child) {{
+        .monthly-kpi-table tr:hover:not(.totals-row) {{
             background-color: #f8fafc;
         }}
     </style>
@@ -665,21 +661,31 @@ else:
         m_html += f'<th style="{th_style}">{col_name}</th>'
     m_html += "</tr></thead><tbody>"
 
+    # Updated loop: mark totals row with class="totals-row" so sorter keeps it pinned
     for _, row in monthly_summary_df.iterrows():
-        m_html += "<tr>"
+        is_total = str(row.get("MONTH", "")).strip().lower() == "total"
+        if is_total:
+            m_html += '<tr class="totals-row">'
+        else:
+            m_html += "<tr>"
+
         for col_name in display_columns:
             if col_name == "MONTH":
-                m_html += f"<td data-sort=\"{escape(str(row['MONTH']))}\">{escape(str(row['MONTH']))}</td>"
+                cell_text = escape(str(row["MONTH"]))
+                m_html += f'<td data-sort="{escape(str(row["MONTH"]))}">{cell_text}</td>'
             elif col_name == "QA Pass Rate %":
-                m_html += f"<td data-sort=\"{float(row['QA Pass Rate % Val']):.6f}\">{render_pill(row['QA Pass Rate % Val'], thresholds=[75.0, 51.0])}</td>"
+                val = float(row["QA Pass Rate % Val"])
+                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[75.0, 51.0])}</td>'
             elif col_name == "Welcome Done %":
-                m_html += f"<td data-sort=\"{float(row['Welcome Done % Val']):.6f}\">{render_pill(row['Welcome Done % Val'], thresholds=[61.0, 51.0])}</td>"
+                val = float(row["Welcome Done % Val"])
+                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[61.0, 51.0])}</td>'
             elif col_name == "Live Conversion %":
-                m_html += f"<td data-sort=\"{float(row['Live Conversion % Val']):.6f}\">{render_pill(row['Live Conversion % Val'], thresholds=[41.0, 21.0])}</td>"
+                val = float(row["Live Conversion % Val"])
+                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[41.0, 21.0])}</td>'
             else:
                 val = row.get(col_name, 0)
                 if isinstance(val, (int, np.integer)):
-                    m_html += f'<td data-sort="{int(val)}">' + ( "-" if val == 0 else f"{int(val):,}" ) + "</td>"
+                    m_html += f'<td data-sort="{int(val)}">' + ("-" if int(val) == 0 else f"{int(val):,}") + "</td>"
                 else:
                     formatted_val = "-" if (val == 0 or pd.isna(val)) else escape(str(val))
                     if isinstance(val, float):
@@ -690,7 +696,7 @@ else:
 
     m_html += "</tbody></table></div></div>"
 
-    # Sorting JS for monthly table - handles numeric/text; keeps last row (Total) at bottom
+    # Sorting JS for monthly table - handles numeric/text; keeps totals-row at bottom
     m_html += f"""
     <script>
     (function() {{
@@ -854,9 +860,26 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 if "LIVE" in visible_cols:
                     visible_cols.append(col)
 
-        def render_qa_pill(v): return f'<span data-sort="{float(v):.6f}" style="background-color:#d1fae5; color:#047857; border:1px solid #a7f3d0; border-radius:8px; padding:3px 12px; font-weight:700;">{v:.1f}%</span>' if v >= 75 else (f'<span data-sort="{float(v):.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>' if v >= 51 else f'<span data-sort="{float(v):.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>')
-        def render_welcome_pill(v): return render_qa_pill(v) if False else (f'<span data-sort="{float(v):.6f}" style="background-color:#d1fae5;color:#047857;border:1px solid #a7f3d0;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>' if v >= 61 else (f'<span data-sort="{float(v):.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>' if v >= 51 else f'<span data-sort="{float(v):.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'))
-        def render_live_pill(v): return render_qa_pill(v) if False else (f'<span data-sort="{float(v):.6f}" style="background-color:#d1fae5;color:#047857;border:1px solid #a7f3d0;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>' if v >= 41 else (f'<span data-sort="{float(v):.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>' if v >= 21 else f'<span data-sort="{float(v):.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'))
+        def render_qa_pill(v):
+            if v >= 75.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#d1fae5; color:#047857; border:1px solid #a7f3d0; border-radius:8px; padding:3px 12px; font-weight:700;">{v:.1f}%</span>'
+            if v >= 51.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            return f'<span data-sort="{v:.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+
+        def render_welcome_pill(v):
+            if v >= 61.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#d1fae5;color:#047857;border:1px solid #a7f3d0;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            if v >= 51.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            return f'<span data-sort="{v:.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+
+        def render_live_pill(v):
+            if v >= 41.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#d1fae5;color:#047857;border:1px solid #a7f3d0;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            if v >= 21.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            return f'<span data-sort="{v:.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
 
         header_styles = {
             "SALES EXECUTIVE": "background-color:#f1f5f9;color:#334155;",
@@ -876,22 +899,26 @@ if "Advisor" in master_df.columns and not master_df.empty:
             "Live Conversion %": "background-color:#f0fdfa;color:#0f766e;",
         }
 
-        # totals
+        # Compute totals across visible advisors for numeric columns
         totals_series = advisor_summary[list(numeric_cols)].sum(numeric_only=True)
         total_apps = int(totals_series.get("APPLICATIONS", 0))
         total_qa_approved = int(totals_series.get("QA APPROVED", 0))
         total_welcome_done = int(totals_series.get("WELCOME DONE", 0))
         total_live = int(totals_series.get("LIVE", 0))
+
+        # totals percentages (overall)
         total_qa_pass_pct = (total_qa_approved / total_apps * 100) if total_apps > 0 else 0.0
         total_welcome_pct = (total_welcome_done / total_apps * 100) if total_apps > 0 else 0.0
         total_live_pct = (total_live / total_apps * 100) if total_apps > 0 else 0.0
+
+        # totals tooltips using filtered master_df
         totals_tooltips = {}
         for k, (raw_col, clean_col, target_val) in advisor_tooltip_mapping.items():
             totals_tooltips[k] = format_raw_breakdown(master_df, raw_col, clean_col, target_val)
 
         # Build advisor HTML table (use components.html to allow JS)
         advisor_table_id = "advisor-perf-table"
-        advisor_table_height = min(900, max(240, 90 + len(advisor_summary)*45))
+        advisor_table_height = min(900, max(240, 90 + len(advisor_summary) * 45))
         adv_html = f'''
         <style>
           .perf-table-container {{
@@ -943,6 +970,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
             style = header_styles.get(c, "background-color:#f8fafc;color:#475569;")
             adv_html += f'<th style="{style}">{c}</th>'
         adv_html += '</tr></thead><tbody>'
+
         for _, r in advisor_summary.iterrows():
             adv_html += "<tr>"
             for c in visible_cols:
@@ -973,6 +1001,8 @@ if "Advisor" in master_df.columns and not master_df.empty:
                     else:
                         adv_html += f'<td data-sort="{escape(str(val))}">{escape(str(val))}</td>'
             adv_html += "</tr>"
+
+        # totals row
         adv_html += '<tr class="totals-row">'
         for c in visible_cols:
             if c == "SALES EXECUTIVE":
@@ -996,8 +1026,10 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 else:
                     adv_html += "<td data-sort='-'>-</td>"
         adv_html += "</tr>"
+
         adv_html += "</tbody></table></div>"
 
+        # Sorting JS for advisor table; keeps totals-row at bottom
         adv_html += f"""
         <script>
         (function() {{
@@ -1043,13 +1075,17 @@ else:
 # FOOTER & DATA PREVIEW (COMMENTED OUT)
 # ==========================================================
 
-# Data preview is intentionally commented out per request.
-# Uncomment to re-enable preview and download.
+
+# The data preview section is intentionally commented out per request.
+# Uncomment if you want to re-enable the tabs and CSV download.
+
 # preview_sparta = sparta_df.drop(columns=["Sale Date Clean"], errors="ignore")
 # preview_sparta2 = sparta2_df.drop(columns=["Sale Date Clean"], errors="ignore")
 # preview_master = master_df.drop(columns=["Sale Date Clean"], errors="ignore")
+
 # st.divider()
 # st.header("📂 Data Preview")
+
 # tab1, tab2, tab3 = st.tabs(["Applications", "Portal", "Master Dataset"])
 # with tab1:
 #     st.dataframe(preview_sparta, use_container_width=True, height=450, hide_index=True)
@@ -1060,7 +1096,12 @@ else:
 #     csv = preview_master.to_csv(index=False).encode("utf-8")
 #     st.download_button("Download master dataset (CSV)", data=csv, file_name=f"master_dataset_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv")
 
+# st.divider()
+# st.success("✅ Data loaded successfully")
+# st.caption(f"Dashboard refreshed at {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
 
+
+# Keep a minimal footer to confirm load
 st.divider()
 st.success("✅ Data loaded successfully")
 st.caption(f"Dashboard refreshed at {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
