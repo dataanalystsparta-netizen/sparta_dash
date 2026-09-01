@@ -1,3 +1,7 @@
+# (Full app.py content — corrected)
+# Note: This is the same file I sent previously but with the duplicate assignment removed.
+# Paste the entire contents into your app.py to replace the current version.
+
 """
 Updated app.py - implements sticky headers and click-to-sort on both Monthly KPI and Advisor tables.
 
@@ -677,7 +681,6 @@ else:
                 if isinstance(val, (int, np.integer)):
                     m_html += f'<td data-sort="{int(val)}">' + ( "-" if val == 0 else f"{int(val):,}" ) + "</td>"
                 else:
-                    # strings or raw tooltips
                     formatted_val = "-" if (val == 0 or pd.isna(val)) else escape(str(val))
                     if isinstance(val, float):
                         m_html += f'<td data-sort="{val}">{formatted_val}</td>'
@@ -774,8 +777,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
     if advisor_summary.empty:
         st.info("No sales records match the selected tag filters.")
     else:
-        # Default sort: descending APPLICATIONS
-        advisor_summary["APPLICATIONS"] = advisor_summary["Applications"]
         advisor_summary["QA Pass Rate % Val"] = ((advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
         advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
         advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
@@ -798,7 +799,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
         advisor_summary["SALES EXECUTIVE"] = advisor_summary["SALES EXECUTIVE"].replace("", "Unassigned").fillna("Unassigned")
         advisor_summary = advisor_summary.sort_values(by="APPLICATIONS", ascending=False)
 
-        # Build raw tooltips for advisors
+        # Build per-advisor raw breakdown tooltips once (use master_df as source)
         advisor_tooltip_mapping = {
             "QA APPROVED": ("Quality Status", "Quality Status Clean", "Approved"),
             "QA REWORK": ("Quality Status", "Quality Status Clean", "Rework"),
@@ -813,6 +814,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
         }
 
         raw_tooltips = {}
+        # Pre-normalize advisor column in master_df for matching
         master_df["_advisor_norm"] = master_df["Advisor"].fillna("").astype(str).str.strip().str.lower()
         for _, r in advisor_summary.iterrows():
             adv_display = str(r["SALES EXECUTIVE"])
@@ -822,6 +824,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
             for k, (raw_col, clean_col, target_val) in advisor_tooltip_mapping.items():
                 adv_tooltips[k] = format_raw_breakdown(subset, raw_col, clean_col, target_val)
             raw_tooltips[adv_display] = adv_tooltips
+        # drop the helper column
         master_df.drop(columns=["_advisor_norm"], inplace=True, errors=True)
 
         numeric_cols = {
@@ -888,7 +891,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
 
         # Build advisor HTML table (use components.html to allow JS)
         advisor_table_id = "advisor-perf-table"
-        # compute height based on rows, cap it
         advisor_table_height = min(900, max(240, 90 + len(advisor_summary)*45))
         adv_html = f'''
         <style>
@@ -941,7 +943,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
             style = header_styles.get(c, "background-color:#f8fafc;color:#475569;")
             adv_html += f'<th style="{style}">{c}</th>'
         adv_html += '</tr></thead><tbody>'
-        # rows
         for _, r in advisor_summary.iterrows():
             adv_html += "<tr>"
             for c in visible_cols:
@@ -972,7 +973,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
                     else:
                         adv_html += f'<td data-sort="{escape(str(val))}">{escape(str(val))}</td>'
             adv_html += "</tr>"
-        # totals row
         adv_html += '<tr class="totals-row">'
         for c in visible_cols:
             if c == "SALES EXECUTIVE":
@@ -996,10 +996,8 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 else:
                     adv_html += "<td data-sort='-'>-</td>"
         adv_html += "</tr>"
-
         adv_html += "</tbody></table></div>"
 
-        # Sorting JS for advisor table; keeps totals-row at bottom
         adv_html += f"""
         <script>
         (function() {{
