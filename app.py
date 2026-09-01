@@ -1,17 +1,10 @@
 """
 Updated app.py - refactored and improved version of the Sparta Sales Dashboard.
 
-Key improvements (non-exhaustive):
-- Removed duplicated code and consolidated logic.
-- Uses st.cache_resource for the Google Sheets API client.
-- Vectorized status categorization (pandas series operations).
-- Precomputes normalized advisor tag sets for faster membership checks.
-- Safer Sheets requests with simple retry/backoff and logging.
-- Uses html.escape for tooltip content escaping.
-- Makes the monthly KPI year selectable (defaults to current year).
-- Adds a CSV download button for the master dataset preview.
-- Keeps styling inline for now (can be externalized later).
-- Added basic type hints and minimal error handling.
+Changes since last iteration:
+- Commented out the Data Preview section (tabs + download) per request.
+- Added per-advisor raw-status tooltips to the Sales Executive Performance Breakdown table.
+- Tooltips are generated using format_raw_breakdown() from the advisor's subset of master_df.
 """
 
 import logging
@@ -50,7 +43,6 @@ st.set_page_config(
 )
 
 # CSS (kept inline for single-file convenience)
-# Consider moving to static/css/dashboard.css for maintainability
 st.markdown(
     """
 <style>
@@ -65,14 +57,11 @@ st.markdown(
 # ==========================================================
 # CONFIG / CONSTANTS
 # ==========================================================
-# Prefer storing sensitive/overridable settings in st.secrets or environment variables.
-# We provide fallback defaults for local development convenience.
 SPREADSHEET_ID: str = st.secrets.get("SPREADSHEET_ID", "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ")
 APPLICATION_SHEET: str = st.secrets.get("APPLICATION_SHEET", "Sparta")
 LIVE_SHEET: str = st.secrets.get("LIVE_SHEET", "Sparta2")
 SCOPES: List[str] = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-# Advisor tag lists (these can also be moved to st.secrets or a config file)
 NEW_ADVISORS = ["Subhodeep", "Ravikant", "Priyanshu", "Kajal", "Vishal", "Aryan", "Shivam"]
 CUSTOMER_SERVICE_ADVISORS = ["Aman", "Ravi Inbound", "Santosh Joshi", "Vijender", "Laxmi Narayan"]
 LEFT_ADVISORS = [
@@ -82,7 +71,6 @@ LEFT_ADVISORS = [
     "Veer", "Yash", "Sudhanshu", "Rishabh", "Krrish", "Anshu", "Edwin", "Sravan"
 ]
 
-# Precompute normalized sets for fast membership checks
 NEW_ADVISORS_SET = {a.strip().lower() for a in NEW_ADVISORS}
 CS_ADVISORS_SET = {a.strip().lower() for a in CUSTOMER_SERVICE_ADVISORS}
 LEFT_ADVISORS_SET = {a.strip().lower() for a in LEFT_ADVISORS}
@@ -92,10 +80,6 @@ LEFT_ADVISORS_SET = {a.strip().lower() for a in LEFT_ADVISORS}
 # ==========================================================
 @st.cache_resource
 def get_google_service():
-    """
-    Build and cache the Google Sheets client (resource-like).
-    Expects service account info to be provided in st.secrets["gcp_service_account"].
-    """
     if "gcp_service_account" not in st.secrets:
         raise RuntimeError("Missing gcp_service_account in Streamlit secrets.")
     credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
@@ -104,10 +88,6 @@ def get_google_service():
     return service
 
 def load_sheet(sheet_name: str, max_retries: int = 3, backoff: float = 1.0) -> pd.DataFrame:
-    """
-    Load a sheet range (entire sheet) into a DataFrame.
-    Retries on transient failures with a simple exponential backoff.
-    """
     service = get_google_service()
     for attempt in range(1, max_retries + 1):
         try:
@@ -130,10 +110,8 @@ def load_sheet(sheet_name: str, max_retries: int = 3, backoff: float = 1.0) -> p
             logger.exception("Unexpected error reading sheet %s (attempt %d/%d): %s", sheet_name, attempt, max_retries, e)
         if attempt < max_retries:
             time.sleep(backoff * (2 ** (attempt - 1)))
-    # Final attempt without swallow
     raise RuntimeError(f"Failed to load sheet {sheet_name} after {max_retries} attempts")
 
-# Cache sheet reads (pure data)
 @st.cache_data(ttl=300, show_spinner=False)
 def load_sheet_cached(sheet_name: str) -> pd.DataFrame:
     return load_sheet(sheet_name)
@@ -167,15 +145,12 @@ def parse_mixed_dates_value(val) -> pd.Timestamp:
     return pd.to_datetime(val_str, errors="coerce", dayfirst=True)
 
 def parse_date_series(series: pd.Series) -> pd.Series:
-    # vectorized application but still robust
     return series.apply(parse_mixed_dates_value)
 
 def format_date_ddmmyyyy(series: pd.Series) -> pd.Series:
-    # Accepts a series of raw strings or datetimes; returns strings like "DD/MM/YYYY" or ""
     parsed = parse_date_series(series)
     return parsed.dt.strftime("%d/%m/%Y").fillna("")
 
-# Vectorized categorization functions that expect a Series
 def categorize_quality_status_series(s: pd.Series) -> pd.Series:
     s_norm = s.fillna("").astype(str).str.strip().str.lower()
     pending_mask = s_norm.isin(["", "(blank)", "nan", "none"])
@@ -211,7 +186,6 @@ def categorize_portal_status_series(s: pd.Series) -> pd.Series:
         index=s.index,
     )
 
-# Raw status breakdown for tooltip text (kept similar to original)
 def get_raw_breakdown(df: pd.DataFrame, raw_col: str, clean_col: str, target_val: str):
     if raw_col not in df.columns or clean_col not in df.columns:
         return []
@@ -231,7 +205,7 @@ def format_raw_breakdown(df: pd.DataFrame, raw_col: str, clean_col: str, target_
     return "Raw Status Breakdown\n" + "\n".join(lines) + f"\nTotal: {total}"
 
 # ==========================================================
-# DATA LOADING (cleaned & vectorized)
+# DATA LOADING
 # ==========================================================
 @st.cache_data(ttl=300, show_spinner=False)
 def load_sparta() -> pd.DataFrame:
@@ -262,7 +236,6 @@ def load_sparta() -> pd.DataFrame:
     df = df[keep_columns].copy()
     if "Telephone No." in df.columns:
         df["Telephone No."] = clean_phone(df["Telephone No."])
-    # parse Sale Date into datetime for calculations and keep formatted strings for display
     if "Sale Date" in df.columns:
         df["Sale Date Clean"] = parse_date_series(df["Sale Date"])
         df["Sale Date"] = format_date_ddmmyyyy(df["Sale Date"])
@@ -327,13 +300,11 @@ def build_master_dataframe(app_df: pd.DataFrame, portal_df: pd.DataFrame) -> pd.
     if "Telephone No." in apps.columns and "Telephone No." in portal.columns:
         merged = apps.merge(portal, on="Telephone No.", how="left", suffixes=("", "_portal"))
     else:
-        # If no telephone number to join on, return apps with portal columns appended as NaN
         merged = apps.copy()
     return merged
 
 master_raw_df = build_master_dataframe(sparta_df, sparta2_df)
 
-# Create Month_Year and Period_Sort where possible; keep those columns consistent
 def assign_periods(df: pd.DataFrame, date_col: str = "Sale Date Clean", default_period: str = "2026-01"):
     if date_col in df.columns and not df[date_col].dropna().empty:
         df["Month_Year"] = df[date_col].dt.strftime("%B %Y")
@@ -370,7 +341,6 @@ with filter_col2:
 with filter_col3:
     end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, format="DD/MM/YYYY")
 
-# Tag visibility toggles
 st.markdown("##### Tag Visibility Filters")
 tag_col1, tag_col2, tag_col3, tag_col4 = st.columns([1, 1, 1, 1])
 with tag_col1:
@@ -387,7 +357,6 @@ if start_date > end_date:
     master_df = master_raw_df.copy()
     filtered_portal_df = sparta2_df.copy()
 else:
-    # date_mask uses underlying cleaned datetime column
     if "Sale Date Clean" in master_raw_df.columns:
         date_mask = (master_raw_df["Sale Date Clean"].dt.date >= start_date) & (master_raw_df["Sale Date Clean"].dt.date <= end_date)
         if selected_month != "All Months":
@@ -485,7 +454,6 @@ all_periods = sorted(list(set(monthly_app_df["Period_Sort"]).union(set(monthly_p
 if not all_periods:
     st.info(f"No {selected_year} monthly data available for the KPI summary table.")
 else:
-    # Build monthly aggregates via groupby (more efficient than re-filtering many times)
     def build_monthly_summary(month_periods):
         rows = []
         for period in month_periods:
@@ -504,7 +472,6 @@ else:
             m_p_committed = count_status(m_portal, "Portal Status Clean", "Committed")
             m_p_cancelled = count_status(m_portal, "Portal Status Clean", "Cancelled")
 
-            # raw breakdowns for tooltips
             qa_approved_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Approved")
             qa_rework_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Rework")
             qa_cancelled_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Cancelled")
@@ -549,7 +516,6 @@ else:
 
     monthly_summary_df = build_monthly_summary(all_periods)
 
-    # totals row
     if not monthly_summary_df.empty:
         tot_apps = monthly_summary_df["APPLICATIONS"].sum()
         totals_row = {
@@ -581,7 +547,6 @@ else:
         }
         monthly_summary_df = pd.concat([monthly_summary_df, pd.DataFrame([totals_row])], ignore_index=True)
 
-    # Helpers to render pill badges (returns HTML)
     def render_pill(val_float: float, thresholds: List[float], good_bg: str = "#d1fae5"):
         val_str = f"{val_float:.1f}%"
         high, med = thresholds
@@ -593,7 +558,6 @@ else:
             bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
         return f'<span style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 2px 8px; font-weight:700;">{val_str}</span>'
 
-    # Render HTML table (keeps the original styling and tooltip approach)
     display_columns = [
         "MONTH", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
         "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
@@ -677,13 +641,12 @@ else:
     components.html(m_html, height=table_height, scrolling=False)
 
 # ==========================================================
-# ADVISOR PERFORMANCE MATRIX
+# ADVISOR PERFORMANCE MATRIX (with per-advisor tooltips)
 # ==========================================================
 st.divider()
 st.subheader("👥 Sales Executive Performance Breakdown")
 
 if "Advisor" in master_df.columns and not master_df.empty:
-    # Aggregate metrics
     advisor_summary = (
         master_df.groupby("Advisor", dropna=False)
             .agg(
@@ -702,7 +665,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
             .reset_index()
     )
 
-    # Apply tag filtering using precomputed sets
     def filter_tagged_rows(row):
         name = (str(row["Advisor"]) or "").strip().lower()
         is_new = name in NEW_ADVISORS_SET
@@ -728,6 +690,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
         advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
         advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
 
+        # Rename for display
         advisor_summary = advisor_summary.rename(columns={
             "Advisor": "SALES EXECUTIVE",
             "Applications": "APPLICATIONS",
@@ -746,7 +709,34 @@ if "Advisor" in master_df.columns and not master_df.empty:
         advisor_summary["SALES EXECUTIVE"] = advisor_summary["SALES EXECUTIVE"].replace("", "Unassigned").fillna("Unassigned")
         advisor_summary = advisor_summary.sort_values(by="APPLICATIONS", ascending=False)
 
-        # Determine visible columns (hide columns with all zeros)
+        # Build per-advisor raw breakdown tooltips once (use master_df as source)
+        advisor_tooltip_mapping = {
+            "QA APPROVED": ("Quality Status", "Quality Status Clean", "Approved"),
+            "QA REWORK": ("Quality Status", "Quality Status Clean", "Rework"),
+            "QA CANCELLED": ("Quality Status", "Quality Status Clean", "Cancelled"),
+            "QA PENDING": ("Quality Status", "Quality Status Clean", "Pending"),
+            "WELCOME DONE": ("Welcome Status", "Welcome Status Clean", "Done"),
+            "WELCOME CANCELLED": ("Welcome Status", "Welcome Status Clean", "Cancelled"),
+            "WELCOME PENDING": ("Welcome Status", "Welcome Status Clean", "Pending"),
+            "COMMITTED REM.": ("Portal Status", "Portal Status Clean", "Committed"),
+            "LIVE": ("Portal Status", "Portal Status Clean", "Live"),
+            "LIVE CANCELLED": ("Portal Status", "Portal Status Clean", "Cancelled"),
+        }
+
+        raw_tooltips = {}
+        # Pre-normalize advisor column in master_df for matching
+        master_df["_advisor_norm"] = master_df["Advisor"].fillna("").astype(str).str.strip().str.lower()
+        for _, r in advisor_summary.iterrows():
+            adv_display = str(r["SALES EXECUTIVE"])
+            adv_norm = adv_display.strip().lower()
+            subset = master_df[master_df["_advisor_norm"] == adv_norm]
+            adv_tooltips = {}
+            for k, (raw_col, clean_col, target_val) in advisor_tooltip_mapping.items():
+                adv_tooltips[k] = format_raw_breakdown(subset, raw_col, clean_col, target_val)
+            raw_tooltips[adv_display] = adv_tooltips
+        # drop the helper column
+        master_df.drop(columns=["_advisor_norm"], inplace=True, errors=True)
+
         numeric_cols = {
             "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
             "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED"
@@ -774,12 +764,10 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 if "LIVE" in visible_cols:
                     visible_cols.append(col)
 
-        # small pill renderers
         def render_qa_pill(v): return render_pill(v, [75.0, 51.0])
         def render_welcome_pill(v): return render_pill(v, [61.0, 51.0])
         def render_live_pill(v): return render_pill(v, [41.0, 21.0])
 
-        # header styles consistent with monthly table
         header_styles = {
             "SALES EXECUTIVE": "background-color:#f1f5f9;color:#334155;",
             "APPLICATIONS": "background-color:#eff6ff;color:#1e40af;",
@@ -798,7 +786,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
             "Live Conversion %": "background-color:#f0fdfa;color:#0f766e;",
         }
 
-        # Build HTML table for advisors
+        # Build HTML table for advisors including tooltips for numeric KPI cells
         html_parts = ['<style>.perf-table{width:100%;border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;font-size:0.88rem;} .perf-table th{padding:10px 12px;font-weight:800;font-size:0.78rem;text-transform:uppercase;border-bottom:2px solid #e2e8f0;} .perf-table td{padding:8px 12px;border-bottom:1px solid #f1f5f9;} .tag{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;} .new{background:#ede9fe;color:#6d28d9;} .cs{background:#e0f2fe;color:#0369a1;} .left{background:#fee2e2;color:#991b1b;}</style>']
         html_parts.append('<div style="overflow-x:auto;"><table class="perf-table"><thead><tr>')
         for c in visible_cols:
@@ -829,7 +817,16 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 else:
                     val = r[c]
                     formatted_val = "-" if val == 0 or pd.isna(val) else f"{int(val):,}" if isinstance(val, (int, np.integer)) else escape(str(val))
-                    html_parts.append(f"<td>{formatted_val}</td>")
+                    # attach tooltip if available
+                    adv_display = str(r["SALES EXECUTIVE"])
+                    tooltip_text = ""
+                    if adv_display in raw_tooltips:
+                        tooltip_text = raw_tooltips[adv_display].get(c, "")
+                    if tooltip_text and val != 0:
+                        tooltip_html = escape(str(tooltip_text)).replace("\n", "&#10;")
+                        html_parts.append(f'<td title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>')
+                    else:
+                        html_parts.append(f"<td>{formatted_val}</td>")
             html_parts.append("</tr>")
         html_parts.append("</tbody></table></div>")
         st.markdown("".join(html_parts), unsafe_allow_html=True)
@@ -837,27 +834,36 @@ else:
     st.info("No sales records available for the selected date or month filter.")
 
 # ==========================================================
-# FOOTER & DATA PREVIEW + DOWNLOAD
+# FOOTER & DATA PREVIEW (COMMENTED OUT)
 # ==========================================================
-# Drop internal helper datetime columns for display preview to keep UI clean
-preview_sparta = sparta_df.drop(columns=["Sale Date Clean"], errors="ignore")
-preview_sparta2 = sparta2_df.drop(columns=["Sale Date Clean"], errors="ignore")
-preview_master = master_df.drop(columns=["Sale Date Clean"], errors="ignore")
 
-st.divider()
-st.header("📂 Data Preview")
+"""
+# The data preview section is intentionally commented out per request.
+# Uncomment if you want to re-enable the tabs and CSV download.
 
-tab1, tab2, tab3 = st.tabs(["Applications", "Portal", "Master Dataset"])
-with tab1:
-    st.dataframe(preview_sparta, use_container_width=True, height=450, hide_index=True)
-with tab2:
-    st.dataframe(preview_sparta2, use_container_width=True, height=450, hide_index=True)
-with tab3:
-    st.dataframe(preview_master, use_container_width=True, height=500, hide_index=True)
-    # download button
-    csv = preview_master.to_csv(index=False).encode("utf-8")
-    st.download_button("Download master dataset (CSV)", data=csv, file_name=f"master_dataset_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv")
+# preview_sparta = sparta_df.drop(columns=["Sale Date Clean"], errors="ignore")
+# preview_sparta2 = sparta2_df.drop(columns=["Sale Date Clean"], errors="ignore")
+# preview_master = master_df.drop(columns=["Sale Date Clean"], errors="ignore")
 
+# st.divider()
+# st.header("📂 Data Preview")
+
+# tab1, tab2, tab3 = st.tabs(["Applications", "Portal", "Master Dataset"])
+# with tab1:
+#     st.dataframe(preview_sparta, use_container_width=True, height=450, hide_index=True)
+# with tab2:
+#     st.dataframe(preview_sparta2, use_container_width=True, height=450, hide_index=True)
+# with tab3:
+#     st.dataframe(preview_master, use_container_width=True, height=500, hide_index=True)
+#     csv = preview_master.to_csv(index=False).encode("utf-8")
+#     st.download_button("Download master dataset (CSV)", data=csv, file_name=f"master_dataset_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv")
+
+# st.divider()
+# st.success("✅ Data loaded successfully")
+# st.caption(f"Dashboard refreshed at {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
+"""
+
+# Keep a minimal footer to confirm load
 st.divider()
 st.success("✅ Data loaded successfully")
 st.caption(f"Dashboard refreshed at {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
