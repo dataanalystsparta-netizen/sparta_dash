@@ -1,14 +1,15 @@
 """
-Updated app.py - sticky headers, sortable tables, and totals row fixed for monthly table.
+Updated app.py — sticky headers, sortable tables, and fixed-month sorting.
 
-Key fixes in this version:
-- Monthly totals row is rendered with class="totals-row" so it remains pinned at the bottom after sorting.
-- Monthly and Advisor tables have sticky headers and click-to-sort JS.
-- Advisor table totals row stays pinned as before.
-- The earlier duplicated-column bug (APPLICATIONS) was removed.
-- Data Preview remains commented out.
+What changed for month sorting:
+- Each monthly row now includes PERIOD_KEY = year * 100 + month (e.g., 202601).
+- The MONTH cell uses data-sort=PERIOD_KEY so JS sorts by numeric month order instead of alphabetically.
 
-Paste this file into your working copy to replace the current app.py.
+Other features retained:
+- Sticky headers for both Monthly and Advisor tables.
+- Click-to-sort for all columns (JS-based), with totals-row excluded and re-appended to bottom.
+- Advisor table default is sorted by APPLICATIONS descending.
+- Totals rows are pinned.
 """
 
 import logging
@@ -46,7 +47,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# CSS (kept inline for single-file convenience)
+# Small base CSS
 st.markdown(
     """
 <style>
@@ -437,7 +438,7 @@ else:
     st.info("No active KPIs for the selected filters.")
 
 # ==========================================================
-# MONTHLY KPI BREAKDOWN (SELECTABLE YEAR) - with sticky header & sorting
+# MONTHLY KPI BREAKDOWN (SELECTABLE YEAR) - with sticky header & sorting (month sorts by PERIOD_KEY)
 # ==========================================================
 st.divider()
 st.subheader("📅 Monthly KPI Breakdown")
@@ -461,6 +462,7 @@ else:
         rows = []
         for period in month_periods:
             m_str = period.strftime("%B %Y")
+            period_key = int(period.year) * 100 + int(period.month)  # e.g., 202601
             m_app = monthly_app_df[monthly_app_df["Period_Sort"] == period]
             m_portal = monthly_portal_df[monthly_portal_df["Period_Sort"] == period]
             m_total_apps = len(m_app)
@@ -490,6 +492,7 @@ else:
 
             rows.append({
                 "MONTH": m_str,
+                "PERIOD_KEY": period_key,
                 "APPLICATIONS": m_total_apps,
                 "QA APPROVED": m_qa_approved,
                 "QA APPROVED RAW": qa_approved_raw,
@@ -523,6 +526,7 @@ else:
         tot_apps = monthly_summary_df["APPLICATIONS"].sum()
         totals_row = {
             "MONTH": "Total",
+            "PERIOD_KEY": 999999,  # ensure it's a big key (though totals-row is excluded from sorting)
             "APPLICATIONS": tot_apps,
             "QA APPROVED": monthly_summary_df["QA APPROVED"].sum(),
             "QA APPROVED RAW": format_raw_breakdown(monthly_app_df, "Quality Status", "Quality Status Clean", "Approved"),
@@ -661,7 +665,7 @@ else:
         m_html += f'<th style="{th_style}">{col_name}</th>'
     m_html += "</tr></thead><tbody>"
 
-    # Updated loop: mark totals row with class="totals-row" so sorter keeps it pinned
+    # Render rows, marking totals row with class="totals-row"
     for _, row in monthly_summary_df.iterrows():
         is_total = str(row.get("MONTH", "")).strip().lower() == "total"
         if is_total:
@@ -671,8 +675,10 @@ else:
 
         for col_name in display_columns:
             if col_name == "MONTH":
+                # Use PERIOD_KEY for numeric sorting so months sort chronologically
+                period_key = int(row.get("PERIOD_KEY", 0)) if pd.notna(row.get("PERIOD_KEY", None)) else 0
                 cell_text = escape(str(row["MONTH"]))
-                m_html += f'<td data-sort="{escape(str(row["MONTH"]))}">{cell_text}</td>'
+                m_html += f'<td data-sort="{period_key}">{cell_text}</td>'
             elif col_name == "QA Pass Rate %":
                 val = float(row["QA Pass Rate % Val"])
                 m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[75.0, 51.0])}</td>'
@@ -696,7 +702,7 @@ else:
 
     m_html += "</tbody></table></div></div>"
 
-    # Sorting JS for monthly table - handles numeric/text; keeps totals-row at bottom
+    # Sorting JS for monthly table - uses data-sort (numeric) and keeps totals-row at bottom
     m_html += f"""
     <script>
     (function() {{
@@ -1072,36 +1078,8 @@ else:
     st.info("No sales records available for the selected date or month filter.")
 
 # ==========================================================
-# FOOTER & DATA PREVIEW (COMMENTED OUT)
+# FOOTER
 # ==========================================================
-
-
-# The data preview section is intentionally commented out per request.
-# Uncomment if you want to re-enable the tabs and CSV download.
-
-# preview_sparta = sparta_df.drop(columns=["Sale Date Clean"], errors="ignore")
-# preview_sparta2 = sparta2_df.drop(columns=["Sale Date Clean"], errors="ignore")
-# preview_master = master_df.drop(columns=["Sale Date Clean"], errors="ignore")
-
-# st.divider()
-# st.header("📂 Data Preview")
-
-# tab1, tab2, tab3 = st.tabs(["Applications", "Portal", "Master Dataset"])
-# with tab1:
-#     st.dataframe(preview_sparta, use_container_width=True, height=450, hide_index=True)
-# with tab2:
-#     st.dataframe(preview_sparta2, use_container_width=True, height=450, hide_index=True)
-# with tab3:
-#     st.dataframe(preview_master, use_container_width=True, height=500, hide_index=True)
-#     csv = preview_master.to_csv(index=False).encode("utf-8")
-#     st.download_button("Download master dataset (CSV)", data=csv, file_name=f"master_dataset_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv")
-
-# st.divider()
-# st.success("✅ Data loaded successfully")
-# st.caption(f"Dashboard refreshed at {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
-
-
-# Keep a minimal footer to confirm load
 st.divider()
 st.success("✅ Data loaded successfully")
 st.caption(f"Dashboard refreshed at {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
