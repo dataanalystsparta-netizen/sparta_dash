@@ -1,15 +1,13 @@
 """
-Updated app.py — sticky headers, sortable tables, and fixed-month sorting.
+Updated app.py — restores tooltips for Monthly KPI table and retains sortable MONTH (chronological).
 
-What changed for month sorting:
-- Each monthly row now includes PERIOD_KEY = year * 100 + month (e.g., 202601).
-- The MONTH cell uses data-sort=PERIOD_KEY so JS sorts by numeric month order instead of alphabetically.
+Key fixes:
+- Monthly KPI cells (QA/Welcome/Live counts) now include native browser tooltips showing raw status breakdowns when available.
+- MONTH column sorts by PERIOD_KEY (numeric YYYYMM) so months sort chronologically.
+- Totals row remains pinned to the bottom after sorting.
+- Advisor tooltips are preserved.
 
-Other features retained:
-- Sticky headers for both Monthly and Advisor tables.
-- Click-to-sort for all columns (JS-based), with totals-row excluded and re-appended to bottom.
-- Advisor table default is sorted by APPLICATIONS descending.
-- Totals rows are pinned.
+Replace your current app.py with this file.
 """
 
 import logging
@@ -590,6 +588,20 @@ else:
         "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
     }
 
+    # Tooltip mapping for monthly table columns -> RAW column name
+    monthly_tooltip_map = {
+        "QA APPROVED": "QA APPROVED RAW",
+        "QA REWORK": "QA REWORK RAW",
+        "QA CANCELLED": "QA CANCELLED RAW",
+        "QA PENDING": "QA PENDING RAW",
+        "WELCOME DONE": "WELCOME DONE RAW",
+        "WELCOME CANCELLED": "WELCOME CANCELLED RAW",
+        "WELCOME PENDING": "WELCOME PENDING RAW",
+        "COMMITTED REM.": "COMMITTED RAW",
+        "LIVE": "LIVE RAW",
+        "LIVE CANCELLED": "LIVE CANCELLED RAW",
+    }
+
     # Build monthly table HTML with sticky header, scrollable body, and sorting JS
     table_height = max(150, 95 + (len(monthly_summary_df) * 45))
     monthly_table_id = "monthly-kpi-table"
@@ -690,14 +702,31 @@ else:
                 m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[41.0, 21.0])}</td>'
             else:
                 val = row.get(col_name, 0)
+                # Check for raw tooltip column
+                raw_column = monthly_tooltip_map.get(col_name)
+                raw_text = row.get(raw_column, "") if raw_column else ""
+                # For numeric values, supply numeric data-sort
                 if isinstance(val, (int, np.integer)):
-                    m_html += f'<td data-sort="{int(val)}">' + ("-" if int(val) == 0 else f"{int(val):,}") + "</td>"
+                    formatted_val = "-" if int(val) == 0 else f"{int(val):,}"
+                    if raw_text and int(val) != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        m_html += f'<td data-sort="{int(val)}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+                    else:
+                        m_html += f'<td data-sort="{int(val)}">{formatted_val}</td>'
                 else:
                     formatted_val = "-" if (val == 0 or pd.isna(val)) else escape(str(val))
                     if isinstance(val, float):
-                        m_html += f'<td data-sort="{val}">{formatted_val}</td>'
+                        if raw_text and val != 0:
+                            tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                            m_html += f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+                        else:
+                            m_html += f'<td data-sort="{val}">{formatted_val}</td>'
                     else:
-                        m_html += f'<td data-sort="{escape(str(val))}">{formatted_val}</td>'
+                        if raw_text and str(val) not in ("0", "-", ""):
+                            tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                            m_html += f'<td data-sort="{escape(str(val))}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+                        else:
+                            m_html += f'<td data-sort="{escape(str(val))}">{formatted_val}</td>'
         m_html += "</tr>"
 
     m_html += "</tbody></table></div></div>"
