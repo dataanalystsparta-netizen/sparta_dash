@@ -160,13 +160,13 @@ APPLICATION_SHEET = "Sparta"
 LIVE_SHEET = "Sparta2"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-NEW_ADVISORS = ["Subhodeep","Ravikant","Priyanshu","Kajal","Aryan","Shivam"]
+NEW_ADVISORS = ["Subhodeep","Ravikant","Priyanshu","Kajal","Vishal","Aryan","Shivam"]
 
 CUSTOMER_SERVICE_ADVISORS = ["Aman","Ravi Inbound","Santosh Joshi","Vijender","Laxmi Narayan"]
 
 LEFT_ADVISORS = ["Gaurav","Guru","Niki","Shaheen","Manmeet","Gungun","Rani","Archana","Deepali","Sushanshu",
                  "Supreme","Tokivi","Sangeeta","Vijay","Khushbu","Kushal","Nishant","Pawan","Mehak","Khushboo","Ashima",
-                 "Vishal","Aarti","Abhay","Diwakar","Manshay","Khusboo","Manmet","Lakshay","Sneha","Swarali","Monica","Paras",
+                 "Aarti","Abhay","Diwakar","Manshay","Khusboo","Manmet","Lakshay","Sneha","Swarali","Monica","Paras",
                  "Veer","Yash","Sudhanshu","Rishabh","Krrish","Anshu","Edwin","Sravan"]
 def get_google_service():
     credentials = Credentials.from_service_account_info(
