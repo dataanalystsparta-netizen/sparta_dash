@@ -1,17 +1,20 @@
 """
-Updated app.py - adds a totals row to the Sales Executive Performance Breakdown table.
+Updated app.py - full file with sticky table headers for monthly and advisor tables.
 
-Notes:
-- Totals row sums numeric columns and computes overall percentage pills.
-- Totals raw-status tooltips are generated using the filtered master_df (same source as the advisor rows).
-- The Data Preview section remains commented out per earlier request.
+Key changes in this version:
+- Sticky headers for the Monthly KPI Breakdown (inside components.html iframe).
+- Sticky headers for the Sales Executive Performance Breakdown (inline HTML via st.markdown).
+- Totals row remains in the advisor table.
+- Data Preview remains commented out per previous request.
+- No commits made; paste into your working copy to test.
 """
+
 import logging
 import re
 import time
 from datetime import datetime
 from html import escape
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -433,7 +436,7 @@ else:
     st.info("No active KPIs for the selected filters.")
 
 # ==========================================================
-# MONTHLY KPI BREAKDOWN (SELECTABLE YEAR)
+# MONTHLY KPI BREAKDOWN (SELECTABLE YEAR) - with sticky header
 # ==========================================================
 st.divider()
 st.subheader("📅 Monthly KPI Breakdown")
@@ -582,19 +585,76 @@ else:
         "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
     }
 
-    m_html = """
+    # Build monthly table HTML with sticky header and scrollable body (iframe content)
+    table_height = max(150, 95 + (len(monthly_summary_df) * 45))
+    m_html = f"""
     <style>
-    .monthly-kpi-table { width:100%; border-collapse:collapse; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial; font-size:0.88rem; }
-    .monthly-kpi-table th { padding:10px 12px; font-weight:800; font-size:0.78rem; text-transform:uppercase; text-align:center; border-bottom:2px solid #e2e8f0; }
-    .monthly-kpi-table td { padding:10px 12px; text-align:center; border-bottom:1px solid #f1f5f9; }
-    .monthly-kpi-table td:first-child, .monthly-kpi-table th:first-child { text-align:left; }
-    .monthly-kpi-table tr:last-child { font-weight:800; background-color:#f8fafc; }
+        .monthly-kpi-table-container {{
+            width: 100%;
+            overflow-x: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            margin-bottom: 20px;
+            max-height: {table_height}px;
+        }}
+        .monthly-kpi-inner {{
+            max-height: {table_height}px;
+            overflow: auto;
+        }}
+        .monthly-kpi-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 0.88rem;
+            background-color: #ffffff;
+        }}
+        .monthly-kpi-table th {{
+            padding: 12px 14px;
+            font-weight: 800;
+            font-size: 0.78rem;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            text-align: center;
+            border-bottom: 2px solid #e2e8f0;
+            border-right: 1px solid #f1f5f9;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            background: #ffffff;
+        }}
+        .monthly-kpi-table th:first-child {{
+            text-align: left;
+        }}
+        .monthly-kpi-table td {{
+            padding: 10px 14px;
+            text-align: center;
+            border-bottom: 1px solid #f1f5f9;
+            border-right: 1px solid #f8fafc;
+            color: #1e293b;
+        }}
+        .monthly-kpi-table td:first-child {{
+            text-align: left;
+            font-weight: 700;
+            color: #0f172a;
+        }}
+        .monthly-kpi-table tr:last-child {{
+            font-weight: 800;
+            background-color: #f8fafc;
+            border-top: 2px solid #cbd5e1;
+        }}
+        .monthly-kpi-table tr:hover:not(:last-child) {{
+            background-color: #f8fafc;
+        }}
     </style>
-    <div style="width:100%; overflow-x:auto;">
-    <table class="monthly-kpi-table"><thead><tr>
+    <div class="monthly-kpi-table-container">
+      <div class="monthly-kpi-inner">
+        <table class="monthly-kpi-table">
+            <thead>
+                <tr>
     """
     for col_name in display_columns:
-        th_style = m_header_styles.get(col_name, "background-color:#f8fafc;color:#475569;")
+        th_style = m_header_styles.get(col_name, "background-color: #f8fafc; color: #475569;")
         m_html += f'<th style="{th_style}">{col_name}</th>'
     m_html += "</tr></thead><tbody>"
 
@@ -634,13 +694,13 @@ else:
                 else:
                     m_html += f"<td>{formatted_val}</td>"
         m_html += "</tr>"
-    m_html += "</tbody></table></div>"
 
-    table_height = max(150, 90 + (len(monthly_summary_df) * 45))
+    m_html += "</tbody></table></div></div>"
+
     components.html(m_html, height=table_height, scrolling=False)
 
 # ==========================================================
-# ADVISOR PERFORMANCE MATRIX (with totals row)
+# ADVISOR PERFORMANCE MATRIX (with totals row and sticky header)
 # ==========================================================
 st.divider()
 st.subheader("👥 Sales Executive Performance Breakdown")
@@ -802,12 +862,59 @@ if "Advisor" in master_df.columns and not master_df.empty:
             totals_tooltips[k] = format_raw_breakdown(master_df, raw_col, clean_col, target_val)
 
         # Build HTML table for advisors including tooltips for numeric KPI cells + totals row
-        html_parts = ['<style>.perf-table{width:100%;border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;font-size:0.88rem;} .perf-table th{padding:10px 12px;font-weight:800;font-size:0.78rem;text-transform:uppercase;border-bottom:2px solid #e2e8f0;} .perf-table td{padding:8px 12px;border-bottom:1px solid #f1f5f9;} .tag{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;} .new{background:#ede9fe;color:#6d28d9;} .cs{background:#e0f2fe;color:#0369a1;} .left{background:#fee2e2;color:#991b1b;} .totals-row{font-weight:800;background-color:#f8fafc;}</style>']
-        html_parts.append('<div style="overflow-x:auto;"><table class="perf-table"><thead><tr>')
+        html_parts = ['''
+        <style>
+          .perf-table-container {
+            width: 100%;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            margin-bottom: 16px;
+            max-height: 520px;
+            overflow: auto;
+          }
+          .perf-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial;
+            font-size: 0.88rem;
+            background-color: #ffffff;
+          }
+          .perf-table th {
+            padding: 10px 12px;
+            font-weight: 800;
+            font-size: 0.78rem;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            text-align: center;
+            border-bottom: 2px solid #e2e8f0;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            background: #ffffff;
+          }
+          .perf-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #f1f5f9;
+          }
+          .perf-table td:first-child {
+            text-align: left;
+            font-weight: 700;
+            color: #0f172a;
+          }
+          .tag { padding:2px 6px; border-radius:6px; font-weight:700; margin-left:6px; font-size:0.68rem; display:inline-block; vertical-align:middle; }
+          .new { background:#ede9fe; color:#6d28d9; }
+          .cs { background:#e0f2fe; color:#0369a1; }
+          .left { background:#fee2e2; color:#991b1b; }
+          .totals-row { font-weight:800; background-color:#f8fafc; }
+        </style>
+        <div class="perf-table-container"><table class="perf-table"><thead><tr>
+        ''']
+
         for c in visible_cols:
             style = header_styles.get(c, "background-color:#f8fafc;color:#475569;")
             html_parts.append(f'<th style="{style}">{c}</th>')
-        html_parts.append('</tr></thead><tbody>')
+        html_parts.append("</tr></thead><tbody>")
 
         for _, r in advisor_summary.iterrows():
             html_parts.append("<tr>")
@@ -832,7 +939,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 else:
                     val = r[c]
                     formatted_val = "-" if val == 0 or pd.isna(val) else f"{int(val):,}" if isinstance(val, (int, np.integer)) else escape(str(val))
-                    # attach tooltip if available
                     adv_display = str(r["SALES EXECUTIVE"])
                     tooltip_text = ""
                     if adv_display in raw_tooltips:
@@ -856,11 +962,9 @@ if "Advisor" in master_df.columns and not master_df.empty:
             elif c == "Live Conversion %":
                 html_parts.append(f"<td>{render_live_pill(total_live_pct)}</td>")
             else:
-                # numeric totals
                 if c in numeric_cols:
                     tot_val = int(totals_series.get(c, 0))
                     formatted = "-" if tot_val == 0 else f"{tot_val:,}"
-                    # show totals tooltip if available
                     tooltip_text = totals_tooltips.get(c, "")
                     if tooltip_text and tot_val != 0:
                         tooltip_html = escape(str(tooltip_text)).replace("\n", "&#10;")
@@ -879,7 +983,6 @@ else:
 # ==========================================================
 # FOOTER & DATA PREVIEW (COMMENTED OUT)
 # ==========================================================
-
 
 # The data preview section is intentionally commented out per request.
 # Uncomment if you want to re-enable the tabs and CSV download.
