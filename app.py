@@ -1,12 +1,11 @@
 """
-Updated app.py - refactored and improved version of the Sparta Sales Dashboard.
+Updated app.py - adds a totals row to the Sales Executive Performance Breakdown table.
 
-Changes since last iteration:
-- Commented out the Data Preview section (tabs + download) per request.
-- Added per-advisor raw-status tooltips to the Sales Executive Performance Breakdown table.
-- Tooltips are generated using format_raw_breakdown() from the advisor's subset of master_df.
+Notes:
+- Totals row sums numeric columns and computes overall percentage pills.
+- Totals raw-status tooltips are generated using the filtered master_df (same source as the advisor rows).
+- The Data Preview section remains commented out per earlier request.
 """
-
 import logging
 import re
 import time
@@ -641,7 +640,7 @@ else:
     components.html(m_html, height=table_height, scrolling=False)
 
 # ==========================================================
-# ADVISOR PERFORMANCE MATRIX (with per-advisor tooltips)
+# ADVISOR PERFORMANCE MATRIX (with totals row)
 # ==========================================================
 st.divider()
 st.subheader("👥 Sales Executive Performance Breakdown")
@@ -690,7 +689,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
         advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
         advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
 
-        # Rename for display
         advisor_summary = advisor_summary.rename(columns={
             "Advisor": "SALES EXECUTIVE",
             "Applications": "APPLICATIONS",
@@ -786,8 +784,25 @@ if "Advisor" in master_df.columns and not master_df.empty:
             "Live Conversion %": "background-color:#f0fdfa;color:#0f766e;",
         }
 
-        # Build HTML table for advisors including tooltips for numeric KPI cells
-        html_parts = ['<style>.perf-table{width:100%;border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;font-size:0.88rem;} .perf-table th{padding:10px 12px;font-weight:800;font-size:0.78rem;text-transform:uppercase;border-bottom:2px solid #e2e8f0;} .perf-table td{padding:8px 12px;border-bottom:1px solid #f1f5f9;} .tag{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;} .new{background:#ede9fe;color:#6d28d9;} .cs{background:#e0f2fe;color:#0369a1;} .left{background:#fee2e2;color:#991b1b;}</style>']
+        # Compute totals across visible advisors for numeric columns
+        totals_series = advisor_summary[list(numeric_cols)].sum(numeric_only=True)
+        total_apps = int(totals_series.get("APPLICATIONS", 0))
+        total_qa_approved = int(totals_series.get("QA APPROVED", 0))
+        total_welcome_done = int(totals_series.get("WELCOME DONE", 0))
+        total_live = int(totals_series.get("LIVE", 0))
+
+        # totals percentages (overall)
+        total_qa_pass_pct = (total_qa_approved / total_apps * 100) if total_apps > 0 else 0.0
+        total_welcome_pct = (total_welcome_done / total_apps * 100) if total_apps > 0 else 0.0
+        total_live_pct = (total_live / total_apps * 100) if total_apps > 0 else 0.0
+
+        # totals tooltips using filtered master_df
+        totals_tooltips = {}
+        for k, (raw_col, clean_col, target_val) in advisor_tooltip_mapping.items():
+            totals_tooltips[k] = format_raw_breakdown(master_df, raw_col, clean_col, target_val)
+
+        # Build HTML table for advisors including tooltips for numeric KPI cells + totals row
+        html_parts = ['<style>.perf-table{width:100%;border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;font-size:0.88rem;} .perf-table th{padding:10px 12px;font-weight:800;font-size:0.78rem;text-transform:uppercase;border-bottom:2px solid #e2e8f0;} .perf-table td{padding:8px 12px;border-bottom:1px solid #f1f5f9;} .tag{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;} .new{background:#ede9fe;color:#6d28d9;} .cs{background:#e0f2fe;color:#0369a1;} .left{background:#fee2e2;color:#991b1b;} .totals-row{font-weight:800;background-color:#f8fafc;}</style>']
         html_parts.append('<div style="overflow-x:auto;"><table class="perf-table"><thead><tr>')
         for c in visible_cols:
             style = header_styles.get(c, "background-color:#f8fafc;color:#475569;")
@@ -828,6 +843,34 @@ if "Advisor" in master_df.columns and not master_df.empty:
                     else:
                         html_parts.append(f"<td>{formatted_val}</td>")
             html_parts.append("</tr>")
+
+        # Add totals row
+        html_parts.append('<tr class="totals-row">')
+        for c in visible_cols:
+            if c == "SALES EXECUTIVE":
+                html_parts.append("<td>Total</td>")
+            elif c == "QA Pass Rate %":
+                html_parts.append(f"<td>{render_qa_pill(total_qa_pass_pct)}</td>")
+            elif c == "Welcome Done %":
+                html_parts.append(f"<td>{render_welcome_pill(total_welcome_pct)}</td>")
+            elif c == "Live Conversion %":
+                html_parts.append(f"<td>{render_live_pill(total_live_pct)}</td>")
+            else:
+                # numeric totals
+                if c in numeric_cols:
+                    tot_val = int(totals_series.get(c, 0))
+                    formatted = "-" if tot_val == 0 else f"{tot_val:,}"
+                    # show totals tooltip if available
+                    tooltip_text = totals_tooltips.get(c, "")
+                    if tooltip_text and tot_val != 0:
+                        tooltip_html = escape(str(tooltip_text)).replace("\n", "&#10;")
+                        html_parts.append(f'<td title="{tooltip_html}" style="cursor:help;">{formatted}</td>')
+                    else:
+                        html_parts.append(f"<td>{formatted}</td>")
+                else:
+                    html_parts.append("<td>-</td>")
+        html_parts.append("</tr>")
+
         html_parts.append("</tbody></table></div>")
         st.markdown("".join(html_parts), unsafe_allow_html=True)
 else:
