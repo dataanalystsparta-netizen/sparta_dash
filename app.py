@@ -1,11 +1,11 @@
 """
-Updated app.py — restores tooltips for Monthly KPI table and retains sortable MONTH (chronological).
+Updated app.py — adds tooltips to the Agents (Advisor) table and preserves tooltips in the Monthly KPI table.
 
-Key fixes:
-- Monthly KPI cells (QA/Welcome/Live counts) now include native browser tooltips showing raw status breakdowns when available.
-- MONTH column sorts by PERIOD_KEY (numeric YYYYMM) so months sort chronologically.
-- Totals row remains pinned to the bottom after sorting.
-- Advisor tooltips are preserved.
+Changes:
+- Monthly table: MONTH sorts by PERIOD_KEY (chronological) and shows tooltips on numeric cells (raw breakdowns).
+- Advisor table: each numeric KPI cell and its percent pill (where applicable) show the raw breakdown tooltip for that advisor when available.
+- Totals rows remain pinned and excluded from client-side sorting.
+- Retains previous improvements (sticky headers, sortable columns, robustness fixes).
 
 Replace your current app.py with this file.
 """
@@ -693,19 +693,34 @@ else:
                 m_html += f'<td data-sort="{period_key}">{cell_text}</td>'
             elif col_name == "QA Pass Rate %":
                 val = float(row["QA Pass Rate % Val"])
-                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[75.0, 51.0])}</td>'
+                # Optionally show breakdown tooltip for QA APPROVED on the % cell
+                raw_text = row.get("QA APPROVED RAW", "")
+                if raw_text and val != 0:
+                    tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                    m_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_pill(val, thresholds=[75.0, 51.0])}</td>'
+                else:
+                    m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[75.0, 51.0])}</td>'
             elif col_name == "Welcome Done %":
                 val = float(row["Welcome Done % Val"])
-                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[61.0, 51.0])}</td>'
+                raw_text = row.get("WELCOME DONE RAW", "")
+                if raw_text and val != 0:
+                    tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                    m_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_pill(val, thresholds=[61.0, 51.0])}</td>'
+                else:
+                    m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[61.0, 51.0])}</td>'
             elif col_name == "Live Conversion %":
                 val = float(row["Live Conversion % Val"])
-                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[41.0, 21.0])}</td>'
+                raw_text = row.get("LIVE RAW", "")
+                if raw_text and val != 0:
+                    tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                    m_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_pill(val, thresholds=[41.0, 21.0])}</td>'
+                else:
+                    m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[41.0, 21.0])}</td>'
             else:
                 val = row.get(col_name, 0)
-                # Check for raw tooltip column
                 raw_column = monthly_tooltip_map.get(col_name)
                 raw_text = row.get(raw_column, "") if raw_column else ""
-                # For numeric values, supply numeric data-sort
+                # For numeric values, supply numeric data-sort and attach tooltip if present
                 if isinstance(val, (int, np.integer)):
                     formatted_val = "-" if int(val) == 0 else f"{int(val):,}"
                     if raw_text and int(val) != 0:
@@ -773,7 +788,7 @@ else:
     components.html(m_html, height=table_height, scrolling=False)
 
 # ==========================================================
-# ADVISOR PERFORMANCE MATRIX (with totals row, sticky header & sorting)
+# ADVISOR PERFORMANCE MATRIX (with per-advisor tooltips, totals row, sticky header & sorting)
 # ==========================================================
 st.divider()
 st.subheader("👥 Sales Executive Performance Breakdown")
@@ -1007,6 +1022,8 @@ if "Advisor" in master_df.columns and not master_df.empty:
         adv_html += '</tr></thead><tbody>'
 
         for _, r in advisor_summary.iterrows():
+            adv_display = str(r["SALES EXECUTIVE"])
+            adv_tooltips_local = raw_tooltips.get(adv_display, {})
             adv_html += "<tr>"
             for c in visible_cols:
                 if c == "SALES EXECUTIVE":
@@ -1022,19 +1039,46 @@ if "Advisor" in master_df.columns and not master_df.empty:
                     adv_html += f"<td data-sort=\"{escape(name)}\">{name}{tags_html}</td>"
                 elif c == "QA Pass Rate %":
                     val = float(r["QA Pass Rate % Val"])
-                    adv_html += f'<td data-sort="{val:.6f}">{render_qa_pill(val)}</td>'
+                    raw_text = adv_tooltips_local.get("QA APPROVED", "")
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_qa_pill(val)}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val:.6f}">{render_qa_pill(val)}</td>'
                 elif c == "Welcome Done %":
                     val = float(r["Welcome Done % Val"])
-                    adv_html += f'<td data-sort="{val:.6f}">{render_welcome_pill(val)}</td>'
+                    raw_text = adv_tooltips_local.get("WELCOME DONE", "")
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_welcome_pill(val)}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val:.6f}">{render_welcome_pill(val)}</td>'
                 elif c == "Live Conversion %":
                     val = float(r["Live Conversion % Val"])
-                    adv_html += f'<td data-sort="{val:.6f}">{render_live_pill(val)}</td>'
+                    raw_text = adv_tooltips_local.get("LIVE", "")
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_live_pill(val)}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val:.6f}">{render_live_pill(val)}</td>'
                 else:
                     val = r[c]
+                    # Attach tooltip for numeric KPI columns when available
+                    raw_text = adv_tooltips_local.get(c, "")
                     if isinstance(val, (int, np.integer)):
-                        adv_html += f'<td data-sort="{int(val)}">' + ("-" if int(val) == 0 else f"{int(val):,}") + "</td>"
+                        formatted_val = "-" if int(val) == 0 else f"{int(val):,}"
+                        if raw_text and int(val) != 0:
+                            tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                            adv_html += f'<td data-sort="{int(val)}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+                        else:
+                            adv_html += f'<td data-sort="{int(val)}">{formatted_val}</td>'
                     else:
-                        adv_html += f'<td data-sort="{escape(str(val))}">{escape(str(val))}</td>'
+                        formatted_val = "-" if (val == 0 or pd.isna(val)) else escape(str(val))
+                        if raw_text and str(val) not in ("0", "-", ""):
+                            tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                            adv_html += f'<td data-sort="{escape(str(val))}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+                        else:
+                            adv_html += f'<td data-sort="{escape(str(val))}">{formatted_val}</td>'
             adv_html += "</tr>"
 
         # totals row
