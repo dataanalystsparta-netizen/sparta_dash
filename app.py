@@ -837,7 +837,7 @@ else:
 # FOOTER & DATA PREVIEW (COMMENTED OUT)
 # ==========================================================
 
-"""
+
 # The data preview section is intentionally commented out per request.
 # Uncomment if you want to re-enable the tabs and CSV download.
 
@@ -861,7 +861,7 @@ else:
 # st.divider()
 # st.success("✅ Data loaded successfully")
 # st.caption(f"Dashboard refreshed at {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
-"""
+
 
 # Keep a minimal footer to confirm load
 st.divider()
