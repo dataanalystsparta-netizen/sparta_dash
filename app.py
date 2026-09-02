@@ -17,7 +17,8 @@ New forecast features:
 - QA Pending applications are first allocated into forecast QA outcomes using historical QA outcome rates.
 - Welcome Pending applications use historical QA-approved -> Welcome Done progression and downstream Live conversion.
 - Committed applications use historical Committed -> Live conversion.
-- "FORECAST ADDL LIVE" and "Projected Live %" show the incremental Lives expected from the current pipeline.
+- "FORECAST ADDL LIVE" is a whole-number estimate of additional Lives from the unresolved pipeline only.
+   "PROJECTED LIVE" = Actual Live + Forecast Additional Live.
 - Historical rates used by the forecast are shown in the dashboard and in projection tooltips.
 """
 
@@ -305,6 +306,86 @@ def calculate_historical_forecast_rates(
     return rates
 
 
+def forecast_additional_live_from_counts(
+    qa_pending_count: int,
+    welcome_pending_count: int,
+    committed_count: int,
+    actual_live: int,
+    rates: dict,
+    projection_method: str = "Historical Performance",
+    committed_frac: float = 0.60,
+    welcome_pending_frac: float = 0.35,
+    quality_pending_frac: float = 0.25,
+) -> dict:
+    """Forecast additional Lives from mutually-exclusive current unresolved stages.
+
+    Reporting columns can overlap for the same sale (e.g. QA Approved + Welcome Done + Live).
+    Only the forecast buckets are mutually exclusive, so a sale is forecast once.
+    """
+    qa_pending_count = max(0, int(qa_pending_count))
+    welcome_pending_count = max(0, int(welcome_pending_count))
+    committed_count = max(0, int(committed_count))
+    actual_live = max(0, int(actual_live))
+
+    # Preserve the original editable-weight scenario as an optional mode.
+    if projection_method == "Manual Scenario Weights":
+        additional = (
+            committed_count * committed_frac
+            + welcome_pending_count * welcome_pending_frac
+            + qa_pending_count * quality_pending_frac
+        )
+        additional_int = int(round(additional))
+        return {
+            "actual_live": actual_live,
+            "forecast_additional_live": additional_int,
+            "projected_live": actual_live + additional_int,
+            "qa_pending_count": qa_pending_count,
+            "qa_pending_projected_approved": 0,
+            "qa_pending_projected_rework": 0,
+            "qa_pending_projected_cancelled": 0,
+            "welcome_pending_count": welcome_pending_count,
+            "committed_count": committed_count,
+            "projection_notes": (
+                f"Manual scenario: {committed_frac:.1%} × Committed + "
+                f"{welcome_pending_frac:.1%} × Welcome Pending + "
+                f"{quality_pending_frac:.1%} × QA Pending"
+            ),
+        }
+
+    p_qa_approved = float(rates.get("qa_approved_rate", 0.0))
+    p_qa_rework = float(rates.get("qa_rework_rate", 0.0))
+    p_qa_cancelled = float(rates.get("qa_cancelled_rate", 0.0))
+    p_welcome_done = float(rates.get("welcome_done_given_qa_approved", 0.0))
+    p_committed = float(rates.get("committed_given_welcome_done", 0.0))
+    p_live = float(rates.get("live_given_committed", 0.0))
+
+    qa_projected_approved = qa_pending_count * p_qa_approved
+    qa_projected_rework = qa_pending_count * p_qa_rework
+    qa_projected_cancelled = qa_pending_count * p_qa_cancelled
+
+    qa_to_live = qa_projected_approved * p_welcome_done * p_committed * p_live
+    welcome_to_live = welcome_pending_count * p_committed * p_live
+    committed_to_live = committed_count * p_live
+    additional = qa_to_live + welcome_to_live + committed_to_live
+
+    additional_int = int(round(additional))
+    return {
+        "actual_live": actual_live,
+        "forecast_additional_live": additional_int,
+        "projected_live": int(actual_live + additional_int),
+        "qa_pending_count": qa_pending_count,
+        "qa_pending_projected_approved": int(round(qa_projected_approved)),
+        "qa_pending_projected_rework": int(round(qa_projected_rework)),
+        "qa_pending_projected_cancelled": int(round(qa_projected_cancelled)),
+        "welcome_pending_count": welcome_pending_count,
+        "committed_count": committed_count,
+        "projection_notes": (
+            "Historical funnel forecast. Pending applications are forecast from their current "
+            "unresolved stage only; known outcomes are not forecast again."
+        ),
+    }
+
+
 def forecast_additional_live_for_dataframe(
     df: pd.DataFrame,
     rates: dict,
@@ -313,12 +394,7 @@ def forecast_additional_live_for_dataframe(
     quality_pending_frac: float,
     projection_method: str,
 ) -> dict:
-    """Return row-level aggregate forecast metrics for a dataframe.
-
-    Historical mode assigns each currently uncertain application to its latest/earliest
-    unresolved funnel stage so the same sale cannot be counted more than once.
-    Manual mode retains the legacy weighted formula for backward compatibility.
-    """
+    """Return stage-aware forecast metrics for a dataframe."""
     result = {
         "actual_live": 0,
         "forecast_additional_live": 0.0,
@@ -331,7 +407,6 @@ def forecast_additional_live_for_dataframe(
         "committed_count": 0,
         "projection_notes": "",
     }
-
     if df.empty:
         return result
 
@@ -340,7 +415,6 @@ def forecast_additional_live_for_dataframe(
     qa_series = df.get("Quality Status Clean", pd.Series(index=df.index, dtype=object))
 
     actual_live = int((portal_series == "Live").sum())
-    result["actual_live"] = actual_live
 
     if projection_method == "Manual Scenario Weights":
         committed = int((portal_series == "Committed").sum())
@@ -352,6 +426,7 @@ def forecast_additional_live_for_dataframe(
             + qa_pending * quality_pending_frac
         )
         result.update({
+            "actual_live": actual_live,
             "forecast_additional_live": float(additional),
             "projected_live": int(round(actual_live + additional)),
             "qa_pending_count": qa_pending,
@@ -365,7 +440,7 @@ def forecast_additional_live_for_dataframe(
         })
         return result
 
-    # Historical Performance mode.
+    # Historical Performance: assign each application to ONE unresolved forecast stage.
     qa_pending_mask = qa_series == "Pending"
     welcome_pending_mask = (~qa_pending_mask) & (welcome_series == "Pending")
     committed_mask = (
@@ -374,49 +449,17 @@ def forecast_additional_live_for_dataframe(
         & (portal_series == "Committed")
     )
 
-    qa_pending_count = int(qa_pending_mask.sum())
-    welcome_pending_count = int(welcome_pending_mask.sum())
-    committed_count = int(committed_mask.sum())
-
-    p_qa_approved = float(rates.get("qa_approved_rate", 0.0))
-    p_qa_rework = float(rates.get("qa_rework_rate", 0.0))
-    p_qa_cancelled = float(rates.get("qa_cancelled_rate", 0.0))
-    p_welcome_done = float(rates.get("welcome_done_given_qa_approved", 0.0))
-    p_committed = float(rates.get("committed_given_welcome_done", 0.0))
-    p_live = float(rates.get("live_given_committed", 0.0))
-
-    # QA pending -> forecast QA bucket. Only the portion forecast as Approved moves
-    # further down the funnel toward a possible Live outcome.
-    qa_projected_approved = qa_pending_count * p_qa_approved
-    qa_projected_rework = qa_pending_count * p_qa_rework
-    qa_projected_cancelled = qa_pending_count * p_qa_cancelled
-    qa_to_live = qa_projected_approved * p_welcome_done * p_committed * p_live
-
-    # Welcome pending -> forecast Welcome Done, then downstream progression.
-    welcome_to_live = welcome_pending_count * p_welcome_done * p_committed * p_live
-
-    # Committed -> Live directly.
-    committed_to_live = committed_count * p_live
-
-    additional = qa_to_live + welcome_to_live + committed_to_live
-    projected = int(round(actual_live + additional))
-
-    result.update({
-        "forecast_additional_live": float(additional),
-        "projected_live": projected,
-        "qa_pending_count": qa_pending_count,
-        "qa_pending_projected_approved": float(qa_projected_approved),
-        "qa_pending_projected_rework": float(qa_projected_rework),
-        "qa_pending_projected_cancelled": float(qa_projected_cancelled),
-        "welcome_pending_count": welcome_pending_count,
-        "committed_count": committed_count,
-        "projection_notes": (
-            "Historical funnel: QA Pending → forecast QA outcome; "
-            "Welcome Pending → forecast Welcome Done; Committed → historical Live rate. "
-            "Each application is counted from one current unresolved stage only."
-        ),
-    })
-    return result
+    return forecast_additional_live_from_counts(
+        int(qa_pending_mask.sum()),
+        int(welcome_pending_mask.sum()),
+        int(committed_mask.sum()),
+        actual_live,
+        rates,
+        projection_method=projection_method,
+        committed_frac=committed_frac,
+        welcome_pending_frac=welcome_pending_frac,
+        quality_pending_frac=quality_pending_frac,
+    )
 
 
 def make_projection_tooltip(summary: dict, rates: dict, projection_method: str, committed_pct_input: int, welcome_pending_pct_input: int, quality_pending_pct_input: int) -> str:
@@ -428,8 +471,8 @@ def make_projection_tooltip(summary: dict, rates: dict, projection_method: str, 
             f"Committed: {summary.get('committed_count', 0)}\n"
             f"Welcome Pending: {summary.get('welcome_pending_count', 0)}\n"
             f"QA Pending: {summary.get('qa_pending_count', 0)}\n"
-            f"Additional Live (weighted): {summary.get('forecast_additional_live', 0.0):.2f}\n"
-            f"Projected Live (rounded): {summary.get('projected_live', 0)}"
+            f"Additional Live (weighted): {int(summary.get('forecast_additional_live', 0))}\n"
+            f"Projected Live: {int(summary.get('projected_live', 0)):,}"
         )
 
     def pct(v):
@@ -444,13 +487,13 @@ def make_projection_tooltip(summary: dict, rates: dict, projection_method: str, 
         f"Welcome Done → Committed/Live: {pct(rates.get('committed_given_welcome_done', 0))}\n"
         f"Committed → Live: {pct(rates.get('live_given_committed', 0))}\n"
         f"QA Pending: {summary.get('qa_pending_count', 0)} → "
-        f"Approved≈{summary.get('qa_pending_projected_approved', 0.0):.1f}, "
-        f"Rework≈{summary.get('qa_pending_projected_rework', 0.0):.1f}, "
-        f"Cancelled≈{summary.get('qa_pending_projected_cancelled', 0.0):.1f}\n"
+        f"Approved≈{int(summary.get('qa_pending_projected_approved', 0))}, "
+        f"Rework≈{int(summary.get('qa_pending_projected_rework', 0))}, "
+        f"Cancelled≈{int(summary.get('qa_pending_projected_cancelled', 0))}\n"
         f"Welcome Pending: {summary.get('welcome_pending_count', 0)}\n"
         f"Committed: {summary.get('committed_count', 0)}\n"
-        f"Forecast Additional Live: {summary.get('forecast_additional_live', 0.0):.2f}\n"
-        f"Projected Live (rounded): {summary.get('projected_live', 0)}"
+        f"Forecast Additional Live: {int(summary.get('forecast_additional_live', 0)):,}\n"
+        f"Projected Live: {int(summary.get('projected_live', 0)):,}"
     )
 
 # ==========================================================
@@ -721,18 +764,17 @@ portal_live = count_status(filtered_portal_df, "Portal Status Clean", "Live")
 portal_committed = count_status(filtered_portal_df, "Portal Status Clean", "Committed")
 portal_cancelled = count_status(filtered_portal_df, "Portal Status Clean", "Cancelled")
 
-current_projection_summary = forecast_additional_live_for_dataframe(
-    master_df,
-    historical_rates,
-    committed_frac,
-    welcome_pending_frac,
-    quality_pending_frac,
-    projection_method,
+current_projection_summary = forecast_additional_live_from_counts(
+    qa_pending_count=q_pending,
+    welcome_pending_count=wc_pending,
+    committed_count=portal_committed,
+    actual_live=portal_live,
+    rates=historical_rates,
+    projection_method=projection_method,
+    committed_frac=committed_frac,
+    welcome_pending_frac=welcome_pending_frac,
+    quality_pending_frac=quality_pending_frac,
 )
-current_projection_summary["actual_live"] = portal_live
-current_projection_summary["projected_live"] = int(round(
-    portal_live + current_projection_summary["forecast_additional_live"]
-))
 
 all_kpis = [
     ("Applications", total_applications, "100% Base", "#3b82f6", "#eff6ff", "#1d4ed8"),
@@ -772,7 +814,7 @@ forecast_kpi_col1, forecast_kpi_col2, forecast_kpi_col3 = st.columns([1, 1, 1])
 with forecast_kpi_col1:
     st.metric("Actual Live", f"{current_projection_summary['actual_live']:,}")
 with forecast_kpi_col2:
-    st.metric("Forecast Additional Live", f"{current_projection_summary['forecast_additional_live']:.1f}")
+    st.metric("Forecast Additional Live", f"{int(current_projection_summary['forecast_additional_live']):,}")
 with forecast_kpi_col3:
     st.metric("Projected Live", f"{current_projection_summary['projected_live']:,}")
 
@@ -813,9 +855,12 @@ else:
             m_wc_done = count_status(m_app, "Welcome Status Clean", "Done")
             m_wc_cancelled = count_status(m_app, "Welcome Status Clean", "Cancelled")
             m_wc_pending = count_status(m_app, "Welcome Status Clean", "Pending")
-            m_p_live = count_status(m_portal, "Portal Status Clean", "Live")
-            m_p_committed = count_status(m_portal, "Portal Status Clean", "Committed")
-            m_p_cancelled = count_status(m_portal, "Portal Status Clean", "Cancelled")
+            # Reporting counts are deliberately independent: one sale can legitimately be
+            # QA Approved + Welcome Done + Live at the same time. Forecasting below uses only
+            # the unresolved-stage counts, so completed statuses are never forecast again.
+            m_p_live = count_status(m_app, "Portal Status Clean", "Live")
+            m_p_committed = count_status(m_app, "Portal Status Clean", "Committed")
+            m_p_cancelled = count_status(m_app, "Portal Status Clean", "Cancelled")
 
             qa_approved_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Approved")
             qa_rework_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Rework")
@@ -826,46 +871,25 @@ else:
             welcome_cancelled_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Cancelled")
             welcome_pending_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Pending")
 
-            committed_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Committed")
-            live_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Live")
-            live_cancelled_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Cancelled")
+            committed_raw = format_raw_breakdown(m_app, "Portal Status", "Portal Status Clean", "Committed")
+            live_raw = format_raw_breakdown(m_app, "Portal Status", "Portal Status Clean", "Live")
+            live_cancelled_raw = format_raw_breakdown(m_app, "Portal Status", "Portal Status Clean", "Cancelled")
 
-            # Build a compact monthly projection from the current funnel counts.
-            # Use the merged application/portal dataframe for historical mode so that the
-            # stage precedence is preserved and QA/Welcome Pending records cannot also be
-            # counted as Committed simply because their portal status is blank/defaulted.
-            if projection_method == "Historical Performance":
-                monthly_projection = forecast_additional_live_for_dataframe(
-                    m_app,
-                    historical_rates,
-                    committed_frac,
-                    welcome_pending_frac,
-                    quality_pending_frac,
-                    projection_method,
-                )
-                # Keep the displayed actual Live count aligned with the existing portal table.
-                monthly_projection["actual_live"] = m_p_live
-                monthly_projection["projected_live"] = int(round(
-                    m_p_live + monthly_projection["forecast_additional_live"]
-                ))
-            else:
-                # Preserve the original manual-weight behaviour as an optional scenario mode.
-                manual_additional = (
-                    m_p_committed * committed_frac
-                    + m_wc_pending * welcome_pending_frac
-                    + m_qa_pending * quality_pending_frac
-                )
-                monthly_projection = {
-                    "actual_live": m_p_live,
-                    "forecast_additional_live": float(manual_additional),
-                    "projected_live": int(round(m_p_live + manual_additional)),
-                    "qa_pending_count": m_qa_pending,
-                    "qa_pending_projected_approved": 0.0,
-                    "qa_pending_projected_rework": 0.0,
-                    "qa_pending_projected_cancelled": 0.0,
-                    "welcome_pending_count": m_wc_pending,
-                    "committed_count": m_p_committed,
-                }
+            # Forecast from the same stage counts displayed in this monthly row.
+            # Reporting statuses can overlap on a completed sale (e.g. QA Approved +
+            # Welcome Done + Live), but the unresolved forecast uses one current stage
+            # only: QA Pending, then Welcome Pending, then Committed.
+            monthly_projection = forecast_additional_live_from_counts(
+                qa_pending_count=m_qa_pending,
+                welcome_pending_count=m_wc_pending,
+                committed_count=m_p_committed,
+                actual_live=m_p_live,
+                rates=historical_rates,
+                projection_method=projection_method,
+                committed_frac=committed_frac,
+                welcome_pending_frac=welcome_pending_frac,
+                quality_pending_frac=quality_pending_frac,
+            )
 
             projected_tooltip = make_projection_tooltip(
                 monthly_projection,
@@ -904,7 +928,7 @@ else:
                 "LIVE CANCELLED": m_p_cancelled,
                 "LIVE CANCELLED RAW": live_cancelled_raw,
                 # Projection fields
-                "FORECAST ADDL LIVE": float(monthly_projection["forecast_additional_live"]),
+                "FORECAST ADDL LIVE": int(round(monthly_projection["forecast_additional_live"])),
                 "FORECAST ADDL LIVE RAW": projected_tooltip,
                 "PROJECTED LIVE": int(monthly_projection["projected_live"]),
                 "PROJECTED LIVE RAW": projected_tooltip,
@@ -937,14 +961,14 @@ else:
             "WELCOME PENDING": monthly_summary_df["WELCOME PENDING"].sum(),
             "WELCOME PENDING RAW": format_raw_breakdown(monthly_app_df, "Welcome Status", "Welcome Status Clean", "Pending"),
             "COMMITTED REM.": monthly_summary_df["COMMITTED REM."].sum(),
-            "COMMITTED RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Committed"),
+            "COMMITTED RAW": format_raw_breakdown(monthly_app_df, "Portal Status", "Portal Status Clean", "Committed"),
             "LIVE": monthly_summary_df["LIVE"].sum(),
-            "LIVE RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Live"),
+            "LIVE RAW": format_raw_breakdown(monthly_app_df, "Portal Status", "Portal Status Clean", "Live"),
             "Live Conversion % Val": (monthly_summary_df["LIVE"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
             "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum(),
-            "LIVE CANCELLED RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Cancelled"),
+            "LIVE CANCELLED RAW": format_raw_breakdown(monthly_app_df, "Portal Status", "Portal Status Clean", "Cancelled"),
             # Totals for projections
-            "FORECAST ADDL LIVE": float(monthly_summary_df["FORECAST ADDL LIVE"].sum()),
+            "FORECAST ADDL LIVE": int(round(monthly_summary_df["FORECAST ADDL LIVE"].sum())),
             "FORECAST ADDL LIVE RAW": "Aggregate forecast additional Live across the displayed months.",
             "PROJECTED LIVE": int(round(
                 monthly_summary_df["LIVE"].sum()
@@ -1114,9 +1138,9 @@ else:
                 val = float(row["Live Conversion % Val"])
                 m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[41.0, 21.0])}</td>'
             elif col_name == "FORECAST ADDL LIVE":
-                val = float(row.get("FORECAST ADDL LIVE", 0.0))
+                val = int(round(row.get("FORECAST ADDL LIVE", 0)))
                 raw_text = row.get("FORECAST ADDL LIVE RAW", "")
-                formatted_val = "-" if val == 0 else f"{val:.1f}"
+                formatted_val = "-" if val == 0 else f"{val:,}"
                 if raw_text and val != 0:
                     tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
                     m_html += f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
@@ -1261,24 +1285,28 @@ if "Advisor" in master_df.columns and not master_df.empty:
         advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
         advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
 
-        # Row-level stage-aware forecast per advisor to avoid double-counting.
+        # Advisor-level forecast uses the same displayed stage counts. Reporting statuses
+        # may overlap, but each unresolved stage contributes only once to the forecast.
         advisor_lookup = {}
-        for advisor_name, advisor_rows in master_df.groupby("Advisor", dropna=False):
-            lookup_name = "Unassigned" if pd.isna(advisor_name) or str(advisor_name).strip() == "" else str(advisor_name).strip()
-            advisor_lookup[lookup_name] = forecast_additional_live_for_dataframe(
-                advisor_rows,
-                historical_rates,
-                committed_frac,
-                welcome_pending_frac,
-                quality_pending_frac,
-                projection_method,
+        for _, r0 in advisor_summary.iterrows():
+            lookup_name = "Unassigned" if pd.isna(r0["Advisor"]) or str(r0["Advisor"]).strip() == "" else str(r0["Advisor"]).strip()
+            advisor_lookup[lookup_name] = forecast_additional_live_from_counts(
+                qa_pending_count=int(r0["QA_Pending"]),
+                welcome_pending_count=int(r0["Welcome_Pending"]),
+                committed_count=int(r0["Committed"]),
+                actual_live=int(r0["Live"]),
+                rates=historical_rates,
+                projection_method=projection_method,
+                committed_frac=committed_frac,
+                welcome_pending_frac=welcome_pending_frac,
+                quality_pending_frac=quality_pending_frac,
             )
 
         advisor_summary["FORECAST ADDL LIVE"] = advisor_summary["Advisor"].map(
-            lambda a: float(advisor_lookup.get(
+            lambda a: int(round(advisor_lookup.get(
                 "Unassigned" if pd.isna(a) or str(a).strip() == "" else str(a).strip(),
                 {},
-            ).get("forecast_additional_live", 0.0))
+            ).get("forecast_additional_live", 0.0)))
         )
         advisor_summary["PROJECTED LIVE"] = advisor_summary["Advisor"].map(
             lambda a: int(advisor_lookup.get(
@@ -1454,8 +1482,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
             totals_tooltips[k] = format_raw_breakdown(master_df, raw_col, clean_col, target_val)
         # totals projection tooltip
         totals_tooltips["PROJECTED LIVE"] = (
-            f"Aggregate projection using weights: {committed_pct_input}% committed, "
-            f"{welcome_pending_pct_input}% welcome pending, {quality_pending_pct_input}% quality pending"
+            f"Aggregate {projection_method} forecast. Forecast values are rounded to whole sales."
         )
 
         # Build advisor HTML table (use components.html to allow JS)
@@ -1554,9 +1581,9 @@ if "Advisor" in master_df.columns and not master_df.empty:
                     else:
                         adv_html += f'<td data-sort="{val:.6f}">{render_live_pill(val)}</td>'
                 elif c == "FORECAST ADDL LIVE":
-                    val = float(r.get("FORECAST ADDL LIVE", 0.0))
+                    val = int(round(r.get("FORECAST ADDL LIVE", 0)))
                     raw_text = adv_tooltips_local.get("FORECAST ADDL LIVE", "")
-                    formatted_val = "-" if val == 0 else f"{val:.1f}"
+                    formatted_val = "-" if val == 0 else f"{val:,}"
                     if raw_text and val != 0:
                         tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
                         adv_html += f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
@@ -1610,13 +1637,13 @@ if "Advisor" in master_df.columns and not master_df.empty:
             elif c == "Live Conversion %":
                 adv_html += f'<td data-sort="{total_live_pct:.6f}">' + f'{render_live_pill(total_live_pct)}</td>'
             elif c == "FORECAST ADDL LIVE":
-                tot_additional = float(advisor_summary["FORECAST ADDL LIVE"].sum())
+                tot_additional = int(round(advisor_summary["FORECAST ADDL LIVE"].sum()))
                 tooltip_text = "Aggregate historical forecast additional Live across visible advisors."
                 if tooltip_text and tot_additional != 0:
                     tooltip_html = escape(str(tooltip_text)).replace("\n", "&#10;")
-                    adv_html += f'<td data-sort="{tot_additional}" title="{tooltip_html}" style="cursor:help;">{tot_additional:.1f}</td>'
+                    adv_html += f'<td data-sort="{tot_additional}" title="{tooltip_html}" style="cursor:help;">{tot_additional:,}</td>'
                 else:
-                    adv_html += f'<td data-sort="{tot_additional}">{"-" if tot_additional == 0 else f"{tot_additional:.1f}"}</td>'
+                    adv_html += f'<td data-sort="{tot_additional}">{"-" if tot_additional == 0 else f"{tot_additional:,}"}</td>'
             elif c == "PROJECTED LIVE":
                 tot_proj = int(round(
                     advisor_summary["PROJECTED LIVE"].sum()
