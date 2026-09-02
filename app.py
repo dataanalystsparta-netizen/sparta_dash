@@ -1,25 +1,13 @@
 """
-Sparta Sales Dashboard - historical performance based Live forecast.
+Updated app.py — adds tooltips to the Agents (Advisor) table and preserves tooltips in the Monthly KPI table.
 
-Existing features retained:
-- Google Sheets loading with caching/retries.
-- Date/month filters and advisor tag visibility filters.
-- Top KPI cards.
-- Monthly KPI Breakdown with sticky header, sorting, raw-status tooltips and totals row.
-- Sales Executive Performance Breakdown with tags, sorting, raw-status tooltips and totals row.
-- Editable manual projection weights remain available as an optional scenario mode.
+Changes:
+- Monthly table: MONTH sorts by PERIOD_KEY (chronological) and shows tooltips on numeric cells (raw breakdowns).
+- Advisor table: each numeric KPI cell and its percent pill (where applicable) show the raw breakdown tooltip for that advisor when available.
+- Totals rows remain pinned and excluded from client-side sorting.
+- Retains previous improvements (sticky headers, sortable columns, robustness fixes).
 
-New forecast features:
-- Historical Performance projection mode is the default.
-- Historical rates are calculated from mature historical sales only (configurable maturity period).
-- Pending applications are forecast from their current funnel stage rather than independently adding
-  QA Pending + Welcome Pending + Committed, preventing double-counting.
-- QA Pending applications are first allocated into forecast QA outcomes using historical QA outcome rates.
-- Welcome Pending applications use historical QA-approved -> Welcome Done progression and downstream Live conversion.
-- Committed applications use historical Committed -> Live conversion.
-- "FORECAST ADDL LIVE" is a whole-number estimate of additional Lives from the unresolved pipeline only.
-   "PROJECTED LIVE" = Actual Live + Forecast Additional Live.
-- Historical rates used by the forecast are shown in the dashboard and in projection tooltips.
+Replace your current app.py with this file.
 """
 
 import logging
@@ -218,284 +206,6 @@ def format_raw_breakdown(df: pd.DataFrame, raw_col: str, clean_col: str, target_
     total = sum(count for _, count in breakdown)
     return "Raw Status Breakdown\n" + "\n".join(lines) + f"\nTotal: {total}"
 
-
-# ==========================================================
-# HISTORICAL FORECAST ENGINE
-# ==========================================================
-
-def calculate_historical_forecast_rates(
-    df: pd.DataFrame,
-    maturity_days: int = 90,
-    lookback_months: int = 0,
-) -> dict:
-    """Calculate funnel progression rates from sufficiently mature historical sales.
-
-    The model deliberately uses outcome/progression rates rather than treating each pending
-    bucket as an independent probability. This prevents double-counting the same application.
-    """
-    rates = {
-        "history_start": None,
-        "history_end": None,
-        "mature_records": 0,
-        "qa_approved_rate": 0.0,
-        "qa_rework_rate": 0.0,
-        "qa_cancelled_rate": 0.0,
-        "welcome_done_given_qa_approved": 0.0,
-        "committed_given_welcome_done": 0.0,
-        "live_given_committed": 0.0,
-    }
-
-    if df.empty or "Sale Date Clean" not in df.columns:
-        return rates
-
-    hist = df.copy()
-    valid_dates = hist["Sale Date Clean"].dropna()
-    if valid_dates.empty:
-        return rates
-
-    today = pd.Timestamp(datetime.today().date())
-    cutoff = today - pd.Timedelta(days=int(maturity_days))
-    hist = hist[hist["Sale Date Clean"].notna() & (hist["Sale Date Clean"] <= cutoff)].copy()
-
-    if lookback_months and lookback_months > 0:
-        start_cutoff = (today - pd.DateOffset(months=int(lookback_months)))
-        hist = hist[hist["Sale Date Clean"] >= start_cutoff].copy()
-
-    if hist.empty:
-        return rates
-
-    rates["history_start"] = hist["Sale Date Clean"].min()
-    rates["history_end"] = hist["Sale Date Clean"].max()
-    rates["mature_records"] = int(len(hist))
-
-    # QA outcome distribution: use the mature application base, exactly as requested.
-    # Missing/unrecognised values are not forced into Approved/Rework/Cancelled.
-    if "Quality Status Clean" in hist.columns:
-        total = len(hist)
-        if total:
-            rates["qa_approved_rate"] = float((hist["Quality Status Clean"] == "Approved").sum() / total)
-            rates["qa_rework_rate"] = float((hist["Quality Status Clean"] == "Rework").sum() / total)
-            rates["qa_cancelled_rate"] = float((hist["Quality Status Clean"] == "Cancelled").sum() / total)
-
-    # QA Approved -> Welcome Done. Keep the denominator as all mature QA-approved sales,
-    # so unresolved Welcome activity is conservatively reflected rather than silently ignored.
-    if "Quality Status Clean" in hist.columns and "Welcome Status Clean" in hist.columns:
-        qa_approved = hist[hist["Quality Status Clean"] == "Approved"]
-        if len(qa_approved) > 0:
-            rates["welcome_done_given_qa_approved"] = float(
-                (qa_approved["Welcome Status Clean"] == "Done").sum() / len(qa_approved)
-            )
-
-    # Welcome Done -> Committed/Live. Live sales have already passed the committed stage,
-    # so they count as successful progression from Welcome Done as well.
-    if "Welcome Status Clean" in hist.columns and "Portal Status Clean" in hist.columns:
-        welcome_done = hist[hist["Welcome Status Clean"] == "Done"]
-        if len(welcome_done) > 0:
-            progressed = welcome_done["Portal Status Clean"].isin(["Committed", "Live"]).sum()
-            rates["committed_given_welcome_done"] = float(progressed / len(welcome_done))
-
-    # Committed -> Live. Use resolved committed outcomes only (Live vs Cancelled),
-    # excluding currently-unresolved Committed records from this rate.
-    if "Portal Status Clean" in hist.columns:
-        resolved_committed = hist[hist["Portal Status Clean"].isin(["Live", "Cancelled"])]
-        if len(resolved_committed) > 0:
-            rates["live_given_committed"] = float(
-                (resolved_committed["Portal Status Clean"] == "Live").sum() / len(resolved_committed)
-            )
-
-    return rates
-
-
-def forecast_additional_live_from_counts(
-    qa_pending_count: int,
-    welcome_pending_count: int,
-    committed_count: int,
-    actual_live: int,
-    rates: dict,
-    projection_method: str = "Historical Performance",
-    committed_frac: float = 0.60,
-    welcome_pending_frac: float = 0.35,
-    quality_pending_frac: float = 0.25,
-) -> dict:
-    """Forecast additional Lives from mutually-exclusive current unresolved stages.
-
-    Reporting columns can overlap for the same sale (e.g. QA Approved + Welcome Done + Live).
-    Only the forecast buckets are mutually exclusive, so a sale is forecast once.
-    """
-    qa_pending_count = max(0, int(qa_pending_count))
-    welcome_pending_count = max(0, int(welcome_pending_count))
-    committed_count = max(0, int(committed_count))
-    actual_live = max(0, int(actual_live))
-
-    # Preserve the original editable-weight scenario as an optional mode.
-    if projection_method == "Manual Scenario Weights":
-        additional = (
-            committed_count * committed_frac
-            + welcome_pending_count * welcome_pending_frac
-            + qa_pending_count * quality_pending_frac
-        )
-        additional_int = int(round(additional))
-        return {
-            "actual_live": actual_live,
-            "forecast_additional_live": additional_int,
-            "projected_live": actual_live + additional_int,
-            "qa_pending_count": qa_pending_count,
-            "qa_pending_projected_approved": 0,
-            "qa_pending_projected_rework": 0,
-            "qa_pending_projected_cancelled": 0,
-            "welcome_pending_count": welcome_pending_count,
-            "committed_count": committed_count,
-            "projection_notes": (
-                f"Manual scenario: {committed_frac:.1%} × Committed + "
-                f"{welcome_pending_frac:.1%} × Welcome Pending + "
-                f"{quality_pending_frac:.1%} × QA Pending"
-            ),
-        }
-
-    p_qa_approved = float(rates.get("qa_approved_rate", 0.0))
-    p_qa_rework = float(rates.get("qa_rework_rate", 0.0))
-    p_qa_cancelled = float(rates.get("qa_cancelled_rate", 0.0))
-    p_welcome_done = float(rates.get("welcome_done_given_qa_approved", 0.0))
-    p_committed = float(rates.get("committed_given_welcome_done", 0.0))
-    p_live = float(rates.get("live_given_committed", 0.0))
-
-    qa_projected_approved = qa_pending_count * p_qa_approved
-    qa_projected_rework = qa_pending_count * p_qa_rework
-    qa_projected_cancelled = qa_pending_count * p_qa_cancelled
-
-    qa_to_live = qa_projected_approved * p_welcome_done * p_committed * p_live
-    welcome_to_live = welcome_pending_count * p_committed * p_live
-    committed_to_live = committed_count * p_live
-    additional = qa_to_live + welcome_to_live + committed_to_live
-
-    additional_int = int(round(additional))
-    return {
-        "actual_live": actual_live,
-        "forecast_additional_live": additional_int,
-        "projected_live": int(actual_live + additional_int),
-        "qa_pending_count": qa_pending_count,
-        "qa_pending_projected_approved": int(round(qa_projected_approved)),
-        "qa_pending_projected_rework": int(round(qa_projected_rework)),
-        "qa_pending_projected_cancelled": int(round(qa_projected_cancelled)),
-        "welcome_pending_count": welcome_pending_count,
-        "committed_count": committed_count,
-        "projection_notes": (
-            "Historical funnel forecast. Pending applications are forecast from their current "
-            "unresolved stage only; known outcomes are not forecast again."
-        ),
-    }
-
-
-def forecast_additional_live_for_dataframe(
-    df: pd.DataFrame,
-    rates: dict,
-    committed_frac: float,
-    welcome_pending_frac: float,
-    quality_pending_frac: float,
-    projection_method: str,
-) -> dict:
-    """Return stage-aware forecast metrics for a dataframe."""
-    result = {
-        "actual_live": 0,
-        "forecast_additional_live": 0.0,
-        "projected_live": 0,
-        "qa_pending_count": 0,
-        "qa_pending_projected_approved": 0.0,
-        "qa_pending_projected_rework": 0.0,
-        "qa_pending_projected_cancelled": 0.0,
-        "welcome_pending_count": 0,
-        "committed_count": 0,
-        "projection_notes": "",
-    }
-    if df.empty:
-        return result
-
-    portal_series = df.get("Portal Status Clean", pd.Series(index=df.index, dtype=object))
-    welcome_series = df.get("Welcome Status Clean", pd.Series(index=df.index, dtype=object))
-    qa_series = df.get("Quality Status Clean", pd.Series(index=df.index, dtype=object))
-
-    actual_live = int((portal_series == "Live").sum())
-
-    if projection_method == "Manual Scenario Weights":
-        committed = int((portal_series == "Committed").sum())
-        welcome_pending = int((welcome_series == "Pending").sum())
-        qa_pending = int((qa_series == "Pending").sum())
-        additional = (
-            committed * committed_frac
-            + welcome_pending * welcome_pending_frac
-            + qa_pending * quality_pending_frac
-        )
-        result.update({
-            "actual_live": actual_live,
-            "forecast_additional_live": float(additional),
-            "projected_live": int(round(actual_live + additional)),
-            "qa_pending_count": qa_pending,
-            "welcome_pending_count": welcome_pending,
-            "committed_count": committed,
-            "projection_notes": (
-                f"Manual scenario: {committed_frac:.1%} × Committed + "
-                f"{welcome_pending_frac:.1%} × Welcome Pending + "
-                f"{quality_pending_frac:.1%} × QA Pending"
-            ),
-        })
-        return result
-
-    # Historical Performance: assign each application to ONE unresolved forecast stage.
-    qa_pending_mask = qa_series == "Pending"
-    welcome_pending_mask = (~qa_pending_mask) & (welcome_series == "Pending")
-    committed_mask = (
-        (~qa_pending_mask)
-        & (~welcome_pending_mask)
-        & (portal_series == "Committed")
-    )
-
-    return forecast_additional_live_from_counts(
-        int(qa_pending_mask.sum()),
-        int(welcome_pending_mask.sum()),
-        int(committed_mask.sum()),
-        actual_live,
-        rates,
-        projection_method=projection_method,
-        committed_frac=committed_frac,
-        welcome_pending_frac=welcome_pending_frac,
-        quality_pending_frac=quality_pending_frac,
-    )
-
-
-def make_projection_tooltip(summary: dict, rates: dict, projection_method: str, committed_pct_input: int, welcome_pending_pct_input: int, quality_pending_pct_input: int) -> str:
-    if projection_method == "Manual Scenario Weights":
-        return (
-            f"Manual scenario formula: Live + ({committed_pct_input}% × Committed) + "
-            f"({welcome_pending_pct_input}% × Welcome Pending) + ({quality_pending_pct_input}% × QA Pending)\n"
-            f"Live: {summary.get('actual_live', 0)}\n"
-            f"Committed: {summary.get('committed_count', 0)}\n"
-            f"Welcome Pending: {summary.get('welcome_pending_count', 0)}\n"
-            f"QA Pending: {summary.get('qa_pending_count', 0)}\n"
-            f"Additional Live (weighted): {int(summary.get('forecast_additional_live', 0))}\n"
-            f"Projected Live: {int(summary.get('projected_live', 0)):,}"
-        )
-
-    def pct(v):
-        return f"{float(v) * 100:.1f}%"
-
-    return (
-        "Historical-performance forecast\n"
-        f"QA Approved baseline: {pct(rates.get('qa_approved_rate', 0))}\n"
-        f"QA Rework baseline: {pct(rates.get('qa_rework_rate', 0))}\n"
-        f"QA Cancelled baseline: {pct(rates.get('qa_cancelled_rate', 0))}\n"
-        f"QA Approved → Welcome Done: {pct(rates.get('welcome_done_given_qa_approved', 0))}\n"
-        f"Welcome Done → Committed/Live: {pct(rates.get('committed_given_welcome_done', 0))}\n"
-        f"Committed → Live: {pct(rates.get('live_given_committed', 0))}\n"
-        f"QA Pending: {summary.get('qa_pending_count', 0)} → "
-        f"Approved≈{int(summary.get('qa_pending_projected_approved', 0))}, "
-        f"Rework≈{int(summary.get('qa_pending_projected_rework', 0))}, "
-        f"Cancelled≈{int(summary.get('qa_pending_projected_cancelled', 0))}\n"
-        f"Welcome Pending: {summary.get('welcome_pending_count', 0)}\n"
-        f"Committed: {summary.get('committed_count', 0)}\n"
-        f"Forecast Additional Live: {int(summary.get('forecast_additional_live', 0)):,}\n"
-        f"Projected Live: {int(summary.get('projected_live', 0)):,}"
-    )
-
 # ==========================================================
 # DATA LOADING
 # ==========================================================
@@ -644,78 +354,6 @@ with tag_col3:
 with tag_col4:
     include_untagged = st.checkbox("Include Untagged Names", value=True)
 
-# ==========================================================
-# Projection model controls
-# ==========================================================
-st.markdown("##### Projection model")
-projection_method = st.selectbox(
-    "Projection method",
-    options=["Historical Performance", "Manual Scenario Weights"],
-    index=0,
-    help="Historical Performance uses mature historical funnel behaviour. Manual Scenario Weights retains the original editable-weight model.",
-)
-
-hist_col1, hist_col2 = st.columns([1, 1])
-with hist_col1:
-    historical_maturity_days = st.number_input(
-        "Historical maturity (days)",
-        min_value=30,
-        max_value=365,
-        value=90,
-        step=15,
-        help="Only sales at least this many days old are used to establish historical performance rates.",
-    )
-with hist_col2:
-    historical_lookback_months = st.number_input(
-        "Historical lookback (months)",
-        min_value=0,
-        max_value=60,
-        value=0,
-        step=3,
-        help="0 = use all mature history; otherwise limit the historical baseline to the selected number of months.",
-    )
-
-st.markdown("##### Manual scenario weights (retained from previous dashboard)")
-proj_col1, proj_col2, proj_col3, proj_col4 = st.columns([1, 1, 1, 2])
-with proj_col1:
-    committed_pct_input = st.number_input("Committed weight %", min_value=0, max_value=100, value=60, step=1, help="Legacy/manual scenario: percent of committed expected to convert to Live")
-with proj_col2:
-    welcome_pending_pct_input = st.number_input("Welcome Pending weight %", min_value=0, max_value=100, value=35, step=1, help="Legacy/manual scenario: percent of Welcome Pending expected to convert to Live")
-with proj_col3:
-    quality_pending_pct_input = st.number_input("Quality Pending weight %", min_value=0, max_value=100, value=25, step=1, help="Legacy/manual scenario: percent of Quality Pending expected to convert to Live")
-with proj_col4:
-    if projection_method == "Historical Performance":
-        st.markdown("**Applied model:** historical funnel rates from mature sales; pending stages are forecast once only.")
-    else:
-        st.markdown(
-            f"**Applied formula** (legacy/manual):  \nProjected Live = Live + ({committed_pct_input}% × Committed) + ({welcome_pending_pct_input}% × Welcome Pending) + ({quality_pending_pct_input}% × QA Pending)"
-        )
-
-# Convert manual weights to fractional multipliers
-committed_frac = committed_pct_input / 100.0
-welcome_pending_frac = welcome_pending_pct_input / 100.0
-quality_pending_frac = quality_pending_pct_input / 100.0
-
-# Historical baseline is intentionally independent from the active date/month filter.
-historical_rates = calculate_historical_forecast_rates(
-    master_raw_df,
-    maturity_days=int(historical_maturity_days),
-    lookback_months=int(historical_lookback_months),
-)
-
-if historical_rates.get("mature_records", 0) > 0:
-    hist_start = pd.Timestamp(historical_rates["history_start"]).strftime("%d/%m/%Y")
-    hist_end = pd.Timestamp(historical_rates["history_end"]).strftime("%d/%m/%Y")
-    st.caption(
-        f"Historical baseline: {historical_rates['mature_records']:,} mature sales from {hist_start} to {hist_end}. "
-        f"QA Approved {historical_rates['qa_approved_rate']*100:.1f}% | "
-        f"QA Approved→Welcome Done {historical_rates['welcome_done_given_qa_approved']*100:.1f}% | "
-        f"Welcome Done→Committed/Live {historical_rates['committed_given_welcome_done']*100:.1f}% | "
-        f"Committed→Live {historical_rates['live_given_committed']*100:.1f}%"
-    )
-else:
-    st.warning("No sufficiently mature historical sales were available for the selected maturity/lookback settings. Historical projection will therefore be 0 until enough history is available.")
-
 if start_date > end_date:
     st.error("Error: Start Date must be earlier than or equal to End Date.")
     master_df = master_raw_df.copy()
@@ -764,18 +402,6 @@ portal_live = count_status(filtered_portal_df, "Portal Status Clean", "Live")
 portal_committed = count_status(filtered_portal_df, "Portal Status Clean", "Committed")
 portal_cancelled = count_status(filtered_portal_df, "Portal Status Clean", "Cancelled")
 
-current_projection_summary = forecast_additional_live_from_counts(
-    qa_pending_count=q_pending,
-    welcome_pending_count=wc_pending,
-    committed_count=portal_committed,
-    actual_live=portal_live,
-    rates=historical_rates,
-    projection_method=projection_method,
-    committed_frac=committed_frac,
-    welcome_pending_frac=welcome_pending_frac,
-    quality_pending_frac=quality_pending_frac,
-)
-
 all_kpis = [
     ("Applications", total_applications, "100% Base", "#3b82f6", "#eff6ff", "#1d4ed8"),
     ("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified", "#10b981", "#f0fdf4", "#15803d"),
@@ -809,18 +435,8 @@ if visible_kpis:
 else:
     st.info("No active KPIs for the selected filters.")
 
-# Historical forecast headline for current filters
-forecast_kpi_col1, forecast_kpi_col2, forecast_kpi_col3 = st.columns([1, 1, 1])
-with forecast_kpi_col1:
-    st.metric("Actual Live", f"{current_projection_summary['actual_live']:,}")
-with forecast_kpi_col2:
-    st.metric("Forecast Additional Live", f"{int(current_projection_summary['forecast_additional_live']):,}")
-with forecast_kpi_col3:
-    st.metric("Projected Live", f"{current_projection_summary['projected_live']:,}")
-
 # ==========================================================
 # MONTHLY KPI BREAKDOWN (SELECTABLE YEAR) - with sticky header & sorting (month sorts by PERIOD_KEY)
-# PROJECTED LIVE is now historical-performance based by default; manual weights remain available as a scenario mode
 # ==========================================================
 st.divider()
 st.subheader("📅 Monthly KPI Breakdown")
@@ -855,12 +471,9 @@ else:
             m_wc_done = count_status(m_app, "Welcome Status Clean", "Done")
             m_wc_cancelled = count_status(m_app, "Welcome Status Clean", "Cancelled")
             m_wc_pending = count_status(m_app, "Welcome Status Clean", "Pending")
-            # Reporting counts are deliberately independent: one sale can legitimately be
-            # QA Approved + Welcome Done + Live at the same time. Forecasting below uses only
-            # the unresolved-stage counts, so completed statuses are never forecast again.
-            m_p_live = count_status(m_app, "Portal Status Clean", "Live")
-            m_p_committed = count_status(m_app, "Portal Status Clean", "Committed")
-            m_p_cancelled = count_status(m_app, "Portal Status Clean", "Cancelled")
+            m_p_live = count_status(m_portal, "Portal Status Clean", "Live")
+            m_p_committed = count_status(m_portal, "Portal Status Clean", "Committed")
+            m_p_cancelled = count_status(m_portal, "Portal Status Clean", "Cancelled")
 
             qa_approved_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Approved")
             qa_rework_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Rework")
@@ -871,34 +484,9 @@ else:
             welcome_cancelled_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Cancelled")
             welcome_pending_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Pending")
 
-            committed_raw = format_raw_breakdown(m_app, "Portal Status", "Portal Status Clean", "Committed")
-            live_raw = format_raw_breakdown(m_app, "Portal Status", "Portal Status Clean", "Live")
-            live_cancelled_raw = format_raw_breakdown(m_app, "Portal Status", "Portal Status Clean", "Cancelled")
-
-            # Forecast from the same stage counts displayed in this monthly row.
-            # Reporting statuses can overlap on a completed sale (e.g. QA Approved +
-            # Welcome Done + Live), but the unresolved forecast uses one current stage
-            # only: QA Pending, then Welcome Pending, then Committed.
-            monthly_projection = forecast_additional_live_from_counts(
-                qa_pending_count=m_qa_pending,
-                welcome_pending_count=m_wc_pending,
-                committed_count=m_p_committed,
-                actual_live=m_p_live,
-                rates=historical_rates,
-                projection_method=projection_method,
-                committed_frac=committed_frac,
-                welcome_pending_frac=welcome_pending_frac,
-                quality_pending_frac=quality_pending_frac,
-            )
-
-            projected_tooltip = make_projection_tooltip(
-                monthly_projection,
-                historical_rates,
-                projection_method,
-                committed_pct_input,
-                welcome_pending_pct_input,
-                quality_pending_pct_input,
-            )
+            committed_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Committed")
+            live_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Live")
+            live_cancelled_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Cancelled")
 
             rows.append({
                 "MONTH": m_str,
@@ -927,12 +515,6 @@ else:
                 "Live Conversion % Val": (m_p_live / m_total_apps * 100) if m_total_apps > 0 else 0.0,
                 "LIVE CANCELLED": m_p_cancelled,
                 "LIVE CANCELLED RAW": live_cancelled_raw,
-                # Projection fields
-                "FORECAST ADDL LIVE": int(round(monthly_projection["forecast_additional_live"])),
-                "FORECAST ADDL LIVE RAW": projected_tooltip,
-                "PROJECTED LIVE": int(monthly_projection["projected_live"]),
-                "PROJECTED LIVE RAW": projected_tooltip,
-                "Projected Live % Val": (monthly_projection["projected_live"] / m_total_apps * 100) if m_total_apps > 0 else 0.0,
             })
         return pd.DataFrame(rows)
 
@@ -942,7 +524,7 @@ else:
         tot_apps = monthly_summary_df["APPLICATIONS"].sum()
         totals_row = {
             "MONTH": "Total",
-            "PERIOD_KEY": 999999,
+            "PERIOD_KEY": 999999,  # ensure it's a big key (though totals-row is excluded from sorting)
             "APPLICATIONS": tot_apps,
             "QA APPROVED": monthly_summary_df["QA APPROVED"].sum(),
             "QA APPROVED RAW": format_raw_breakdown(monthly_app_df, "Quality Status", "Quality Status Clean", "Approved"),
@@ -961,26 +543,12 @@ else:
             "WELCOME PENDING": monthly_summary_df["WELCOME PENDING"].sum(),
             "WELCOME PENDING RAW": format_raw_breakdown(monthly_app_df, "Welcome Status", "Welcome Status Clean", "Pending"),
             "COMMITTED REM.": monthly_summary_df["COMMITTED REM."].sum(),
-            "COMMITTED RAW": format_raw_breakdown(monthly_app_df, "Portal Status", "Portal Status Clean", "Committed"),
+            "COMMITTED RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Committed"),
             "LIVE": monthly_summary_df["LIVE"].sum(),
-            "LIVE RAW": format_raw_breakdown(monthly_app_df, "Portal Status", "Portal Status Clean", "Live"),
+            "LIVE RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Live"),
             "Live Conversion % Val": (monthly_summary_df["LIVE"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
             "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum(),
-            "LIVE CANCELLED RAW": format_raw_breakdown(monthly_app_df, "Portal Status", "Portal Status Clean", "Cancelled"),
-            # Totals for projections
-            "FORECAST ADDL LIVE": int(round(monthly_summary_df["FORECAST ADDL LIVE"].sum())),
-            "FORECAST ADDL LIVE RAW": "Aggregate forecast additional Live across the displayed months.",
-            "PROJECTED LIVE": int(round(
-                monthly_summary_df["LIVE"].sum()
-                + monthly_summary_df["FORECAST ADDL LIVE"].sum()
-            )),
-            "PROJECTED LIVE RAW": (
-                f"Aggregate {projection_method} projection using the configured historical baseline/settings."
-            ),
-            "Projected Live % Val": ((
-                monthly_summary_df["LIVE"].sum()
-                + monthly_summary_df["FORECAST ADDL LIVE"].sum()
-            ) / tot_apps * 100) if tot_apps > 0 else 0.0,
+            "LIVE CANCELLED RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Cancelled"),
         }
         monthly_summary_df = pd.concat([monthly_summary_df, pd.DataFrame([totals_row])], ignore_index=True)
 
@@ -999,10 +567,9 @@ else:
         "MONTH", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
         "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
         "Welcome Done %", "WELCOME CANCELLED", "WELCOME PENDING",
-        "COMMITTED REM.", "LIVE", "Live Conversion %", "FORECAST ADDL LIVE", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED",
+        "COMMITTED REM.", "LIVE", "Live Conversion %", "LIVE CANCELLED",
     ]
 
-    # Add header styles for new columns
     m_header_styles = {
         "MONTH": "background-color: #f1f5f9; color: #334155;",
         "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
@@ -1018,9 +585,6 @@ else:
         "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
         "LIVE": "background-color: #f0fdfa; color: #0f766e;",
         "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
-        "FORECAST ADDL LIVE": "background-color: #eef2ff; color: #3730a3;",
-        "PROJECTED LIVE": "background-color: #eef2ff; color: #3730a3;",
-        "Projected Live %": "background-color: #eef2ff; color: #3730a3;",
         "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
     }
 
@@ -1036,8 +600,6 @@ else:
         "COMMITTED REM.": "COMMITTED RAW",
         "LIVE": "LIVE RAW",
         "LIVE CANCELLED": "LIVE CANCELLED RAW",
-        "FORECAST ADDL LIVE": "FORECAST ADDL LIVE RAW",
-        "PROJECTED LIVE": "PROJECTED LIVE RAW",
     }
 
     # Build monthly table HTML with sticky header, scrollable body, and sorting JS
@@ -1125,49 +687,40 @@ else:
 
         for col_name in display_columns:
             if col_name == "MONTH":
+                # Use PERIOD_KEY for numeric sorting so months sort chronologically
                 period_key = int(row.get("PERIOD_KEY", 0)) if pd.notna(row.get("PERIOD_KEY", None)) else 0
                 cell_text = escape(str(row["MONTH"]))
                 m_html += f'<td data-sort="{period_key}">{cell_text}</td>'
             elif col_name == "QA Pass Rate %":
                 val = float(row["QA Pass Rate % Val"])
-                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[75.0, 51.0])}</td>'
+                # Optionally show breakdown tooltip for QA APPROVED on the % cell
+                raw_text = row.get("QA APPROVED RAW", "")
+                if raw_text and val != 0:
+                    tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                    m_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_pill(val, thresholds=[75.0, 51.0])}</td>'
+                else:
+                    m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[75.0, 51.0])}</td>'
             elif col_name == "Welcome Done %":
                 val = float(row["Welcome Done % Val"])
-                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[61.0, 51.0])}</td>'
+                raw_text = row.get("WELCOME DONE RAW", "")
+                if raw_text and val != 0:
+                    tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                    m_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_pill(val, thresholds=[61.0, 51.0])}</td>'
+                else:
+                    m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[61.0, 51.0])}</td>'
             elif col_name == "Live Conversion %":
                 val = float(row["Live Conversion % Val"])
-                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[41.0, 21.0])}</td>'
-            elif col_name == "FORECAST ADDL LIVE":
-                val = int(round(row.get("FORECAST ADDL LIVE", 0)))
-                raw_text = row.get("FORECAST ADDL LIVE RAW", "")
-                formatted_val = "-" if val == 0 else f"{val:,}"
+                raw_text = row.get("LIVE RAW", "")
                 if raw_text and val != 0:
                     tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
-                    m_html += f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+                    m_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_pill(val, thresholds=[41.0, 21.0])}</td>'
                 else:
-                    m_html += f'<td data-sort="{val}">{formatted_val}</td>'
-            elif col_name == "PROJECTED LIVE":
-                val = int(row.get("PROJECTED LIVE", 0))
-                raw_text = row.get("PROJECTED LIVE RAW", "")
-                if raw_text and val != 0:
-                    tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
-                    m_html += f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{val:,}</td>'
-                else:
-                    m_html += f'<td data-sort="{val}">{val:,}</td>'
-            elif col_name == "Projected Live %":
-                val = float(row.get("Projected Live % Val", 0.0))
-                # reuse render_pill for percent display, attach tooltip
-                raw_text = row.get("PROJECTED LIVE RAW", "")
-                pill_html = render_pill(val, thresholds=[41.0, 21.0])
-                if raw_text and val != 0:
-                    tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
-                    m_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{pill_html}</td>'
-                else:
-                    m_html += f'<td data-sort="{val:.6f}">{pill_html}</td>'
+                    m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[41.0, 21.0])}</td>'
             else:
                 val = row.get(col_name, 0)
                 raw_column = monthly_tooltip_map.get(col_name)
                 raw_text = row.get(raw_column, "") if raw_column else ""
+                # For numeric values, supply numeric data-sort and attach tooltip if present
                 if isinstance(val, (int, np.integer)):
                     formatted_val = "-" if int(val) == 0 else f"{int(val):,}"
                     if raw_text and int(val) != 0:
@@ -1236,7 +789,6 @@ else:
 
 # ==========================================================
 # ADVISOR PERFORMANCE MATRIX (with per-advisor tooltips, totals row, sticky header & sorting)
-# Add historical FORECAST ADDL LIVE, PROJECTED LIVE and Projected Live %
 # ==========================================================
 st.divider()
 st.subheader("👥 Sales Executive Performance Breakdown")
@@ -1285,55 +837,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
         advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
         advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
 
-        # Advisor-level forecast uses the same displayed stage counts. Reporting statuses
-        # may overlap, but each unresolved stage contributes only once to the forecast.
-        advisor_lookup = {}
-        for _, r0 in advisor_summary.iterrows():
-            lookup_name = "Unassigned" if pd.isna(r0["Advisor"]) or str(r0["Advisor"]).strip() == "" else str(r0["Advisor"]).strip()
-            advisor_lookup[lookup_name] = forecast_additional_live_from_counts(
-                qa_pending_count=int(r0["QA_Pending"]),
-                welcome_pending_count=int(r0["Welcome_Pending"]),
-                committed_count=int(r0["Committed"]),
-                actual_live=int(r0["Live"]),
-                rates=historical_rates,
-                projection_method=projection_method,
-                committed_frac=committed_frac,
-                welcome_pending_frac=welcome_pending_frac,
-                quality_pending_frac=quality_pending_frac,
-            )
-
-        advisor_summary["FORECAST ADDL LIVE"] = advisor_summary["Advisor"].map(
-            lambda a: int(round(advisor_lookup.get(
-                "Unassigned" if pd.isna(a) or str(a).strip() == "" else str(a).strip(),
-                {},
-            ).get("forecast_additional_live", 0.0)))
-        )
-        advisor_summary["PROJECTED LIVE"] = advisor_summary["Advisor"].map(
-            lambda a: int(advisor_lookup.get(
-                "Unassigned" if pd.isna(a) or str(a).strip() == "" else str(a).strip(),
-                {},
-            ).get("projected_live", 0))
-        )
-        advisor_summary["FORECAST ADDL LIVE RAW"] = advisor_summary["Advisor"].map(
-            lambda a: make_projection_tooltip(
-                advisor_lookup.get(
-                    "Unassigned" if pd.isna(a) or str(a).strip() == "" else str(a).strip(),
-                    {},
-                ),
-                historical_rates,
-                projection_method,
-                committed_pct_input,
-                welcome_pending_pct_input,
-                quality_pending_pct_input,
-            )
-        )
-        advisor_summary["PROJECTED LIVE RAW"] = advisor_summary["FORECAST ADDL LIVE RAW"]
-
-        advisor_summary["Projected Live % Val"] = (
-            (advisor_summary["PROJECTED LIVE"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
-        ).fillna(0.0)
-
-        # 4. Rename columns to match display standards
         advisor_summary = advisor_summary.rename(columns={
             "Advisor": "SALES EXECUTIVE",
             "Applications": "APPLICATIONS",
@@ -1376,38 +879,26 @@ if "Advisor" in master_df.columns and not master_df.empty:
             adv_tooltips = {}
             for k, (raw_col, clean_col, target_val) in advisor_tooltip_mapping.items():
                 adv_tooltips[k] = format_raw_breakdown(subset, raw_col, clean_col, target_val)
-            # Projection tooltip for this advisor
-            adv_projection_summary = advisor_lookup.get(adv_display, {})
-            adv_proj_tooltip = make_projection_tooltip(
-                adv_projection_summary,
-                historical_rates,
-                projection_method,
-                committed_pct_input,
-                welcome_pending_pct_input,
-                quality_pending_pct_input,
-            )
-            adv_tooltips["FORECAST ADDL LIVE"] = adv_proj_tooltip
-            adv_tooltips["PROJECTED LIVE"] = adv_proj_tooltip
             raw_tooltips[adv_display] = adv_tooltips
         # drop the helper column
         master_df.drop(columns=["_advisor_norm"], inplace=True, errors=True)
 
         numeric_cols = {
             "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
-            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "FORECAST ADDL LIVE", "PROJECTED LIVE"
+            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED"
         }
 
         base_col_order = [
             "SALES EXECUTIVE", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
             "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
             "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
-            "LIVE", "Live Conversion %", "FORECAST ADDL LIVE", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED"
+            "LIVE", "LIVE CANCELLED", "Live Conversion %"
         ]
 
         visible_cols = ["SALES EXECUTIVE"]
         for col in base_col_order[1:]:
             if col in numeric_cols:
-                if (advisor_summary.get(col, pd.Series(dtype=int)) > 0).any():
+                if (advisor_summary[col] > 0).any():
                     visible_cols.append(col)
             elif col == "QA Pass Rate %":
                 if "QA APPROVED" in visible_cols:
@@ -1417,9 +908,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
                     visible_cols.append(col)
             elif col == "Live Conversion %":
                 if "LIVE" in visible_cols:
-                    visible_cols.append(col)
-            elif col == "Projected Live %":
-                if "PROJECTED LIVE" in visible_cols:
                     visible_cols.append(col)
 
         def render_qa_pill(v):
@@ -1458,14 +946,11 @@ if "Advisor" in master_df.columns and not master_df.empty:
             "COMMITTED REM.": "background-color:#fff7ed;color:#c2410c;",
             "LIVE": "background-color:#f0fdfa;color:#0f766e;",
             "LIVE CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
-            "FORECAST ADDL LIVE": "background-color:#eef2ff;color:#3730a3;",
-            "PROJECTED LIVE": "background-color:#eef2ff;color:#3730a3;",
-            "Projected Live %": "background-color:#eef2ff;color:#3730a3;",
             "Live Conversion %": "background-color:#f0fdfa;color:#0f766e;",
         }
 
         # Compute totals across visible advisors for numeric columns
-        totals_series = advisor_summary[[c for c in advisor_summary.columns if isinstance(c, str) and c in numeric_cols]].sum(numeric_only=True)
+        totals_series = advisor_summary[list(numeric_cols)].sum(numeric_only=True)
         total_apps = int(totals_series.get("APPLICATIONS", 0))
         total_qa_approved = int(totals_series.get("QA APPROVED", 0))
         total_welcome_done = int(totals_series.get("WELCOME DONE", 0))
@@ -1480,10 +965,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
         totals_tooltips = {}
         for k, (raw_col, clean_col, target_val) in advisor_tooltip_mapping.items():
             totals_tooltips[k] = format_raw_breakdown(master_df, raw_col, clean_col, target_val)
-        # totals projection tooltip
-        totals_tooltips["PROJECTED LIVE"] = (
-            f"Aggregate {projection_method} forecast. Forecast values are rounded to whole sales."
-        )
 
         # Build advisor HTML table (use components.html to allow JS)
         advisor_table_id = "advisor-perf-table"
@@ -1580,34 +1061,9 @@ if "Advisor" in master_df.columns and not master_df.empty:
                         adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_live_pill(val)}</td>'
                     else:
                         adv_html += f'<td data-sort="{val:.6f}">{render_live_pill(val)}</td>'
-                elif c == "FORECAST ADDL LIVE":
-                    val = int(round(r.get("FORECAST ADDL LIVE", 0)))
-                    raw_text = adv_tooltips_local.get("FORECAST ADDL LIVE", "")
-                    formatted_val = "-" if val == 0 else f"{val:,}"
-                    if raw_text and val != 0:
-                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
-                        adv_html += f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
-                    else:
-                        adv_html += f'<td data-sort="{val}">{formatted_val}</td>'
-                elif c == "PROJECTED LIVE":
-                    val = int(r.get("PROJECTED LIVE", 0))
-                    raw_text = adv_tooltips_local.get("PROJECTED LIVE", "")
-                    if raw_text and val != 0:
-                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
-                        adv_html += f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{val:,}</td>'
-                    else:
-                        adv_html += f'<td data-sort="{val}">{val:,}</td>'
-                elif c == "Projected Live %":
-                    val = float(r.get("Projected Live % Val", 0.0))
-                    raw_text = adv_tooltips_local.get("PROJECTED LIVE", "")
-                    pill_html = render_live_pill(val)
-                    if raw_text and val != 0:
-                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
-                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{pill_html}</td>'
-                    else:
-                        adv_html += f'<td data-sort="{val:.6f}">{pill_html}</td>'
                 else:
-                    val = r.get(c)
+                    val = r[c]
+                    # Attach tooltip for numeric KPI columns when available
                     raw_text = adv_tooltips_local.get(c, "")
                     if isinstance(val, (int, np.integer)):
                         formatted_val = "-" if int(val) == 0 else f"{int(val):,}"
@@ -1636,27 +1092,6 @@ if "Advisor" in master_df.columns and not master_df.empty:
                 adv_html += f'<td data-sort="{total_welcome_pct:.6f}">' + f'{render_welcome_pill(total_welcome_pct)}</td>'
             elif c == "Live Conversion %":
                 adv_html += f'<td data-sort="{total_live_pct:.6f}">' + f'{render_live_pill(total_live_pct)}</td>'
-            elif c == "FORECAST ADDL LIVE":
-                tot_additional = int(round(advisor_summary["FORECAST ADDL LIVE"].sum()))
-                tooltip_text = "Aggregate historical forecast additional Live across visible advisors."
-                if tooltip_text and tot_additional != 0:
-                    tooltip_html = escape(str(tooltip_text)).replace("\n", "&#10;")
-                    adv_html += f'<td data-sort="{tot_additional}" title="{tooltip_html}" style="cursor:help;">{tot_additional:,}</td>'
-                else:
-                    adv_html += f'<td data-sort="{tot_additional}">{"-" if tot_additional == 0 else f"{tot_additional:,}"}</td>'
-            elif c == "PROJECTED LIVE":
-                tot_proj = int(round(
-                    advisor_summary["PROJECTED LIVE"].sum()
-                ))
-                tooltip_text = totals_tooltips.get("PROJECTED LIVE", "")
-                if tooltip_text and tot_proj != 0:
-                    tooltip_html = escape(str(tooltip_text)).replace("\n", "&#10;")
-                    adv_html += f'<td data-sort="{tot_proj}" title="{tooltip_html}" style="cursor:help;">{tot_proj:,}</td>'
-                else:
-                    adv_html += f'<td data-sort="{tot_proj}">{tot_proj:,}</td>'
-            elif c == "Projected Live %":
-                tot_proj_pct = ((advisor_summary["PROJECTED LIVE"].sum() / totals_series.get("APPLICATIONS", 1)) * 100) if totals_series.get("APPLICATIONS",0) > 0 else 0.0
-                adv_html += f'<td data-sort="{tot_proj_pct:.6f}">'+f'{render_live_pill(tot_proj_pct)}</td>'
             else:
                 if c in numeric_cols:
                     tot_val = int(totals_series.get(c, 0))
