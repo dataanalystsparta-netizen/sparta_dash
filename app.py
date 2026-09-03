@@ -1,16 +1,11 @@
 """
-Sparta Dashboard - updated with editable Projected Live Sales column.
+Sparta Dashboard - updated with editable Projected Live Sales column
+and an Agent filter for the Monthly KPI Breakdown table.
 
-Features added:
-- New inputs to configure projection weights:
-    * Committed weight (default 60%)
-    * Welcome Pending weight (default 35%)
-    * Quality Pending weight (default 25%)
-- Adds "PROJECTED LIVE" (numeric) and "Projected Live %" (pill) columns
-  to both Monthly KPI Breakdown and Sales Executive (Advisor) tables.
-- Tooltips show raw breakdowns and the projection formula used for each row.
-- Totals rows remain pinned after sorting.
-- Month column sorts by numeric PERIOD_KEY (chronological).
+- New dropdown "Select Agent (Monthly table)" appears in the Monthly KPI section.
+- Default: "All Agents" (entire team). Selecting an agent filters the monthly table
+  to that agent's rows (both application and portal data, when available from the merged master dataset).
+- No other behavior changed.
 """
 
 import logging
@@ -184,7 +179,6 @@ def categorize_welcome_status_series(s: pd.Series) -> pd.Series:
 def categorize_portal_status_series(s: pd.Series) -> pd.Series:
     s_norm = s.fillna("").astype(str).str.strip().str.lower()
     committed_mask = s_norm.isin(["", "(blank)", "nan", "none"]) | s_norm.str.contains(r"commit|in progress|processing", na=False)
-    cancelled_mask = s_norm.str_contains if False else s_norm.str.contains(r"cancel|reject", na=False)  # fallback
     cancelled_mask = s_norm.str.contains(r"cancel|reject", na=False)
     live_mask = s_norm.str.contains(r"live|pending|active|completed", na=False)
     return pd.Series(
@@ -377,7 +371,6 @@ with proj_col4:
         """
     )
 
-# Convert to fractional multipliers
 committed_frac = committed_pct_input / 100.0
 welcome_pending_frac = welcome_pending_pct_input / 100.0
 quality_pending_frac = quality_pending_pct_input / 100.0
@@ -466,6 +459,7 @@ else:
 # ==========================================================
 # MONTHLY KPI BREAKDOWN (SELECTABLE YEAR) - with sticky header & sorting (month sorts by PERIOD_KEY)
 # Also adds PROJECTED LIVE and Projected Live % calculated from editable weights
+# New: Agent filter (shows All Agents by default; selecting an agent limits the table to that agent)
 # ==========================================================
 st.divider()
 st.subheader("📅 Monthly KPI Breakdown")
@@ -474,12 +468,45 @@ current_year = datetime.now().year
 years = list(range(2022, current_year + 1))
 selected_year = st.selectbox("Select year for monthly breakdown", options=years, index=len(years) - 1)
 
+# --- NEW: Agent dropdown for monthly table (default = All Agents)
+agent_list = []
+if "Advisor" in master_raw_df.columns:
+    agent_list = sorted(master_raw_df["Advisor"].dropna().astype(str).unique(), key=lambda s: s.lower())
+agent_options = ["All Agents"] + agent_list
+selected_agent = st.selectbox("Select Agent (Monthly table)", options=agent_options, index=0)
+
+# Build monthly application and portal frames for the selected year
 monthly_app_df = master_raw_df.dropna(subset=["Period_Sort"]).copy()
 monthly_app_df = monthly_app_df[monthly_app_df["Period_Sort"].dt.year == int(selected_year)]
 
 monthly_portal_df = sparta2_df.dropna(subset=["Period_Sort"]).copy()
 monthly_portal_df = monthly_portal_df[monthly_portal_df["Period_Sort"].dt.year == int(selected_year)]
 
+# If an agent is selected, filter monthly_app_df by Agent and derive portal rows for that agent from master_raw_df (merged)
+if selected_agent != "All Agents":
+    agent_norm = selected_agent.strip().lower()
+    # Filter application rows
+    if "Advisor" in monthly_app_df.columns:
+        monthly_app_df = monthly_app_df[
+            monthly_app_df["Advisor"].fillna("").astype(str).str.strip().str.lower() == agent_norm
+        ].copy()
+    else:
+        monthly_app_df = monthly_app_df.iloc[0:0].copy()  # no advisor column => empty
+
+    # For portal data, use master_raw_df (merged apps + portal) to capture portal rows that map to this advisor
+    portal_from_master = master_raw_df.copy()
+    if "Advisor" in portal_from_master.columns:
+        portal_from_master = portal_from_master[
+            portal_from_master["Advisor"].fillna("").astype(str).str.strip().str.lower() == agent_norm
+        ].copy()
+        # Keep only rows in the selected year (Period_Sort exists on master_raw_df)
+        portal_from_master = portal_from_master.dropna(subset=["Period_Sort"])
+        portal_from_master = portal_from_master[portal_from_master["Period_Sort"].dt.year == int(selected_year)].copy()
+        monthly_portal_df = portal_from_master
+    else:
+        monthly_portal_df = monthly_portal_df.iloc[0:0].copy()
+
+# Now compute all_periods from the (possibly filtered) monthly_app_df and monthly_portal_df
 all_periods = sorted(list(set(monthly_app_df["Period_Sort"]).union(set(monthly_portal_df["Period_Sort"]))), reverse=True)
 
 if not all_periods:
@@ -777,7 +804,6 @@ else:
                     m_html += f'<td data-sort="{val}">{val:,}</td>'
             elif col_name == "Projected Live %":
                 val = float(row.get("Projected Live % Val", 0.0))
-                # reuse render_pill for percent display, attach tooltip
                 raw_text = row.get("PROJECTED LIVE RAW", "")
                 pill_html = render_pill(val, thresholds=[41.0, 21.0])
                 if raw_text and val != 0:
@@ -906,31 +932,12 @@ if "Advisor" in master_df.columns and not master_df.empty:
         advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
         advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
 
-        # PROJECTED LIVE per advisor
-        advisor_summary["PROJECTED LIVE"] = (
-            advisor_summary["Live"]
-            + advisor_summary["Committed"] * committed_frac
-            + advisor_summary["WELCOME PENDING"] if False else 0  # placeholder to avoid syntax issues
-        )
-        # Do proper calc (rewrite without the placeholder)
-        advisor_summary["PROJECTED LIVE"] = (
-            advisor_summary["Live"]
-            + advisor_summary["Committed"] * committed_frac
-            + advisor_summary["Welcome_Pending"] if False else 0
-        )
-        # Because column names in df are "Welcome_Pending" etc. but we used names earlier; rebuild correct way:
-        # Recompute using original columns from aggregation result (names used are Welcome_Pending not present). Let's compute properly:
-        # We'll map existing columns:
-        # after aggregation: columns are Applications, QA_Approved, QA_Rework, QA_Cancelled, QA_Pending,
-        # Welcome_Done, Welcome_Cancelled, Welcome_Pending, Committed, Live, Live_Cancelled
         advisor_summary["PROJECTED LIVE"] = (
             advisor_summary["Live"]
             + advisor_summary["Committed"] * committed_frac
             + advisor_summary["Welcome_Pending"] * welcome_pending_frac
             + advisor_summary["QA_Pending"] * quality_pending_frac
-        )
-
-        advisor_summary["PROJECTED LIVE"] = advisor_summary["PROJECTED LIVE"].round().astype(int)
+        ).round().astype(int)
 
         advisor_summary["Projected Live % Val"] = (
             (advisor_summary["PROJECTED LIVE"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
@@ -1064,7 +1071,7 @@ if "Advisor" in master_df.columns and not master_df.empty:
         }
 
         # Compute totals across visible advisors for numeric columns
-        totals_series = advisor_summary[[c for c in advisor_summary.columns if isinstance(c, str) and c in numeric_cols]].sum(numeric_only=True)
+        totals_series = advisor_summary[[c for c in advisor_summary.columns if c in numeric_cols]].sum(numeric_only=True)
         total_apps = int(totals_series.get("APPLICATIONS", 0))
         total_qa_approved = int(totals_series.get("QA APPROVED", 0))
         total_welcome_done = int(totals_series.get("WELCOME DONE", 0))
