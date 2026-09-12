@@ -62,7 +62,7 @@ APPLICATION_SHEET: str = st.secrets.get("APPLICATION_SHEET", "Sparta")
 LIVE_SHEET: str = st.secrets.get("LIVE_SHEET", "Sparta2")
 SCOPES: List[str] = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-NEW_ADVISORS = ["Subhodeep", "Ravikant", "Priyanshu", "Kajal", "Vishal", "Aryan", "Shivam"]
+NEW_ADVISORS = ["Aryan", "Shivam"]
 CUSTOMER_SERVICE_ADVISORS = ["Aman", "Ravi Inbound", "Santosh Joshi", "Vijender", "Laxmi Narayan"]
 LEFT_ADVISORS = [
     "Gaurav", "Guru", "Niki", "Shaheen", "Manmeet", "Gungun", "Rani", "Archana", "Deepali", "Sushanshu",
