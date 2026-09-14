@@ -457,9 +457,8 @@ else:
     st.info("No active KPIs for the selected filters.")
 
 # ==========================================================
-# MONTHLY KPI BREAKDOWN (SELECTABLE YEAR) - with sticky header & sorting (month sorts by PERIOD_KEY)
-# Also adds PROJECTED LIVE and Projected Live % calculated from editable weights
-# New: Agent filter (shows All Agents by default; selecting an agent limits the table to that agent)
+# MONTHLY KPI BREAKDOWN (SELECTABLE YEAR)
+# with per-month + / - expandable daily breakdown
 # ==========================================================
 st.divider()
 st.subheader("📅 Monthly KPI Breakdown")
@@ -468,7 +467,7 @@ current_year = datetime.now().year
 years = list(range(2022, current_year + 1))
 selected_year = st.selectbox("Select year for monthly breakdown", options=years, index=len(years) - 1)
 
-# --- NEW: Agent dropdown for monthly table (default = All Agents)
+# --- Agent dropdown for monthly table (default = All Agents)
 agent_list = []
 if "Advisor" in master_raw_df.columns:
     agent_list = sorted(master_raw_df["Advisor"].dropna().astype(str).unique(), key=lambda s: s.lower())
@@ -485,115 +484,169 @@ monthly_portal_df = monthly_portal_df[monthly_portal_df["Period_Sort"].dt.year =
 # If an agent is selected, filter monthly_app_df by Agent and derive portal rows for that agent from master_raw_df (merged)
 if selected_agent != "All Agents":
     agent_norm = selected_agent.strip().lower()
-    # Filter application rows
+
     if "Advisor" in monthly_app_df.columns:
         monthly_app_df = monthly_app_df[
             monthly_app_df["Advisor"].fillna("").astype(str).str.strip().str.lower() == agent_norm
         ].copy()
     else:
-        monthly_app_df = monthly_app_df.iloc[0:0].copy()  # no advisor column => empty
+        monthly_app_df = monthly_app_df.iloc[0:0].copy()
 
-    # For portal data, use master_raw_df (merged apps + portal) to capture portal rows that map to this advisor
     portal_from_master = master_raw_df.copy()
     if "Advisor" in portal_from_master.columns:
         portal_from_master = portal_from_master[
             portal_from_master["Advisor"].fillna("").astype(str).str.strip().str.lower() == agent_norm
         ].copy()
-        # Keep only rows in the selected year (Period_Sort exists on master_raw_df)
         portal_from_master = portal_from_master.dropna(subset=["Period_Sort"])
         portal_from_master = portal_from_master[portal_from_master["Period_Sort"].dt.year == int(selected_year)].copy()
         monthly_portal_df = portal_from_master
     else:
         monthly_portal_df = monthly_portal_df.iloc[0:0].copy()
 
-# Now compute all_periods from the (possibly filtered) monthly_app_df and monthly_portal_df
-all_periods = sorted(list(set(monthly_app_df["Period_Sort"]).union(set(monthly_portal_df["Period_Sort"]))), reverse=True)
+# Periods represented by either applications or portal data
+all_periods = sorted(
+    list(set(monthly_app_df["Period_Sort"]).union(set(monthly_portal_df["Period_Sort"]))),
+    reverse=True,
+)
 
 if not all_periods:
     st.info(f"No {selected_year} monthly data available for the KPI summary table.")
 else:
-    def build_monthly_summary(month_periods):
-        rows = []
-        for period in month_periods:
-            m_str = period.strftime("%B %Y")
-            period_key = int(period.year) * 100 + int(period.month)  # e.g., 202601
-            m_app = monthly_app_df[monthly_app_df["Period_Sort"] == period]
-            m_portal = monthly_portal_df[monthly_portal_df["Period_Sort"] == period]
-            m_total_apps = len(m_app)
-            m_qa_approved = count_status(m_app, "Quality Status Clean", "Approved")
-            m_qa_rework = count_status(m_app, "Quality Status Clean", "Rework")
-            m_qa_cancelled = count_status(m_app, "Quality Status Clean", "Cancelled")
-            m_qa_pending = count_status(m_app, "Quality Status Clean", "Pending")
-            m_wc_done = count_status(m_app, "Welcome Status Clean", "Done")
-            m_wc_cancelled = count_status(m_app, "Welcome Status Clean", "Cancelled")
-            m_wc_pending = count_status(m_app, "Welcome Status Clean", "Pending")
-            m_p_live = count_status(m_portal, "Portal Status Clean", "Live")
-            m_p_committed = count_status(m_portal, "Portal Status Clean", "Committed")
-            m_p_cancelled = count_status(m_portal, "Portal Status Clean", "Cancelled")
+    def build_kpi_row(display_label, m_app, m_portal, period_key, is_daily=False):
+        """Build one monthly/daily KPI row using the same KPI definitions as the original table."""
+        m_total_apps = len(m_app)
+        m_qa_approved = count_status(m_app, "Quality Status Clean", "Approved")
+        m_qa_rework = count_status(m_app, "Quality Status Clean", "Rework")
+        m_qa_cancelled = count_status(m_app, "Quality Status Clean", "Cancelled")
+        m_qa_pending = count_status(m_app, "Quality Status Clean", "Pending")
 
-            qa_approved_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Approved")
-            qa_rework_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Rework")
-            qa_cancelled_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Cancelled")
-            qa_pending_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Pending")
+        m_wc_done = count_status(m_app, "Welcome Status Clean", "Done")
+        m_wc_cancelled = count_status(m_app, "Welcome Status Clean", "Cancelled")
+        m_wc_pending = count_status(m_app, "Welcome Status Clean", "Pending")
 
-            welcome_done_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Done")
-            welcome_cancelled_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Cancelled")
-            welcome_pending_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Pending")
+        m_p_live = count_status(m_portal, "Portal Status Clean", "Live")
+        m_p_committed = count_status(m_portal, "Portal Status Clean", "Committed")
+        m_p_cancelled = count_status(m_portal, "Portal Status Clean", "Cancelled")
 
-            committed_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Committed")
-            live_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Live")
-            live_cancelled_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Cancelled")
+        qa_approved_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Approved")
+        qa_rework_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Rework")
+        qa_cancelled_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Cancelled")
+        qa_pending_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Pending")
 
-            # Projected Live calculation using user-controlled fractions
-            m_projected = (
-                m_p_live
-                + (m_p_committed * committed_frac)
-                + (m_wc_pending * welcome_pending_frac)
-                + (m_qa_pending * quality_pending_frac)
+        welcome_done_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Done")
+        welcome_cancelled_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Cancelled")
+        welcome_pending_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Pending")
+
+        committed_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Committed")
+        live_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Live")
+        live_cancelled_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Cancelled")
+
+        m_projected = (
+            m_p_live
+            + (m_p_committed * committed_frac)
+            + (m_wc_pending * welcome_pending_frac)
+            + (m_qa_pending * quality_pending_frac)
+        )
+
+        projected_tooltip = (
+            f"Formula: Live + ({committed_pct_input}% × Committed) + "
+            f"({welcome_pending_pct_input}% × Welcome Pending) + ({quality_pending_pct_input}% × QA Pending)\n"
+            f"Components:\nLive: {m_p_live}\nCommitted: {m_p_committed}\n"
+            f"Welcome Pending: {m_wc_pending}\nQA Pending: {m_qa_pending}\n"
+            f"Projected (rounded): {int(round(m_projected))}"
+        )
+
+        return {
+            "MONTH": display_label,
+            "PERIOD_KEY": period_key,
+            "APPLICATIONS": m_total_apps,
+            "QA APPROVED": m_qa_approved,
+            "QA APPROVED RAW": qa_approved_raw,
+            "QA Pass Rate % Val": (m_qa_approved / m_total_apps * 100) if m_total_apps > 0 else 0.0,
+            "QA REWORK": m_qa_rework,
+            "QA REWORK RAW": qa_rework_raw,
+            "QA CANCELLED": m_qa_cancelled,
+            "QA CANCELLED RAW": qa_cancelled_raw,
+            "QA PENDING": m_qa_pending,
+            "QA PENDING RAW": qa_pending_raw,
+            "WELCOME DONE": m_wc_done,
+            "WELCOME DONE RAW": welcome_done_raw,
+            "Welcome Done % Val": (m_wc_done / m_total_apps * 100) if m_total_apps > 0 else 0.0,
+            "WELCOME CANCELLED": m_wc_cancelled,
+            "WELCOME CANCELLED RAW": welcome_cancelled_raw,
+            "WELCOME PENDING": m_wc_pending,
+            "WELCOME PENDING RAW": welcome_pending_raw,
+            "COMMITTED REM.": m_p_committed,
+            "COMMITTED RAW": committed_raw,
+            "LIVE": m_p_live,
+            "LIVE RAW": live_raw,
+            "Live Conversion % Val": (m_p_live / m_total_apps * 100) if m_total_apps > 0 else 0.0,
+            "LIVE CANCELLED": m_p_cancelled,
+            "LIVE CANCELLED RAW": live_cancelled_raw,
+            "PROJECTED LIVE": int(round(m_projected)),
+            "PROJECTED LIVE RAW": projected_tooltip,
+            "Projected Live % Val": (m_projected / m_total_apps * 100) if m_total_apps > 0 else 0.0,
+        }
+
+    # ----------------------------------------------------------
+    # Build monthly rows AND daily rows for every calendar day.
+    # Daily rows are stored separately and rendered hidden by default.
+    # ----------------------------------------------------------
+    monthly_rows = []
+    daily_rows_by_period = {}
+
+    for period in all_periods:
+        month_start = period.to_timestamp()
+        next_month = (period + 1).to_timestamp()
+        month_app = monthly_app_df[monthly_app_df["Period_Sort"] == period].copy()
+        month_portal = monthly_portal_df[monthly_portal_df["Period_Sort"] == period].copy()
+
+        period_key = int(period.year) * 100 + int(period.month)
+        monthly_rows.append(
+            build_kpi_row(
+                period.strftime("%B %Y"),
+                month_app,
+                month_portal,
+                period_key,
             )
+        )
 
-            projected_tooltip = (
-                f"Formula: Live + ({committed_pct_input}% × Committed) + "
-                f"({welcome_pending_pct_input}% × Welcome Pending) + ({quality_pending_pct_input}% × QA Pending)\n"
-                f"Components:\nLive: {m_p_live}\nCommitted: {m_p_committed}\nWelcome Pending: {m_wc_pending}\nQA Pending: {m_qa_pending}\nProjected (rounded): {int(round(m_projected))}"
+        # Use the actual sale date as the day key. Include every calendar day in the month,
+        # including zero-activity days, so the expanded month always shows a complete calendar.
+        day_rows = []
+        day = month_start
+        while day < next_month:
+            day_end = day + pd.Timedelta(days=1)
+            day_app = month_app[
+                (month_app["Sale Date Clean"] >= day) &
+                (month_app["Sale Date Clean"] < day_end)
+            ].copy() if "Sale Date Clean" in month_app.columns else month_app.iloc[0:0].copy()
+
+            day_portal = month_portal[
+                (month_portal["Sale Date Clean"] >= day) &
+                (month_portal["Sale Date Clean"] < day_end)
+            ].copy() if "Sale Date Clean" in month_portal.columns else month_portal.iloc[0:0].copy()
+
+            day_key = int(day.strftime("%Y%m%d"))
+            day_rows.append(
+                build_kpi_row(
+                    day.strftime("%d %b %Y"),
+                    day_app,
+                    day_portal,
+                    day_key,
+                    is_daily=True,
+                )
             )
+            day += pd.Timedelta(days=1)
 
-            rows.append({
-                "MONTH": m_str,
-                "PERIOD_KEY": period_key,
-                "APPLICATIONS": m_total_apps,
-                "QA APPROVED": m_qa_approved,
-                "QA APPROVED RAW": qa_approved_raw,
-                "QA Pass Rate % Val": (m_qa_approved / m_total_apps * 100) if m_total_apps > 0 else 0.0,
-                "QA REWORK": m_qa_rework,
-                "QA REWORK RAW": qa_rework_raw,
-                "QA CANCELLED": m_qa_cancelled,
-                "QA CANCELLED RAW": qa_cancelled_raw,
-                "QA PENDING": m_qa_pending,
-                "QA PENDING RAW": qa_pending_raw,
-                "WELCOME DONE": m_wc_done,
-                "WELCOME DONE RAW": welcome_done_raw,
-                "Welcome Done % Val": (m_wc_done / m_total_apps * 100) if m_total_apps > 0 else 0.0,
-                "WELCOME CANCELLED": m_wc_cancelled,
-                "WELCOME CANCELLED RAW": welcome_cancelled_raw,
-                "WELCOME PENDING": m_wc_pending,
-                "WELCOME PENDING RAW": welcome_pending_raw,
-                "COMMITTED REM.": m_p_committed,
-                "COMMITTED RAW": committed_raw,
-                "LIVE": m_p_live,
-                "LIVE RAW": live_raw,
-                "Live Conversion % Val": (m_p_live / m_total_apps * 100) if m_total_apps > 0 else 0.0,
-                "LIVE CANCELLED": m_p_cancelled,
-                "LIVE CANCELLED RAW": live_cancelled_raw,
-                # Projection fields
-                "PROJECTED LIVE": int(round(m_projected)),
-                "PROJECTED LIVE RAW": projected_tooltip,
-                "Projected Live % Val": (m_projected / m_total_apps * 100) if m_total_apps > 0 else 0.0,
-            })
-        return pd.DataFrame(rows)
+        daily_rows_by_period[period_key] = day_rows
 
-    monthly_summary_df = build_monthly_summary(all_periods)
+    monthly_summary_df = pd.DataFrame(monthly_rows)
 
+    # ----------------------------------------------------------
+    # Totals row — kept exactly on the monthly view and always
+    # rendered at the bottom.
+    # ----------------------------------------------------------
     if not monthly_summary_df.empty:
         tot_apps = monthly_summary_df["APPLICATIONS"].sum()
         totals_row = {
@@ -623,7 +676,6 @@ else:
             "Live Conversion % Val": (monthly_summary_df["LIVE"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
             "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum(),
             "LIVE CANCELLED RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Cancelled"),
-            # Totals for projections (apply weights to totals)
             "PROJECTED LIVE": int(round(
                 monthly_summary_df["LIVE"].sum()
                 + monthly_summary_df["COMMITTED REM."].sum() * committed_frac
@@ -641,7 +693,10 @@ else:
                 + monthly_summary_df["QA PENDING"].sum() * quality_pending_frac
             ) / tot_apps * 100) if tot_apps > 0 else 0.0,
         }
-        monthly_summary_df = pd.concat([monthly_summary_df, pd.DataFrame([totals_row])], ignore_index=True)
+        monthly_summary_df = pd.concat(
+            [monthly_summary_df, pd.DataFrame([totals_row])],
+            ignore_index=True,
+        )
 
     def render_pill(val_float: float, thresholds: List[float], good_bg: str = "#d1fae5"):
         val_str = f"{val_float:.1f}%"
@@ -652,7 +707,11 @@ else:
             bg, color, border = "#fef3c7", "#b45309", "#fde68a"
         else:
             bg, color, border = "#ffe4e6", "#be123c", "#fecdd3"
-        return f'<span data-sort="{val_float:.6f}" style="background-color: {bg}; color: {color}; border: 1px solid {border}; border-radius: 8px; padding: 2px 8px; font-weight:700;">{val_str}</span>'
+        return (
+            f'<span data-sort="{val_float:.6f}" style="background-color: {bg}; '
+            f'color: {color}; border: 1px solid {border}; border-radius: 8px; '
+            f'padding: 2px 8px; font-weight:700;">{val_str}</span>'
+        )
 
     display_columns = [
         "MONTH", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
@@ -661,7 +720,6 @@ else:
         "COMMITTED REM.", "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED",
     ]
 
-    # Add header styles for new columns
     m_header_styles = {
         "MONTH": "background-color: #f1f5f9; color: #334155;",
         "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
@@ -682,7 +740,6 @@ else:
         "LIVE CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
     }
 
-    # Tooltip mapping for monthly table columns -> RAW column name
     monthly_tooltip_map = {
         "QA APPROVED": "QA APPROVED RAW",
         "QA REWORK": "QA REWORK RAW",
@@ -697,9 +754,76 @@ else:
         "PROJECTED LIVE": "PROJECTED LIVE RAW",
     }
 
-    # Build monthly table HTML with sticky header, scrollable body, and sorting JS
-    table_height = max(150, 95 + (len(monthly_summary_df) * 45))
+    # ----------------------------------------------------------
+    # HTML table renderer helpers
+    # ----------------------------------------------------------
+    def render_monthly_data_cell(row, col_name, daily=False):
+        """Render one data cell. Kept consistent with the original table."""
+        if col_name == "MONTH":
+            period_key = int(row.get("PERIOD_KEY", 0)) if pd.notna(row.get("PERIOD_KEY", None)) else 0
+            cell_text = escape(str(row["MONTH"]))
+            return f'<td data-sort="{period_key}">{cell_text}</td>'
+
+        if col_name == "QA Pass Rate %":
+            val = float(row["QA Pass Rate % Val"])
+            return f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[75.0, 51.0])}</td>'
+
+        if col_name == "Welcome Done %":
+            val = float(row["Welcome Done % Val"])
+            return f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[61.0, 51.0])}</td>'
+
+        if col_name == "Live Conversion %":
+            val = float(row["Live Conversion % Val"])
+            return f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[41.0, 21.0])}</td>'
+
+        if col_name == "PROJECTED LIVE":
+            val = int(row.get("PROJECTED LIVE", 0))
+            raw_text = row.get("PROJECTED LIVE RAW", "")
+            if raw_text and val != 0:
+                tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                return f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{val:,}</td>'
+            return f'<td data-sort="{val}">{val:,}</td>'
+
+        if col_name == "Projected Live %":
+            val = float(row.get("Projected Live % Val", 0.0))
+            raw_text = row.get("PROJECTED LIVE RAW", "")
+            pill_html = render_pill(val, thresholds=[41.0, 21.0])
+            if raw_text and val != 0:
+                tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                return f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{pill_html}</td>'
+            return f'<td data-sort="{val:.6f}">{pill_html}</td>'
+
+        val = row.get(col_name, 0)
+        raw_column = monthly_tooltip_map.get(col_name)
+        raw_text = row.get(raw_column, "") if raw_column else ""
+
+        if isinstance(val, (int, np.integer)):
+            formatted_val = "-" if int(val) == 0 else f"{int(val):,}"
+            if raw_text and int(val) != 0:
+                tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                return f'<td data-sort="{int(val)}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+            return f'<td data-sort="{int(val)}">{formatted_val}</td>'
+
+        formatted_val = "-" if (val == 0 or pd.isna(val)) else escape(str(val))
+        if isinstance(val, float):
+            if raw_text and val != 0:
+                tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                return f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+            return f'<td data-sort="{val}">{formatted_val}</td>'
+
+        if raw_text and str(val) not in ("0", "-", ""):
+            tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+            return f'<td data-sort="{escape(str(val))}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+        return f'<td data-sort="{escape(str(val))}">{formatted_val}</td>'
+
+    # ----------------------------------------------------------
+    # Build table HTML.
+    # A month is a sortable group containing its monthly row + its
+    # hidden daily rows. Clicking + toggles only that group.
+    # ----------------------------------------------------------
     monthly_table_id = "monthly-kpi-table"
+    table_height = min(700, max(200, 95 + (len(monthly_summary_df) * 45)))
+
     m_html = f"""
     <style>
         .monthly-kpi-table-container {{
@@ -737,7 +861,14 @@ else:
             background: #ffffff;
             cursor: pointer;
         }}
-        .monthly-kpi-table th:first-child {{
+        .monthly-kpi-table th.expand-head {{
+            width: 48px;
+            min-width: 48px;
+            max-width: 48px;
+            cursor: default;
+            padding: 10px 6px;
+        }}
+        .monthly-kpi-table th:first-of-type + th {{
             text-align: left;
         }}
         .monthly-kpi-table td {{
@@ -747,18 +878,73 @@ else:
             border-right: 1px solid #f8fafc;
             color: #1e293b;
         }}
-        .monthly-kpi-table td:first-child {{
+        .monthly-kpi-table td.month-label {{
             text-align: left;
             font-weight: 700;
             color: #0f172a;
+            white-space: nowrap;
+        }}
+        .monthly-kpi-table tr.month-row {{
+            background-color: #ffffff;
+        }}
+        .monthly-kpi-table tr.month-row:hover {{
+            background-color: #f8fafc;
+        }}
+        .monthly-kpi-table tr.daily-row {{
+            background-color: #f8fafc;
+            display: none;
+        }}
+        .monthly-kpi-table tr.daily-row td {{
+            padding-top: 8px;
+            padding-bottom: 8px;
+            font-size: 0.84rem;
+        }}
+        .monthly-kpi-table tr.daily-row td.month-label {{
+            padding-left: 42px;
+            font-weight: 600;
+            color: #475569;
+        }}
+        .monthly-kpi-table tr.daily-row.shown {{
+            display: table-row;
+        }}
+        .expand-button {{
+            width: 26px;
+            height: 26px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #334155;
+            border-radius: 6px;
+            font-size: 16px;
+            line-height: 22px;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        .expand-button:hover {{
+            background: #f1f5f9;
+            border-color: #94a3b8;
+        }}
+        .daily-indent {{
+            display: inline-block;
+            width: 7px;
+            border-left: 2px solid #cbd5e1;
+            height: 14px;
+            margin-right: 8px;
+            vertical-align: -2px;
         }}
         .monthly-kpi-table tr.totals-row {{
             font-weight: 800;
             background-color: #f8fafc;
             border-top: 2px solid #cbd5e1;
         }}
-        .monthly-kpi-table tr:hover:not(.totals-row) {{
+        .monthly-kpi-table tr.totals-row td {{
+            position: sticky;
+            bottom: 0;
             background-color: #f8fafc;
+            z-index: 4;
         }}
     </style>
     <div class="monthly-kpi-table-container">
@@ -766,115 +952,129 @@ else:
         <table id="{monthly_table_id}" class="monthly-kpi-table">
             <thead>
                 <tr>
+                    <th class="expand-head"></th>
     """
+
     for col_name in display_columns:
         th_style = m_header_styles.get(col_name, "background-color: #f8fafc; color: #475569;")
         m_html += f'<th style="{th_style}">{col_name}</th>'
     m_html += "</tr></thead><tbody>"
 
-    # Render rows, marking totals row with class="totals-row"
     for _, row in monthly_summary_df.iterrows():
         is_total = str(row.get("MONTH", "")).strip().lower() == "total"
         if is_total:
             m_html += '<tr class="totals-row">'
-        else:
-            m_html += "<tr>"
+            m_html += '<td class="expand-cell"></td>'
+            for col_name in display_columns:
+                m_html += render_monthly_data_cell(row, col_name)
+            m_html += "</tr>"
+            continue
+
+        period_key = int(row.get("PERIOD_KEY", 0))
+        group_id = f"month-{period_key}"
+        m_html += f'<tr class="month-row" data-group="{group_id}" data-month-sort="{period_key}">'
+        m_html += (
+            f'<td class="expand-cell">'
+            f'<button type="button" class="expand-button" aria-expanded="false" '
+            f'onclick="toggleMonth(\'{group_id}\', this)" title="Expand daily breakdown">+</button>'
+            f'</td>'
+        )
 
         for col_name in display_columns:
+            cell_html = render_monthly_data_cell(row, col_name)
             if col_name == "MONTH":
-                period_key = int(row.get("PERIOD_KEY", 0)) if pd.notna(row.get("PERIOD_KEY", None)) else 0
-                cell_text = escape(str(row["MONTH"]))
-                m_html += f'<td data-sort="{period_key}">{cell_text}</td>'
-            elif col_name == "QA Pass Rate %":
-                val = float(row["QA Pass Rate % Val"])
-                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[75.0, 51.0])}</td>'
-            elif col_name == "Welcome Done %":
-                val = float(row["Welcome Done % Val"])
-                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[61.0, 51.0])}</td>'
-            elif col_name == "Live Conversion %":
-                val = float(row["Live Conversion % Val"])
-                m_html += f'<td data-sort="{val:.6f}">{render_pill(val, thresholds=[41.0, 21.0])}</td>'
-            elif col_name == "PROJECTED LIVE":
-                val = int(row.get("PROJECTED LIVE", 0))
-                raw_text = row.get("PROJECTED LIVE RAW", "")
-                if raw_text and val != 0:
-                    tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
-                    m_html += f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{val:,}</td>'
-                else:
-                    m_html += f'<td data-sort="{val}">{val:,}</td>'
-            elif col_name == "Projected Live %":
-                val = float(row.get("Projected Live % Val", 0.0))
-                raw_text = row.get("PROJECTED LIVE RAW", "")
-                pill_html = render_pill(val, thresholds=[41.0, 21.0])
-                if raw_text and val != 0:
-                    tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
-                    m_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{pill_html}</td>'
-                else:
-                    m_html += f'<td data-sort="{val:.6f}">{pill_html}</td>'
-            else:
-                val = row.get(col_name, 0)
-                raw_column = monthly_tooltip_map.get(col_name)
-                raw_text = row.get(raw_column, "") if raw_column else ""
-                if isinstance(val, (int, np.integer)):
-                    formatted_val = "-" if int(val) == 0 else f"{int(val):,}"
-                    if raw_text and int(val) != 0:
-                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
-                        m_html += f'<td data-sort="{int(val)}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
-                    else:
-                        m_html += f'<td data-sort="{int(val)}">{formatted_val}</td>'
-                else:
-                    formatted_val = "-" if (val == 0 or pd.isna(val)) else escape(str(val))
-                    if isinstance(val, float):
-                        if raw_text and val != 0:
-                            tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
-                            m_html += f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
-                        else:
-                            m_html += f'<td data-sort="{val}">{formatted_val}</td>'
-                    else:
-                        if raw_text and str(val) not in ("0", "-", ""):
-                            tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
-                            m_html += f'<td data-sort="{escape(str(val))}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
-                        else:
-                            m_html += f'<td data-sort="{escape(str(val))}">{formatted_val}</td>'
+                cell_html = cell_html.replace('<td ', '<td class="month-label" ', 1)
+            m_html += cell_html
         m_html += "</tr>"
+
+        # Daily rows are rendered immediately after their month row and are hidden by default.
+        for daily_row in daily_rows_by_period.get(period_key, []):
+            m_html += f'<tr class="daily-row" data-parent="{group_id}">'
+            m_html += '<td class="expand-cell"></td>'
+            for col_name in display_columns:
+                cell_html = render_monthly_data_cell(daily_row, col_name, daily=True)
+                if col_name == "MONTH":
+                    # Visual indentation for daily rows.
+                    label = escape(str(daily_row["MONTH"]))
+                    cell_html = f'<td class="month-label"><span class="daily-indent"></span>{label}</td>'
+                m_html += cell_html
+            m_html += "</tr>"
 
     m_html += "</tbody></table></div></div>"
 
-    # Sorting JS for monthly table - uses data-sort (numeric) and keeps totals-row at bottom
+    # ----------------------------------------------------------
+    # JS: per-month expansion + sortable month groups.
+    # Sorting affects the monthly rows while keeping each month's
+    # daily rows attached to that month. Totals remain at the bottom.
+    # ----------------------------------------------------------
     m_html += f"""
     <script>
     (function() {{
-      function makeSortable(tableId) {{
-        const table = document.getElementById(tableId);
-        if(!table) return;
+        const table = document.getElementById("{monthly_table_id}");
+        if (!table) return;
         const tbody = table.tBodies[0];
-        const headers = table.querySelectorAll('th');
-        headers.forEach((th, index) => {{
-          th.addEventListener('click', () => {{
-            const current = th.getAttribute('data-order') || 'desc';
-            const newOrder = current === 'asc' ? 'desc' : 'asc';
-            headers.forEach(h => h.removeAttribute('data-order'));
-            th.setAttribute('data-order', newOrder);
-            const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => !r.classList.contains('totals-row'));
-            rows.sort((a,b) => {{
-              const aCell = a.children[index];
-              const bCell = b.children[index];
-              const aVal = aCell ? aCell.getAttribute('data-sort') || aCell.innerText : '';
-              const bVal = bCell ? bCell.getAttribute('data-sort') || bCell.innerText : '';
-              const aNum = parseFloat(aVal.toString().replace(/,/g,'')); 
-              const bNum = parseFloat(bVal.toString().replace(/,/g,''));
-              if(!isNaN(aNum) && !isNaN(bNum)) {{
-                return newOrder === 'asc' ? aNum - bNum : bNum - aNum;
-              }}
-              return newOrder === 'asc' ? aVal.toString().localeCompare(bVal.toString()) : bVal.toString().localeCompare(aVal.toString());
+
+        window.toggleMonth = function(groupId, button) {{
+            const rows = Array.from(tbody.querySelectorAll('tr.daily-row[data-parent="' + groupId + '"]'));
+            const isExpanded = button.getAttribute('aria-expanded') === 'true';
+            const willExpand = !isExpanded;
+
+            rows.forEach(row => {{
+                row.classList.toggle('shown', willExpand);
             }});
-            rows.forEach(r => tbody.appendChild(r));
-            const totals = tbody.querySelector('tr.totals-row');
-            if(totals) tbody.appendChild(totals);
-          }});
+
+            button.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+            button.textContent = willExpand ? '−' : '+';
+            button.title = willExpand ? 'Collapse daily breakdown' : 'Expand daily breakdown';
+        }};
+
+        function sortValue(cell) {{
+            if (!cell) return '';
+            return cell.getAttribute('data-sort') || cell.innerText || '';
+        }}
+
+        function compareValues(aVal, bVal, order) {{
+            const aNum = parseFloat(aVal.toString().replace(/,/g, ''));
+            const bNum = parseFloat(bVal.toString().replace(/,/g, ''));
+            if (!isNaN(aNum) && !isNaN(bNum)) {{
+                return order === 'asc' ? aNum - bNum : bNum - aNum;
+            }}
+            return order === 'asc'
+                ? aVal.toString().localeCompare(bVal.toString())
+                : bVal.toString().localeCompare(aVal.toString());
+        }}
+
+        const headers = table.querySelectorAll('thead th');
+        headers.forEach((th, headerIndex) => {{
+            // First column is the expand/collapse control and is not sortable.
+            if (headerIndex === 0) return;
+
+            th.addEventListener('click', () => {{
+                const current = th.getAttribute('data-order') || 'desc';
+                const newOrder = current === 'asc' ? 'desc' : 'asc';
+                headers.forEach(h => h.removeAttribute('data-order'));
+                th.setAttribute('data-order', newOrder);
+
+                const monthRows = Array.from(tbody.querySelectorAll('tr.month-row'));
+                const totals = tbody.querySelector('tr.totals-row');
+
+                monthRows.sort((a, b) => {{
+                    // headerIndex is offset by one because of the expand column.
+                    const aCell = a.children[headerIndex];
+                    const bCell = b.children[headerIndex];
+                    return compareValues(sortValue(aCell), sortValue(bCell), newOrder);
+                }});
+
+                monthRows.forEach(monthRow => {{
+                    tbody.appendChild(monthRow);
+                    const groupId = monthRow.getAttribute('data-group');
+                    const children = Array.from(tbody.querySelectorAll('tr.daily-row[data-parent="' + groupId + '"]'));
+                    children.forEach(child => tbody.appendChild(child));
+                }});
+
+                if (totals) tbody.appendChild(totals);
+            }});
         }});
-      }}
-      makeSortable("{monthly_table_id}");
     }})();
     </script>
     """
