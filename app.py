@@ -1084,13 +1084,32 @@ else:
     components.html(m_html, height=table_height, scrolling=False)
 
 # ==========================================================
+# PERFORMANCE TABLE SELECTOR
+# Only one performance table is displayed at a time.
+# ==========================================================
+st.divider()
+st.subheader("📊 Performance Breakdown")
+
+performance_table_options = [
+    "👥 Sales Executive Performance Breakdown",
+    "🧪 Quality Officer Performance",
+    "📞 Welcome Caller Performance",
+]
+selected_performance_table = st.radio(
+    "Select performance table",
+    options=performance_table_options,
+    index=0,
+    horizontal=True,
+)
+
+# ==========================================================
 # ADVISOR PERFORMANCE MATRIX (with per-advisor tooltips, totals row, sticky header & sorting)
 # Add PROJECTED LIVE and Projected Live % to advisor summary
 # ==========================================================
 st.divider()
 st.subheader("👥 Sales Executive Performance Breakdown")
 
-if "Advisor" in master_df.columns and not master_df.empty:
+if selected_performance_table == "👥 Sales Executive Performance Breakdown" and "Advisor" in master_df.columns and not master_df.empty:
     advisor_summary = (
         master_df.groupby("Advisor", dropna=False)
             .agg(
@@ -1516,7 +1535,7 @@ else:
 st.divider()
 st.subheader("🧪 Quality Officer Performance")
 
-if "Quality Officer" in master_df.columns and not master_df.empty:
+if selected_performance_table == "🧪 Quality Officer Performance" and "Quality Officer" in master_df.columns and not master_df.empty:
     advisor_summary = (
         master_df.groupby("Quality Officer", dropna=False)
             .agg(
@@ -1918,7 +1937,7 @@ else:
 st.divider()
 st.subheader("📞 Welcome Caller Performance")
 
-if "Welcome Call By" in master_df.columns and not master_df.empty:
+if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome Call By" in master_df.columns and not master_df.empty:
     advisor_summary = (
         master_df.groupby("Welcome Call By", dropna=False)
             .agg(
