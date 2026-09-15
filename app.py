@@ -214,6 +214,8 @@ def load_sparta() -> pd.DataFrame:
         return df
     rename_map = {
         "Advisor": "Advisor",
+        "Quality Officer": "Quality Officer",
+        "Welcome Call By": "Welcome Call By",
         "Sale Date": "Sale Date",
         "Customer Name": "Customer Name",
         "CLI": "Telephone No.",
@@ -1504,6 +1506,812 @@ if "Advisor" in master_df.columns and not master_df.empty:
         components.html(adv_html, height=advisor_table_height, scrolling=False)
 else:
     st.info("No sales records available for the selected date or month filter.")
+
+
+
+# ==========================================================
+# 🧪 QUALITY OFFICER PERFORMANCE (same performance layout and KPI calculations)
+# Add PROJECTED LIVE and Projected Live % to performance summary
+# ==========================================================
+st.divider()
+st.subheader("🧪 Quality Officer Performance")
+
+if "Quality Officer" in master_df.columns and not master_df.empty:
+    advisor_summary = (
+        master_df.groupby("Quality Officer", dropna=False)
+            .agg(
+                Applications=("Quality Officer", "count"),
+                QA_Approved=("Quality Status Clean", lambda x: (x == "Approved").sum()),
+                QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
+                QA_Cancelled=("Quality Status Clean", lambda x: (x == "Cancelled").sum()),
+                QA_Pending=("Quality Status Clean", lambda x: (x == "Pending").sum()),
+                Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
+                Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
+                Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
+                Committed=("Portal Status Clean", lambda x: (x == "Committed").sum()),
+                Live=("Portal Status Clean", lambda x: (x == "Live").sum()),
+                Live_Cancelled=("Portal Status Clean", lambda x: (x == "Cancelled").sum()),
+            )
+            .reset_index()
+    )
+
+    if advisor_summary.empty:
+        st.info("No sales records match the selected tag filters.")
+    else:
+        advisor_summary["QA Pass Rate % Val"] = ((advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
+        advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
+        advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
+
+        advisor_summary["PROJECTED LIVE"] = (
+            advisor_summary["Live"]
+            + advisor_summary["Committed"] * committed_frac
+            + advisor_summary["Welcome_Pending"] * welcome_pending_frac
+            + advisor_summary["QA_Pending"] * quality_pending_frac
+        ).round().astype(int)
+
+        advisor_summary["Projected Live % Val"] = (
+            (advisor_summary["PROJECTED LIVE"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
+        ).fillna(0.0)
+
+        # 4. Rename columns to match display standards
+        advisor_summary = advisor_summary.rename(columns={
+            "Quality Officer": "Quality Officer",
+            "Applications": "APPLICATIONS",
+            "QA_Approved": "QA APPROVED",
+            "QA_Rework": "QA REWORK",
+            "QA_Cancelled": "QA CANCELLED",
+            "QA_Pending": "QA PENDING",
+            "Welcome_Done": "WELCOME DONE",
+            "Welcome_Cancelled": "WELCOME CANCELLED",
+            "Welcome_Pending": "WELCOME PENDING",
+            "Committed": "COMMITTED REM.",
+            "Live": "LIVE",
+            "Live_Cancelled": "LIVE CANCELLED",
+        })
+
+        advisor_summary["Quality Officer"] = advisor_summary["Quality Officer"].replace("", "Unassigned").fillna("Unassigned")
+        advisor_summary = advisor_summary.sort_values(by="APPLICATIONS", ascending=False)
+
+        # Build per-advisor raw breakdown tooltips once (use master_df as source)
+        advisor_tooltip_mapping = {
+            "QA APPROVED": ("Quality Status", "Quality Status Clean", "Approved"),
+            "QA REWORK": ("Quality Status", "Quality Status Clean", "Rework"),
+            "QA CANCELLED": ("Quality Status", "Quality Status Clean", "Cancelled"),
+            "QA PENDING": ("Quality Status", "Quality Status Clean", "Pending"),
+            "WELCOME DONE": ("Welcome Status", "Welcome Status Clean", "Done"),
+            "WELCOME CANCELLED": ("Welcome Status", "Welcome Status Clean", "Cancelled"),
+            "WELCOME PENDING": ("Welcome Status", "Welcome Status Clean", "Pending"),
+            "COMMITTED REM.": ("Portal Status", "Portal Status Clean", "Committed"),
+            "LIVE": ("Portal Status", "Portal Status Clean", "Live"),
+            "LIVE CANCELLED": ("Portal Status", "Portal Status Clean", "Cancelled"),
+        }
+
+        raw_tooltips = {}
+        # Pre-normalize advisor column in master_df for matching
+        master_df["_advisor_norm"] = master_df["Quality Officer"].fillna("").astype(str).str.strip().str.lower()
+        for _, r in advisor_summary.iterrows():
+            adv_display = str(r["Quality Officer"])
+            adv_norm = adv_display.strip().lower()
+            subset = master_df[master_df["_advisor_norm"] == adv_norm]
+            adv_tooltips = {}
+            for k, (raw_col, clean_col, target_val) in advisor_tooltip_mapping.items():
+                adv_tooltips[k] = format_raw_breakdown(subset, raw_col, clean_col, target_val)
+            # Add projection tooltip for this advisor
+            adv_proj_tooltip = (
+                f"Formula: Live + ({committed_pct_input}% × Committed) + "
+                f"({welcome_pending_pct_input}% × Welcome Pending) + ({quality_pending_pct_input}% × QA Pending)\n"
+                f"Components:\nLive: {int(r.get('LIVE',0))}\nCommitted: {int(r.get('COMMITTED REM.',0))}\n"
+                f"Welcome Pending: {int(r.get('WELCOME PENDING',0))}\nQA Pending: {int(r.get('QA PENDING',0))}\n"
+                f"Projected (rounded): {int(r.get('PROJECTED LIVE',0))}"
+            )
+            adv_tooltips["PROJECTED LIVE"] = adv_proj_tooltip
+            raw_tooltips[adv_display] = adv_tooltips
+        # drop the helper column
+        master_df.drop(columns=["_advisor_norm"], inplace=True, errors=True)
+
+        numeric_cols = {
+            "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
+            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE"
+        }
+
+        base_col_order = [
+            "Quality Officer", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
+            "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
+            "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
+            "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED"
+        ]
+
+        visible_cols = ["Quality Officer"]
+        for col in base_col_order[1:]:
+            if col in numeric_cols:
+                if (advisor_summary.get(col, pd.Series(dtype=int)) > 0).any():
+                    visible_cols.append(col)
+            elif col == "QA Pass Rate %":
+                if "QA APPROVED" in visible_cols:
+                    visible_cols.append(col)
+            elif col == "Welcome Done %":
+                if "WELCOME DONE" in visible_cols:
+                    visible_cols.append(col)
+            elif col == "Live Conversion %":
+                if "LIVE" in visible_cols:
+                    visible_cols.append(col)
+            elif col == "Projected Live %":
+                if "PROJECTED LIVE" in visible_cols:
+                    visible_cols.append(col)
+
+        def render_qa_pill(v):
+            if v >= 75.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#d1fae5; color:#047857; border:1px solid #a7f3d0; border-radius:8px; padding:3px 12px; font-weight:700;">{v:.1f}%</span>'
+            if v >= 51.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            return f'<span data-sort="{v:.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+
+        def render_welcome_pill(v):
+            if v >= 61.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#d1fae5;color:#047857;border:1px solid #a7f3d0;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            if v >= 51.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            return f'<span data-sort="{v:.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+
+        def render_live_pill(v):
+            if v >= 41.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#d1fae5;color:#047857;border:1px solid #a7f3d0;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            if v >= 21.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            return f'<span data-sort="{v:.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+
+        header_styles = {
+            "Quality Officer": "background-color:#f1f5f9;color:#334155;",
+            "APPLICATIONS": "background-color:#eff6ff;color:#1e40af;",
+            "QA APPROVED": "background-color:#f0fdf4;color:#15803d;",
+            "QA Pass Rate %": "background-color:#f0fdf4;color:#15803d;",
+            "QA REWORK": "background-color:#fefce8;color:#a16207;",
+            "QA CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
+            "QA PENDING": "background-color:#fff7ed;color:#c2410c;",
+            "WELCOME DONE": "background-color:#f0fdf4;color:#15803d;",
+            "Welcome Done %": "background-color:#f0fdf4;color:#15803d;",
+            "WELCOME CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
+            "WELCOME PENDING": "background-color:#fefce8;color:#a16207;",
+            "COMMITTED REM.": "background-color:#fff7ed;color:#c2410c;",
+            "LIVE": "background-color:#f0fdfa;color:#0f766e;",
+            "LIVE CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
+            "PROJECTED LIVE": "background-color:#eef2ff;color:#3730a3;",
+            "Projected Live %": "background-color:#eef2ff;color:#3730a3;",
+            "Live Conversion %": "background-color:#f0fdfa;color:#0f766e;",
+        }
+
+        # Compute totals across visible advisors for numeric columns
+        totals_series = advisor_summary[[c for c in advisor_summary.columns if c in numeric_cols]].sum(numeric_only=True)
+        total_apps = int(totals_series.get("APPLICATIONS", 0))
+        total_qa_approved = int(totals_series.get("QA APPROVED", 0))
+        total_welcome_done = int(totals_series.get("WELCOME DONE", 0))
+        total_live = int(totals_series.get("LIVE", 0))
+
+        # totals percentages (overall)
+        total_qa_pass_pct = (total_qa_approved / total_apps * 100) if total_apps > 0 else 0.0
+        total_welcome_pct = (total_welcome_done / total_apps * 100) if total_apps > 0 else 0.0
+        total_live_pct = (total_live / total_apps * 100) if total_apps > 0 else 0.0
+
+        # totals tooltips using filtered master_df
+        totals_tooltips = {}
+        for k, (raw_col, clean_col, target_val) in advisor_tooltip_mapping.items():
+            totals_tooltips[k] = format_raw_breakdown(master_df, raw_col, clean_col, target_val)
+        # totals projection tooltip
+        totals_tooltips["PROJECTED LIVE"] = (
+            f"Aggregate projection using weights: {committed_pct_input}% committed, "
+            f"{welcome_pending_pct_input}% welcome pending, {quality_pending_pct_input}% quality pending"
+        )
+
+        # Build advisor HTML table (use components.html to allow JS)
+        advisor_table_id = "quality-officer-perf-table"
+        advisor_table_height = min(900, max(240, 90 + len(advisor_summary) * 45))
+        adv_html = f'''
+        <style>
+          .perf-table-container {{
+            width:100%;
+            border:1px solid #e2e8f0;
+            border-radius:8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            margin-bottom:16px;
+            max-height:{advisor_table_height}px;
+            overflow:auto;
+          }}
+          table.perf-table {{
+            width:100%;
+            border-collapse:collapse;
+            font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;
+            font-size:0.88rem;
+            background:#fff;
+          }}
+          table.perf-table th {{
+            padding:10px 12px;
+            font-weight:800;
+            font-size:0.78rem;
+            text-transform:uppercase;
+            border-bottom:2px solid #e2e8f0;
+            position:sticky;
+            top:0;
+            z-index:5;
+            background:#fff;
+            cursor:pointer;
+          }}
+          table.perf-table td {{
+            padding:8px 12px;
+            border-bottom:1px solid #f1f5f9;
+          }}
+          table.perf-table td:first-child {{
+            text-align:left;
+            font-weight:700;
+            color:#0f172a;
+          }}
+          .tag{{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;}}
+          .new{{background:#ede9fe;color:#6d28d9;}} .cs{{background:#e0f2fe;color:#0369a1;}} .left{{background:#fee2e2;color:#991b1b;}}
+          .totals-row{{font-weight:800;background-color:#f8fafc;}}
+        </style>
+        <div class="perf-table-container">
+          <table id="{advisor_table_id}" class="perf-table">
+            <thead><tr>
+        '''
+        for c in visible_cols:
+            style = header_styles.get(c, "background-color:#f8fafc;color:#475569;")
+            adv_html += f'<th style="{style}">{c}</th>'
+        adv_html += '</tr></thead><tbody>'
+
+        for _, r in advisor_summary.iterrows():
+            adv_display = str(r["Quality Officer"])
+            adv_tooltips_local = raw_tooltips.get(adv_display, {})
+            adv_html += "<tr>"
+            for c in visible_cols:
+                if c == "Quality Officer":
+                    name = escape(str(r[c]))
+                    lname = name.strip().lower()
+                    tags_html = ""
+                    adv_html += f"<td data-sort=\"{escape(name)}\">{name}{tags_html}</td>"
+                elif c == "QA Pass Rate %":
+                    val = float(r["QA Pass Rate % Val"])
+                    raw_text = adv_tooltips_local.get("QA APPROVED", "")
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_qa_pill(val)}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val:.6f}">{render_qa_pill(val)}</td>'
+                elif c == "Welcome Done %":
+                    val = float(r["Welcome Done % Val"])
+                    raw_text = adv_tooltips_local.get("WELCOME DONE", "")
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_welcome_pill(val)}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val:.6f}">{render_welcome_pill(val)}</td>'
+                elif c == "Live Conversion %":
+                    val = float(r["Live Conversion % Val"])
+                    raw_text = adv_tooltips_local.get("LIVE", "")
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_live_pill(val)}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val:.6f}">{render_live_pill(val)}</td>'
+                elif c == "PROJECTED LIVE":
+                    val = int(r.get("PROJECTED LIVE", 0))
+                    raw_text = adv_tooltips_local.get("PROJECTED LIVE", "")
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{val:,}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val}">{val:,}</td>'
+                elif c == "Projected Live %":
+                    val = float(r.get("Projected Live % Val", 0.0))
+                    raw_text = adv_tooltips_local.get("PROJECTED LIVE", "")
+                    pill_html = render_live_pill(val)
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{pill_html}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val:.6f}">{pill_html}</td>'
+                else:
+                    val = r.get(c)
+                    raw_text = adv_tooltips_local.get(c, "")
+                    if isinstance(val, (int, np.integer)):
+                        formatted_val = "-" if int(val) == 0 else f"{int(val):,}"
+                        if raw_text and int(val) != 0:
+                            tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                            adv_html += f'<td data-sort="{int(val)}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+                        else:
+                            adv_html += f'<td data-sort="{int(val)}">{formatted_val}</td>'
+                    else:
+                        formatted_val = "-" if (val == 0 or pd.isna(val)) else escape(str(val))
+                        if raw_text and str(val) not in ("0", "-", ""):
+                            tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                            adv_html += f'<td data-sort="{escape(str(val))}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+                        else:
+                            adv_html += f'<td data-sort="{escape(str(val))}">{formatted_val}</td>'
+            adv_html += "</tr>"
+
+        # totals row
+        adv_html += '<tr class="totals-row">'
+        for c in visible_cols:
+            if c == "Quality Officer":
+                adv_html += "<td data-sort='Total'>Total</td>"
+            elif c == "QA Pass Rate %":
+                adv_html += f'<td data-sort="{total_qa_pass_pct:.6f}">' + f'{render_qa_pill(total_qa_pass_pct)}</td>'
+            elif c == "Welcome Done %":
+                adv_html += f'<td data-sort="{total_welcome_pct:.6f}">' + f'{render_welcome_pill(total_welcome_pct)}</td>'
+            elif c == "Live Conversion %":
+                adv_html += f'<td data-sort="{total_live_pct:.6f}">' + f'{render_live_pill(total_live_pct)}</td>'
+            elif c == "PROJECTED LIVE":
+                tot_proj = int(round(
+                    advisor_summary["PROJECTED LIVE"].sum()
+                ))
+                tooltip_text = totals_tooltips.get("PROJECTED LIVE", "")
+                if tooltip_text and tot_proj != 0:
+                    tooltip_html = escape(str(tooltip_text)).replace("\n", "&#10;")
+                    adv_html += f'<td data-sort="{tot_proj}" title="{tooltip_html}" style="cursor:help;">{tot_proj:,}</td>'
+                else:
+                    adv_html += f'<td data-sort="{tot_proj}">{tot_proj:,}</td>'
+            elif c == "Projected Live %":
+                tot_proj_pct = ( (advisor_summary["PROJECTED LIVE"].sum() / totals_series.get("APPLICATIONS", 1)) * 100 ) if totals_series.get("APPLICATIONS",0) > 0 else 0.0
+                adv_html += f'<td data-sort="{tot_proj_pct:.6f}">'+f'{render_live_pill(tot_proj_pct)}</td>'
+            else:
+                if c in numeric_cols:
+                    tot_val = int(totals_series.get(c, 0))
+                    formatted = "-" if tot_val == 0 else f"{tot_val:,}"
+                    tooltip_text = totals_tooltips.get(c, "")
+                    if tooltip_text and tot_val != 0:
+                        tooltip_html = escape(str(tooltip_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{tot_val}" title="{tooltip_html}" style="cursor:help;">{formatted}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{tot_val}">{formatted}</td>'
+                else:
+                    adv_html += "<td data-sort='-'>-</td>"
+        adv_html += "</tr>"
+
+        adv_html += "</tbody></table></div>"
+
+        # Sorting JS for advisor table; keeps totals-row at bottom
+        adv_html += f"""
+        <script>
+        (function() {{
+          function makeSortable(tableId) {{
+            const table = document.getElementById(tableId);
+            if(!table) return;
+            const tbody = table.tBodies[0];
+            const headers = table.querySelectorAll('th');
+            headers.forEach((th, index) => {{
+              th.addEventListener('click', () => {{
+                const current = th.getAttribute('data-order') || 'desc';
+                const newOrder = current === 'asc' ? 'desc' : 'asc';
+                headers.forEach(h => h.removeAttribute('data-order'));
+                th.setAttribute('data-order', newOrder);
+                const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => !r.classList.contains('totals-row'));
+                rows.sort((a,b) => {{
+                  const aCell = a.children[index];
+                  const bCell = b.children[index];
+                  const aVal = aCell ? (aCell.getAttribute('data-sort') || aCell.innerText) : '';
+                  const bVal = bCell ? (bCell.getAttribute('data-sort') || bCell.innerText) : '';
+                  const aNum = parseFloat(aVal.toString().replace(/,/g,'')); 
+                  const bNum = parseFloat(bVal.toString().replace(/,/g,''));
+                  if(!isNaN(aNum) && !isNaN(bNum)) {{
+                    return newOrder === 'asc' ? aNum - bNum : bNum - aNum;
+                  }}
+                  return newOrder === 'asc' ? aVal.toString().localeCompare(bVal.toString()) : bVal.toString().localeCompare(aVal.toString());
+                }});
+                rows.forEach(r => tbody.appendChild(r));
+                const totals = tbody.querySelector('tr.totals-row');
+                if(totals) tbody.appendChild(totals);
+              }});
+            }});
+          }}
+          makeSortable("{advisor_table_id}");
+        }})();
+        </script>
+        """
+        components.html(adv_html, height=advisor_table_height, scrolling=False)
+else:
+    st.info("No sales records available for the selected date or month filter.")
+
+
+
+# ==========================================================
+# 📞 WELCOME CALLER PERFORMANCE (same performance layout and KPI calculations)
+# Add PROJECTED LIVE and Projected Live % to performance summary
+# ==========================================================
+st.divider()
+st.subheader("📞 Welcome Caller Performance")
+
+if "Welcome Call By" in master_df.columns and not master_df.empty:
+    advisor_summary = (
+        master_df.groupby("Welcome Call By", dropna=False)
+            .agg(
+                Applications=("Welcome Call By", "count"),
+                QA_Approved=("Quality Status Clean", lambda x: (x == "Approved").sum()),
+                QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
+                QA_Cancelled=("Quality Status Clean", lambda x: (x == "Cancelled").sum()),
+                QA_Pending=("Quality Status Clean", lambda x: (x == "Pending").sum()),
+                Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
+                Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
+                Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
+                Committed=("Portal Status Clean", lambda x: (x == "Committed").sum()),
+                Live=("Portal Status Clean", lambda x: (x == "Live").sum()),
+                Live_Cancelled=("Portal Status Clean", lambda x: (x == "Cancelled").sum()),
+            )
+            .reset_index()
+    )
+
+    if advisor_summary.empty:
+        st.info("No sales records match the selected tag filters.")
+    else:
+        advisor_summary["QA Pass Rate % Val"] = ((advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
+        advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
+        advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
+
+        advisor_summary["PROJECTED LIVE"] = (
+            advisor_summary["Live"]
+            + advisor_summary["Committed"] * committed_frac
+            + advisor_summary["Welcome_Pending"] * welcome_pending_frac
+            + advisor_summary["QA_Pending"] * quality_pending_frac
+        ).round().astype(int)
+
+        advisor_summary["Projected Live % Val"] = (
+            (advisor_summary["PROJECTED LIVE"] / advisor_summary["Applications"].replace(0, np.nan)) * 100
+        ).fillna(0.0)
+
+        # 4. Rename columns to match display standards
+        advisor_summary = advisor_summary.rename(columns={
+            "Welcome Call By": "Welcome Call By",
+            "Applications": "APPLICATIONS",
+            "QA_Approved": "QA APPROVED",
+            "QA_Rework": "QA REWORK",
+            "QA_Cancelled": "QA CANCELLED",
+            "QA_Pending": "QA PENDING",
+            "Welcome_Done": "WELCOME DONE",
+            "Welcome_Cancelled": "WELCOME CANCELLED",
+            "Welcome_Pending": "WELCOME PENDING",
+            "Committed": "COMMITTED REM.",
+            "Live": "LIVE",
+            "Live_Cancelled": "LIVE CANCELLED",
+        })
+
+        advisor_summary["Welcome Call By"] = advisor_summary["Welcome Call By"].replace("", "Unassigned").fillna("Unassigned")
+        advisor_summary = advisor_summary.sort_values(by="APPLICATIONS", ascending=False)
+
+        # Build per-advisor raw breakdown tooltips once (use master_df as source)
+        advisor_tooltip_mapping = {
+            "QA APPROVED": ("Quality Status", "Quality Status Clean", "Approved"),
+            "QA REWORK": ("Quality Status", "Quality Status Clean", "Rework"),
+            "QA CANCELLED": ("Quality Status", "Quality Status Clean", "Cancelled"),
+            "QA PENDING": ("Quality Status", "Quality Status Clean", "Pending"),
+            "WELCOME DONE": ("Welcome Status", "Welcome Status Clean", "Done"),
+            "WELCOME CANCELLED": ("Welcome Status", "Welcome Status Clean", "Cancelled"),
+            "WELCOME PENDING": ("Welcome Status", "Welcome Status Clean", "Pending"),
+            "COMMITTED REM.": ("Portal Status", "Portal Status Clean", "Committed"),
+            "LIVE": ("Portal Status", "Portal Status Clean", "Live"),
+            "LIVE CANCELLED": ("Portal Status", "Portal Status Clean", "Cancelled"),
+        }
+
+        raw_tooltips = {}
+        # Pre-normalize advisor column in master_df for matching
+        master_df["_advisor_norm"] = master_df["Welcome Call By"].fillna("").astype(str).str.strip().str.lower()
+        for _, r in advisor_summary.iterrows():
+            adv_display = str(r["Welcome Call By"])
+            adv_norm = adv_display.strip().lower()
+            subset = master_df[master_df["_advisor_norm"] == adv_norm]
+            adv_tooltips = {}
+            for k, (raw_col, clean_col, target_val) in advisor_tooltip_mapping.items():
+                adv_tooltips[k] = format_raw_breakdown(subset, raw_col, clean_col, target_val)
+            # Add projection tooltip for this advisor
+            adv_proj_tooltip = (
+                f"Formula: Live + ({committed_pct_input}% × Committed) + "
+                f"({welcome_pending_pct_input}% × Welcome Pending) + ({quality_pending_pct_input}% × QA Pending)\n"
+                f"Components:\nLive: {int(r.get('LIVE',0))}\nCommitted: {int(r.get('COMMITTED REM.',0))}\n"
+                f"Welcome Pending: {int(r.get('WELCOME PENDING',0))}\nQA Pending: {int(r.get('QA PENDING',0))}\n"
+                f"Projected (rounded): {int(r.get('PROJECTED LIVE',0))}"
+            )
+            adv_tooltips["PROJECTED LIVE"] = adv_proj_tooltip
+            raw_tooltips[adv_display] = adv_tooltips
+        # drop the helper column
+        master_df.drop(columns=["_advisor_norm"], inplace=True, errors=True)
+
+        numeric_cols = {
+            "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
+            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE"
+        }
+
+        base_col_order = [
+            "Welcome Call By", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
+            "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
+            "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
+            "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED"
+        ]
+
+        visible_cols = ["Welcome Call By"]
+        for col in base_col_order[1:]:
+            if col in numeric_cols:
+                if (advisor_summary.get(col, pd.Series(dtype=int)) > 0).any():
+                    visible_cols.append(col)
+            elif col == "QA Pass Rate %":
+                if "QA APPROVED" in visible_cols:
+                    visible_cols.append(col)
+            elif col == "Welcome Done %":
+                if "WELCOME DONE" in visible_cols:
+                    visible_cols.append(col)
+            elif col == "Live Conversion %":
+                if "LIVE" in visible_cols:
+                    visible_cols.append(col)
+            elif col == "Projected Live %":
+                if "PROJECTED LIVE" in visible_cols:
+                    visible_cols.append(col)
+
+        def render_qa_pill(v):
+            if v >= 75.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#d1fae5; color:#047857; border:1px solid #a7f3d0; border-radius:8px; padding:3px 12px; font-weight:700;">{v:.1f}%</span>'
+            if v >= 51.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            return f'<span data-sort="{v:.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+
+        def render_welcome_pill(v):
+            if v >= 61.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#d1fae5;color:#047857;border:1px solid #a7f3d0;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            if v >= 51.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            return f'<span data-sort="{v:.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+
+        def render_live_pill(v):
+            if v >= 41.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#d1fae5;color:#047857;border:1px solid #a7f3d0;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            if v >= 21.0:
+                return f'<span data-sort="{v:.6f}" style="background-color:#fef3c7;color:#b45309;border:1px solid #fde68a;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+            return f'<span data-sort="{v:.6f}" style="background-color:#ffe4e6;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:3px 12px;font-weight:700;">{v:.1f}%</span>'
+
+        header_styles = {
+            "Welcome Call By": "background-color:#f1f5f9;color:#334155;",
+            "APPLICATIONS": "background-color:#eff6ff;color:#1e40af;",
+            "QA APPROVED": "background-color:#f0fdf4;color:#15803d;",
+            "QA Pass Rate %": "background-color:#f0fdf4;color:#15803d;",
+            "QA REWORK": "background-color:#fefce8;color:#a16207;",
+            "QA CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
+            "QA PENDING": "background-color:#fff7ed;color:#c2410c;",
+            "WELCOME DONE": "background-color:#f0fdf4;color:#15803d;",
+            "Welcome Done %": "background-color:#f0fdf4;color:#15803d;",
+            "WELCOME CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
+            "WELCOME PENDING": "background-color:#fefce8;color:#a16207;",
+            "COMMITTED REM.": "background-color:#fff7ed;color:#c2410c;",
+            "LIVE": "background-color:#f0fdfa;color:#0f766e;",
+            "LIVE CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
+            "PROJECTED LIVE": "background-color:#eef2ff;color:#3730a3;",
+            "Projected Live %": "background-color:#eef2ff;color:#3730a3;",
+            "Live Conversion %": "background-color:#f0fdfa;color:#0f766e;",
+        }
+
+        # Compute totals across visible advisors for numeric columns
+        totals_series = advisor_summary[[c for c in advisor_summary.columns if c in numeric_cols]].sum(numeric_only=True)
+        total_apps = int(totals_series.get("APPLICATIONS", 0))
+        total_qa_approved = int(totals_series.get("QA APPROVED", 0))
+        total_welcome_done = int(totals_series.get("WELCOME DONE", 0))
+        total_live = int(totals_series.get("LIVE", 0))
+
+        # totals percentages (overall)
+        total_qa_pass_pct = (total_qa_approved / total_apps * 100) if total_apps > 0 else 0.0
+        total_welcome_pct = (total_welcome_done / total_apps * 100) if total_apps > 0 else 0.0
+        total_live_pct = (total_live / total_apps * 100) if total_apps > 0 else 0.0
+
+        # totals tooltips using filtered master_df
+        totals_tooltips = {}
+        for k, (raw_col, clean_col, target_val) in advisor_tooltip_mapping.items():
+            totals_tooltips[k] = format_raw_breakdown(master_df, raw_col, clean_col, target_val)
+        # totals projection tooltip
+        totals_tooltips["PROJECTED LIVE"] = (
+            f"Aggregate projection using weights: {committed_pct_input}% committed, "
+            f"{welcome_pending_pct_input}% welcome pending, {quality_pending_pct_input}% quality pending"
+        )
+
+        # Build advisor HTML table (use components.html to allow JS)
+        advisor_table_id = "welcome-caller-perf-table"
+        advisor_table_height = min(900, max(240, 90 + len(advisor_summary) * 45))
+        adv_html = f'''
+        <style>
+          .perf-table-container {{
+            width:100%;
+            border:1px solid #e2e8f0;
+            border-radius:8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            margin-bottom:16px;
+            max-height:{advisor_table_height}px;
+            overflow:auto;
+          }}
+          table.perf-table {{
+            width:100%;
+            border-collapse:collapse;
+            font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;
+            font-size:0.88rem;
+            background:#fff;
+          }}
+          table.perf-table th {{
+            padding:10px 12px;
+            font-weight:800;
+            font-size:0.78rem;
+            text-transform:uppercase;
+            border-bottom:2px solid #e2e8f0;
+            position:sticky;
+            top:0;
+            z-index:5;
+            background:#fff;
+            cursor:pointer;
+          }}
+          table.perf-table td {{
+            padding:8px 12px;
+            border-bottom:1px solid #f1f5f9;
+          }}
+          table.perf-table td:first-child {{
+            text-align:left;
+            font-weight:700;
+            color:#0f172a;
+          }}
+          .tag{{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;}}
+          .new{{background:#ede9fe;color:#6d28d9;}} .cs{{background:#e0f2fe;color:#0369a1;}} .left{{background:#fee2e2;color:#991b1b;}}
+          .totals-row{{font-weight:800;background-color:#f8fafc;}}
+        </style>
+        <div class="perf-table-container">
+          <table id="{advisor_table_id}" class="perf-table">
+            <thead><tr>
+        '''
+        for c in visible_cols:
+            style = header_styles.get(c, "background-color:#f8fafc;color:#475569;")
+            adv_html += f'<th style="{style}">{c}</th>'
+        adv_html += '</tr></thead><tbody>'
+
+        for _, r in advisor_summary.iterrows():
+            adv_display = str(r["Welcome Call By"])
+            adv_tooltips_local = raw_tooltips.get(adv_display, {})
+            adv_html += "<tr>"
+            for c in visible_cols:
+                if c == "Welcome Call By":
+                    name = escape(str(r[c]))
+                    lname = name.strip().lower()
+                    tags_html = ""
+                    adv_html += f"<td data-sort=\"{escape(name)}\">{name}{tags_html}</td>"
+                elif c == "QA Pass Rate %":
+                    val = float(r["QA Pass Rate % Val"])
+                    raw_text = adv_tooltips_local.get("QA APPROVED", "")
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_qa_pill(val)}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val:.6f}">{render_qa_pill(val)}</td>'
+                elif c == "Welcome Done %":
+                    val = float(r["Welcome Done % Val"])
+                    raw_text = adv_tooltips_local.get("WELCOME DONE", "")
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_welcome_pill(val)}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val:.6f}">{render_welcome_pill(val)}</td>'
+                elif c == "Live Conversion %":
+                    val = float(r["Live Conversion % Val"])
+                    raw_text = adv_tooltips_local.get("LIVE", "")
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{render_live_pill(val)}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val:.6f}">{render_live_pill(val)}</td>'
+                elif c == "PROJECTED LIVE":
+                    val = int(r.get("PROJECTED LIVE", 0))
+                    raw_text = adv_tooltips_local.get("PROJECTED LIVE", "")
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val}" title="{tooltip_html}" style="cursor:help;">{val:,}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val}">{val:,}</td>'
+                elif c == "Projected Live %":
+                    val = float(r.get("Projected Live % Val", 0.0))
+                    raw_text = adv_tooltips_local.get("PROJECTED LIVE", "")
+                    pill_html = render_live_pill(val)
+                    if raw_text and val != 0:
+                        tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{val:.6f}" title="{tooltip_html}" style="cursor:help;">{pill_html}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{val:.6f}">{pill_html}</td>'
+                else:
+                    val = r.get(c)
+                    raw_text = adv_tooltips_local.get(c, "")
+                    if isinstance(val, (int, np.integer)):
+                        formatted_val = "-" if int(val) == 0 else f"{int(val):,}"
+                        if raw_text and int(val) != 0:
+                            tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                            adv_html += f'<td data-sort="{int(val)}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+                        else:
+                            adv_html += f'<td data-sort="{int(val)}">{formatted_val}</td>'
+                    else:
+                        formatted_val = "-" if (val == 0 or pd.isna(val)) else escape(str(val))
+                        if raw_text and str(val) not in ("0", "-", ""):
+                            tooltip_html = escape(str(raw_text)).replace("\n", "&#10;")
+                            adv_html += f'<td data-sort="{escape(str(val))}" title="{tooltip_html}" style="cursor:help;">{formatted_val}</td>'
+                        else:
+                            adv_html += f'<td data-sort="{escape(str(val))}">{formatted_val}</td>'
+            adv_html += "</tr>"
+
+        # totals row
+        adv_html += '<tr class="totals-row">'
+        for c in visible_cols:
+            if c == "Welcome Call By":
+                adv_html += "<td data-sort='Total'>Total</td>"
+            elif c == "QA Pass Rate %":
+                adv_html += f'<td data-sort="{total_qa_pass_pct:.6f}">' + f'{render_qa_pill(total_qa_pass_pct)}</td>'
+            elif c == "Welcome Done %":
+                adv_html += f'<td data-sort="{total_welcome_pct:.6f}">' + f'{render_welcome_pill(total_welcome_pct)}</td>'
+            elif c == "Live Conversion %":
+                adv_html += f'<td data-sort="{total_live_pct:.6f}">' + f'{render_live_pill(total_live_pct)}</td>'
+            elif c == "PROJECTED LIVE":
+                tot_proj = int(round(
+                    advisor_summary["PROJECTED LIVE"].sum()
+                ))
+                tooltip_text = totals_tooltips.get("PROJECTED LIVE", "")
+                if tooltip_text and tot_proj != 0:
+                    tooltip_html = escape(str(tooltip_text)).replace("\n", "&#10;")
+                    adv_html += f'<td data-sort="{tot_proj}" title="{tooltip_html}" style="cursor:help;">{tot_proj:,}</td>'
+                else:
+                    adv_html += f'<td data-sort="{tot_proj}">{tot_proj:,}</td>'
+            elif c == "Projected Live %":
+                tot_proj_pct = ( (advisor_summary["PROJECTED LIVE"].sum() / totals_series.get("APPLICATIONS", 1)) * 100 ) if totals_series.get("APPLICATIONS",0) > 0 else 0.0
+                adv_html += f'<td data-sort="{tot_proj_pct:.6f}">'+f'{render_live_pill(tot_proj_pct)}</td>'
+            else:
+                if c in numeric_cols:
+                    tot_val = int(totals_series.get(c, 0))
+                    formatted = "-" if tot_val == 0 else f"{tot_val:,}"
+                    tooltip_text = totals_tooltips.get(c, "")
+                    if tooltip_text and tot_val != 0:
+                        tooltip_html = escape(str(tooltip_text)).replace("\n", "&#10;")
+                        adv_html += f'<td data-sort="{tot_val}" title="{tooltip_html}" style="cursor:help;">{formatted}</td>'
+                    else:
+                        adv_html += f'<td data-sort="{tot_val}">{formatted}</td>'
+                else:
+                    adv_html += "<td data-sort='-'>-</td>"
+        adv_html += "</tr>"
+
+        adv_html += "</tbody></table></div>"
+
+        # Sorting JS for advisor table; keeps totals-row at bottom
+        adv_html += f"""
+        <script>
+        (function() {{
+          function makeSortable(tableId) {{
+            const table = document.getElementById(tableId);
+            if(!table) return;
+            const tbody = table.tBodies[0];
+            const headers = table.querySelectorAll('th');
+            headers.forEach((th, index) => {{
+              th.addEventListener('click', () => {{
+                const current = th.getAttribute('data-order') || 'desc';
+                const newOrder = current === 'asc' ? 'desc' : 'asc';
+                headers.forEach(h => h.removeAttribute('data-order'));
+                th.setAttribute('data-order', newOrder);
+                const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => !r.classList.contains('totals-row'));
+                rows.sort((a,b) => {{
+                  const aCell = a.children[index];
+                  const bCell = b.children[index];
+                  const aVal = aCell ? (aCell.getAttribute('data-sort') || aCell.innerText) : '';
+                  const bVal = bCell ? (bCell.getAttribute('data-sort') || bCell.innerText) : '';
+                  const aNum = parseFloat(aVal.toString().replace(/,/g,'')); 
+                  const bNum = parseFloat(bVal.toString().replace(/,/g,''));
+                  if(!isNaN(aNum) && !isNaN(bNum)) {{
+                    return newOrder === 'asc' ? aNum - bNum : bNum - aNum;
+                  }}
+                  return newOrder === 'asc' ? aVal.toString().localeCompare(bVal.toString()) : bVal.toString().localeCompare(aVal.toString());
+                }});
+                rows.forEach(r => tbody.appendChild(r));
+                const totals = tbody.querySelector('tr.totals-row');
+                if(totals) tbody.appendChild(totals);
+              }});
+            }});
+          }}
+          makeSortable("{advisor_table_id}");
+        }})();
+        </script>
+        """
+        components.html(adv_html, height=advisor_table_height, scrolling=False)
+else:
+    st.info("No sales records available for the selected date or month filter.")
+
+
 
 # ==========================================================
 # FOOTER
