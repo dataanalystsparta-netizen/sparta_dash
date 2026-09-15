@@ -1106,8 +1106,9 @@ selected_performance_table = st.radio(
 # ADVISOR PERFORMANCE MATRIX (with per-advisor tooltips, totals row, sticky header & sorting)
 # Add PROJECTED LIVE and Projected Live % to advisor summary
 # ==========================================================
-st.divider()
-st.subheader("👥 Sales Executive Performance Breakdown")
+if selected_performance_table == "👥 Sales Executive Performance Breakdown":
+    st.divider()
+    st.subheader("👥 Sales Executive Performance Breakdown")
 
 if selected_performance_table == "👥 Sales Executive Performance Breakdown" and "Advisor" in master_df.columns and not master_df.empty:
     advisor_summary = (
@@ -1523,17 +1524,17 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         </script>
         """
         components.html(adv_html, height=advisor_table_height, scrolling=False)
-else:
+elif selected_performance_table == "👥 Sales Executive Performance Breakdown":
     st.info("No sales records available for the selected date or month filter.")
-
 
 
 # ==========================================================
 # 🧪 QUALITY OFFICER PERFORMANCE (same performance layout and KPI calculations)
 # Add PROJECTED LIVE and Projected Live % to performance summary
 # ==========================================================
-st.divider()
-st.subheader("🧪 Quality Officer Performance")
+if selected_performance_table == "🧪 Quality Officer Performance":
+    st.divider()
+    st.subheader("🧪 Quality Officer Performance")
 
 if selected_performance_table == "🧪 Quality Officer Performance" and "Quality Officer" in master_df.columns and not master_df.empty:
     advisor_summary = (
@@ -1925,17 +1926,17 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
         </script>
         """
         components.html(adv_html, height=advisor_table_height, scrolling=False)
-else:
+elif selected_performance_table == "🧪 Quality Officer Performance":
     st.info("No sales records available for the selected date or month filter.")
-
 
 
 # ==========================================================
 # 📞 WELCOME CALLER PERFORMANCE (same performance layout and KPI calculations)
 # Add PROJECTED LIVE and Projected Live % to performance summary
 # ==========================================================
-st.divider()
-st.subheader("📞 Welcome Caller Performance")
+if selected_performance_table == "📞 Welcome Caller Performance":
+    st.divider()
+    st.subheader("📞 Welcome Caller Performance")
 
 if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome Call By" in master_df.columns and not master_df.empty:
     advisor_summary = (
@@ -2327,9 +2328,8 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
         </script>
         """
         components.html(adv_html, height=advisor_table_height, scrolling=False)
-else:
+elif selected_performance_table == "📞 Welcome Caller Performance":
     st.info("No sales records available for the selected date or month filter.")
-
 
 
 # ==========================================================
