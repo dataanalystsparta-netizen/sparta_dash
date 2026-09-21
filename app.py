@@ -68,7 +68,7 @@ LEFT_ADVISORS = [
     "Gaurav", "Guru", "Niki", "Shaheen", "Manmeet", "Gungun", "Rani", "Archana", "Deepali", "Sushanshu",
     "Supreme", "Tokivi", "Sangeeta", "Vijay", "Khushbu", "Kushal", "Nishant", "Pawan", "Mehak", "Khushboo", "Ashima",
     "Aarti", "Abhay", "Diwakar", "Manshay", "Khusboo", "Manmet", "Lakshay", "Sneha", "Swarali", "Monica", "Paras",
-    "Veer", "Yash", "Sudhanshu", "Rishabh", "Krrish", "Anshu", "Edwin", "Sravan"
+    "Veer", "Yash", "Sudhanshu", "Rishabh", "Krrish", "Anshu", "Edwin", "Sravan", "Seema", "Prateek"
 ]
 
 NEW_ADVISORS_SET = {a.strip().lower() for a in NEW_ADVISORS}
