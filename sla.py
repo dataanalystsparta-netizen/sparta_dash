@@ -1496,20 +1496,19 @@ def within_date_range(
         errors="coerce",
     )
 
+    # Convert the Streamlit date_input values to
+    # pandas timestamps so both sides of the comparison
+    # use the same datetime type.
+    start_ts = pd.Timestamp(start_date)
+    end_ts = pd.Timestamp(end_date)
+
     return (
         dates.notna()
         &
-        (
-            dates.dt.date
-            >= start_date
-        )
+        (dates >= start_ts)
         &
-        (
-            dates.dt.date
-            <= end_date
-        )
+        (dates < end_ts + pd.Timedelta(days=1))
     )
-
 
 def filter_by_advisor(
     df: pd.DataFrame,
