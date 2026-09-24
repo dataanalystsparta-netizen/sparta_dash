@@ -1,104 +1,40 @@
 """
-SPARTA PENDING OPERATIONS DASHBOARD
-===================================
+SPARTA PENDING SALES - MANUAL TRACKER
+=====================================
 
-Purpose
--------
-A separate operational dashboard showing CURRENTLY PENDING SALES.
+Simple manual dashboard for recording pending sales.
 
-Pending logic
--------------
-QUALITY
-    Quality Status is blank
-    AND
-    Quality Remarks is blank
+Each sale is entered once and can be pending in MULTIPLE stages.
 
-WELCOME
-    Welcome call Remarks is blank
-    AND
-    Status is blank
+Fields:
+    - Sale Date
+    - Customer Name
+    - Phone Number
+    - Pending Stage(s)
+    - Notes
 
-PROVISIONING
-    Status = "Done"
-    AND
-    Provisioning != "Processed"
+Stages:
+    - Quality
+    - Welcome
+    - Committed
+    - Provisioning
 
-COMMITTED
-    CallStatus is blank
-    AND
-    Comments is blank
+There is NO automatic data loading.
+There is NO SLA calculation.
+There is NO Google Sheets dependency.
 
-There are deliberately NO SLA targets, deadlines, breach calculations,
-RAG status, ageing calculations or performance scores.
-
-The dashboard simply answers:
-
-    WHICH SALES ARE PENDING?
-    WHERE ARE THEY PENDING?
-
-Manual Pending Sales
---------------------
-Because current / previous day sales may not yet exist in the source sheet,
-manual pending sales can be entered for any stage and any date.
-
-Manual entries are retained for the current Streamlit browser session and
-are included in all pending counts and tables.
-
-Data sources
-------------
-    Sparta  -> Applications / Quality / Welcome / Provisioning
-    Sparta2 -> Committed / CallStatus / Comments
+Data is stored in Streamlit session state.
 """
 
 # ============================================================
 # IMPORTS
 # ============================================================
 
-import logging
-import re
-import time
 from datetime import date, datetime
-from html import escape
-from typing import List
-from zoneinfo import ZoneInfo
+from io import BytesIO
 
-import numpy as np
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
-
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-
-
-# ============================================================
-# LOGGING
-# ============================================================
-
-logger = logging.getLogger("sparta_pending_dashboard")
-
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s %(levelname)s %(message)s"
-        )
-    )
-    logger.addHandler(handler)
-
-logger.setLevel(logging.INFO)
-
-
-# ============================================================
-# TIMEZONE
-# ============================================================
-
-IST = ZoneInfo("Asia/Kolkata")
-
-
-def now_ist() -> datetime:
-    return datetime.now(IST)
 
 
 # ============================================================
@@ -106,11 +42,45 @@ def now_ist() -> datetime:
 # ============================================================
 
 st.set_page_config(
-    page_title="Sparta Pending Operations",
+    page_title="Sparta Pending Sales",
     page_icon="⏳",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+# ============================================================
+# CONSTANTS
+# ============================================================
+
+STAGES = [
+    "Quality",
+    "Welcome",
+    "Committed",
+    "Provisioning",
+]
+
+STAGE_ICONS = {
+    "Quality": "🧪",
+    "Welcome": "📞",
+    "Committed": "📱",
+    "Provisioning": "⚙️",
+}
+
+STAGE_CLASSES = {
+    "Quality": "quality",
+    "Welcome": "welcome",
+    "Committed": "committed",
+    "Provisioning": "provisioning",
+}
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "pending_sales" not in st.session_state:
+    st.session_state.pending_sales = []
 
 
 # ============================================================
@@ -121,76 +91,225 @@ st.markdown(
     """
     <style>
 
+    /* --------------------------------------------------------
+       PAGE
+       -------------------------------------------------------- */
+
     .block-container {
-        padding-top: 1.35rem;
+        max-width: 1500px;
+        padding-top: 1.4rem;
         padding-bottom: 2rem;
-        max-width: 1650px;
     }
 
     .main-title {
-        font-size: 2rem;
+        font-size: 2.15rem;
         font-weight: 850;
         color: #0f172a;
-        letter-spacing: -0.7px;
-        margin-bottom: 2px;
+        letter-spacing: -0.8px;
+        margin-bottom: 3px;
     }
 
     .main-subtitle {
         color: #64748b;
-        font-size: 0.92rem;
-        margin-bottom: 1.1rem;
+        font-size: 0.94rem;
+        margin-bottom: 1.4rem;
     }
 
-    .small-muted {
-        color: #64748b;
-        font-size: 0.78rem;
+
+    /* --------------------------------------------------------
+       KPI CARDS
+       -------------------------------------------------------- */
+
+    .kpi-row {
+        display: flex;
+        gap: 14px;
+        width: 100%;
+        margin-bottom: 1rem;
     }
 
-    .section-title {
-        font-size: 1.2rem;
-        font-weight: 800;
-        color: #0f172a;
-        margin-top: 0.25rem;
-        margin-bottom: 0.5rem;
-    }
-
-    .filter-panel {
+    .kpi-card {
+        flex: 1;
+        min-width: 0;
+        height: 132px;
+        border-radius: 15px;
+        background: #ffffff;
         border: 1px solid #e2e8f0;
-        border-radius: 14px;
-        padding: 14px 16px 4px 16px;
-        background: #f8fafc;
+        box-shadow:
+            0 2px 8px rgba(15, 23, 42, 0.045);
+        padding: 16px 17px;
+        position: relative;
+        overflow: hidden;
     }
 
-    .manual-panel {
+    .kpi-card::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 4px;
+    }
+
+    .kpi-card.quality::before {
+        background: #f97316;
+    }
+
+    .kpi-card.welcome::before {
+        background: #eab308;
+    }
+
+    .kpi-card.committed::before {
+        background: #3b82f6;
+    }
+
+    .kpi-card.provisioning::before {
+        background: #8b5cf6;
+    }
+
+    .kpi-card.total::before {
+        background: #64748b;
+    }
+
+    .kpi-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .kpi-label {
+        color: #64748b;
+        font-size: 0.69rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.65px;
+    }
+
+    .kpi-icon {
+        font-size: 1.3rem;
+        line-height: 1;
+    }
+
+    .kpi-number {
+        color: #0f172a;
+        font-size: 2rem;
+        font-weight: 850;
+        line-height: 1;
+        margin-top: 16px;
+        letter-spacing: -0.7px;
+    }
+
+    .kpi-description {
+        color: #94a3b8;
+        font-size: 0.68rem;
+        margin-top: 8px;
+    }
+
+
+    /* --------------------------------------------------------
+       SECTION HEADINGS
+       -------------------------------------------------------- */
+
+    .section-heading {
+        color: #0f172a;
+        font-size: 1.15rem;
+        font-weight: 800;
+        margin-bottom: 0.55rem;
+    }
+
+
+    /* --------------------------------------------------------
+       STAGE BADGES
+       -------------------------------------------------------- */
+
+    .stage-badge {
+        display: inline-block;
+        padding: 4px 9px;
+        border-radius: 999px;
+        font-size: 0.67rem;
+        font-weight: 800;
+        margin-right: 4px;
+        margin-bottom: 3px;
+        white-space: nowrap;
+    }
+
+    .stage-quality {
+        color: #c2410c;
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+    }
+
+    .stage-welcome {
+        color: #a16207;
+        background: #fefce8;
+        border: 1px solid #fde68a;
+    }
+
+    .stage-committed {
+        color: #1d4ed8;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+    }
+
+    .stage-provisioning {
+        color: #6d28d9;
+        background: #f5f3ff;
+        border: 1px solid #ddd6fe;
+    }
+
+
+    /* --------------------------------------------------------
+       INFO BOX
+       -------------------------------------------------------- */
+
+    .info-panel {
         border: 1px solid #dbeafe;
-        border-radius: 14px;
-        padding: 4px 10px 6px 10px;
         background: #f8fbff;
+        border-radius: 13px;
+        padding: 13px 15px;
+        color: #475569;
+        font-size: 0.82rem;
+        margin-bottom: 1rem;
     }
 
-    .empty-box {
+
+    /* --------------------------------------------------------
+       EMPTY STATE
+       -------------------------------------------------------- */
+
+    .empty-state {
         border: 1px dashed #cbd5e1;
-        border-radius: 14px;
-        padding: 35px 20px;
-        text-align: center;
         background: #f8fafc;
+        border-radius: 14px;
+        padding: 45px 25px;
+        text-align: center;
     }
 
     .empty-icon {
-        font-size: 2rem;
-        margin-bottom: 6px;
+        font-size: 2.4rem;
+        margin-bottom: 8px;
     }
 
     .empty-title {
-        font-weight: 800;
         color: #334155;
+        font-weight: 800;
         font-size: 1rem;
     }
 
-    .empty-description {
+    .empty-text {
         color: #64748b;
         font-size: 0.8rem;
-        margin-top: 4px;
+        margin-top: 5px;
+    }
+
+
+    /* --------------------------------------------------------
+       SIDEBAR
+       -------------------------------------------------------- */
+
+    .sidebar-title {
+        font-size: 1rem;
+        font-weight: 800;
+        color: #0f172a;
     }
 
     </style>
@@ -200,249 +319,35 @@ st.markdown(
 
 
 # ============================================================
-# CONFIGURATION
+# HELPER FUNCTIONS
 # ============================================================
 
-SPREADSHEET_ID = st.secrets.get(
-    "SPREADSHEET_ID",
-    "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ",
-)
+def count_stage(stage: str) -> int:
+    """Count sales that have the given stage selected."""
 
-APPLICATION_SHEET = st.secrets.get(
-    "APPLICATION_SHEET",
-    "Sparta",
-)
+    count = 0
 
-LIVE_SHEET = st.secrets.get(
-    "LIVE_SHEET",
-    "Sparta2",
-)
+    for sale in st.session_state.pending_sales:
 
-SCOPES: List[str] = [
-    "https://www.googleapis.com/auth/spreadsheets.readonly"
-]
+        stages = sale.get("Pending Stage", [])
+
+        if stage in stages:
+            count += 1
+
+    return count
 
 
-# ============================================================
-# STAGE DEFINITIONS
-# ============================================================
+def format_phone(phone: str) -> str:
 
-STAGE_OPTIONS = [
-    "Quality",
-    "Welcome",
-    "Committed",
-    "Provisioning",
-]
-
-
-STAGE_LABELS = {
-    "Quality": "🧪 Quality",
-    "Welcome": "📞 Welcome",
-    "Committed": "📱 Committed",
-    "Provisioning": "⚙️ Provisioning",
-}
-
-
-STAGE_DESCRIPTIONS = {
-    "Quality": "Quality Status + Quality Remarks are blank",
-    "Welcome": "Welcome call Remarks + Status are blank",
-    "Committed": "CallStatus + Comments are blank",
-    "Provisioning": "Status = Done and Provisioning is not Processed",
-}
-
-
-# ============================================================
-# GOOGLE SHEETS CLIENT
-# ============================================================
-
-@st.cache_resource
-def get_google_service():
-
-    if "gcp_service_account" not in st.secrets:
-        raise RuntimeError(
-            "Missing gcp_service_account in Streamlit secrets."
-        )
-
-    credentials = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=SCOPES,
-    )
-
-    return build(
-        "sheets",
-        "v4",
-        credentials=credentials,
-        cache_discovery=False,
-    )
-
-
-# ============================================================
-# GOOGLE SHEET LOADER
-# ============================================================
-
-def load_sheet(
-    sheet_name: str,
-    max_retries: int = 3,
-    backoff: float = 1.0,
-) -> pd.DataFrame:
-
-    service = get_google_service()
-
-    for attempt in range(
-        1,
-        max_retries + 1,
-    ):
-
-        try:
-
-            result = (
-                service
-                .spreadsheets()
-                .values()
-                .get(
-                    spreadsheetId=SPREADSHEET_ID,
-                    range=sheet_name,
-                )
-                .execute()
-            )
-
-            values = result.get(
-                "values",
-                [],
-            )
-
-            if not values:
-                return pd.DataFrame()
-
-            headers = values[0]
-            rows = values[1:]
-
-            max_columns = len(headers)
-
-            cleaned_rows = []
-
-            for row in rows:
-
-                if len(row) < max_columns:
-                    row = (
-                        row
-                        + [""] * (
-                            max_columns - len(row)
-                        )
-                    )
-
-                else:
-                    row = row[:max_columns]
-
-                cleaned_rows.append(row)
-
-            return pd.DataFrame(
-                cleaned_rows,
-                columns=headers,
-            )
-
-        except HttpError as exc:
-
-            logger.warning(
-                "Google Sheets error %s attempt %d/%d: %s",
-                sheet_name,
-                attempt,
-                max_retries,
-                exc,
-            )
-
-        except Exception as exc:
-
-            logger.exception(
-                "Unexpected Google Sheets error: %s",
-                exc,
-            )
-
-        if attempt < max_retries:
-            time.sleep(
-                backoff * (
-                    2 ** (attempt - 1)
-                )
-            )
-
-    raise RuntimeError(
-        f"Unable to load sheet '{sheet_name}' "
-        f"after {max_retries} attempts."
-    )
-
-
-@st.cache_data(
-    ttl=300,
-    show_spinner=False,
-)
-def load_sheet_cached(
-    sheet_name: str,
-) -> pd.DataFrame:
-
-    return load_sheet(sheet_name)
-
-
-# ============================================================
-# BASIC CLEANING
-# ============================================================
-
-PHONE_RE = re.compile(r"\D")
-
-
-def clean_phone_value(value) -> str:
-
-    if pd.isna(value):
+    if not phone:
         return ""
 
-    return (
-        PHONE_RE
-        .sub("", str(value))
-        .lstrip("0")
-        .strip()
-    )
+    return str(phone).strip()
 
 
-def clean_phone_series(
-    series: pd.Series,
-) -> pd.Series:
+def format_date(value) -> str:
 
-    return (
-        series
-        .fillna("")
-        .astype(str)
-        .str.replace(
-            PHONE_RE,
-            "",
-            regex=True,
-        )
-        .str.lstrip("0")
-        .str.strip()
-    )
-
-
-def is_blank_value(value) -> bool:
-
-    if pd.isna(value):
-        return True
-
-    return str(value).strip() == ""
-
-
-def normalised_text(value) -> str:
-
-    if pd.isna(value):
-        return ""
-
-    return (
-        str(value)
-        .strip()
-        .lower()
-    )
-
-
-def format_date_value(value) -> str:
-
-    if pd.isna(value):
+    if value is None:
         return ""
 
     try:
@@ -450,272 +355,113 @@ def format_date_value(value) -> str:
             "%d/%m/%Y"
         )
     except Exception:
-        return ""
+        return str(value)
 
 
-def parse_mixed_date(value):
+def stage_badges(stages) -> str:
 
-    if pd.isna(value):
-        return pd.NaT
+    if not isinstance(stages, list):
+        stages = [stages]
 
-    text = str(value).strip()
+    html = ""
 
-    if text.lower() in {
-        "",
-        "(blank)",
-        "nan",
-        "none",
-    }:
-        return pd.NaT
+    for stage in stages:
 
-    iso_match = re.match(
-        r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})",
-        text,
-    )
+        if stage not in STAGES:
+            continue
 
-    if iso_match:
-
-        year, month, day = (
-            iso_match.groups()
+        css_class = (
+            "stage-"
+            + STAGE_CLASSES[stage]
         )
 
-        try:
-            return pd.Timestamp(
-                year=int(year),
-                month=int(month),
-                day=int(day),
-            )
-        except ValueError:
-            pass
-
-    uk_match = re.match(
-        r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})",
-        text,
-    )
-
-    if uk_match:
-
-        day, month, year = (
-            uk_match.groups()
+        label = (
+            STAGE_ICONS[stage]
+            + " "
+            + stage
         )
 
-        try:
-            return pd.Timestamp(
-                year=int(year),
-                month=int(month),
-                day=int(day),
-            )
-        except ValueError:
-            pass
-
-    return pd.to_datetime(
-        text,
-        errors="coerce",
-        dayfirst=True,
-    )
-
-
-def parse_date_series(
-    series: pd.Series,
-) -> pd.Series:
-
-    return series.apply(
-        parse_mixed_date
-    )
-
-
-# ============================================================
-# ENSURE COLUMNS
-# ============================================================
-
-def ensure_columns(
-    df: pd.DataFrame,
-    columns: List[str],
-) -> pd.DataFrame:
-
-    df = df.copy()
-
-    for column in columns:
-
-        if column not in df.columns:
-            df[column] = ""
-
-    return df
-
-
-# ============================================================
-# LOAD SPARTA APPLICATION SHEET
-# ============================================================
-
-@st.cache_data(
-    ttl=300,
-    show_spinner=False,
-)
-def load_sparta() -> pd.DataFrame:
-
-    df = load_sheet_cached(
-        APPLICATION_SHEET
-    )
-
-    if df.empty:
-        return df
-
-    required = [
-        "Advisor",
-        "Quality Officer",
-        "Welcome Call By",
-        "Sale Date",
-        "Customer Name",
-        "CLI",
-        "Quality Date",
-        "Quality Status",
-        "Quality Remarks",
-        "Welcome call Remarks",
-        "Status",
-        "Cancellation Sub-text",
-        "WCD date",
-        "Provisioning",
-        "Prov Date",
-        "Current Provider",
-        "Packageoffered",
-    ]
-
-    df = ensure_columns(
-        df,
-        required,
-    )
-
-    df = df.copy()
-
-    # --------------------------------------------------------
-    # Normalised phone
-    # --------------------------------------------------------
-
-    df["_Phone"] = clean_phone_series(
-        df["CLI"]
-    )
-
-    # --------------------------------------------------------
-    # Sale date
-    # --------------------------------------------------------
-
-    df["_SaleDate"] = parse_date_series(
-        df["Sale Date"]
-    )
-
-    # --------------------------------------------------------
-    # Useful display dates
-    # --------------------------------------------------------
-
-    df["_SaleDateDisplay"] = (
-        df["_SaleDate"]
-        .apply(format_date_value)
-    )
-
-    df["_QualityDate"] = parse_date_series(
-        df["Quality Date"]
-    )
-
-    df["_WelcomeDate"] = parse_date_series(
-        df["WCD date"]
-    )
-
-    df["_ProvisioningDate"] = parse_date_series(
-        df["Prov Date"]
-    )
-
-    return df
-
-
-# ============================================================
-# LOAD SPARTA2
-# ============================================================
-
-@st.cache_data(
-    ttl=300,
-    show_spinner=False,
-)
-def load_sparta2() -> pd.DataFrame:
-
-    df = load_sheet_cached(
-        LIVE_SHEET
-    )
-
-    if df.empty:
-        return df
-
-    required = [
-        "Sale Date",
-        "Telephone No.",
-        "Committed Date",
-        "Status",
-        "LetterStatus",
-        "CallStatus",
-        "Comments",
-        "Voice of Customer",
-        "Cancellation Reason",
-    ]
-
-    df = ensure_columns(
-        df,
-        required,
-    )
-
-    df = df.copy()
-
-    # --------------------------------------------------------
-    # Normalised phone
-    # --------------------------------------------------------
-
-    df["_Phone"] = clean_phone_series(
-        df["Telephone No."]
-    )
-
-    # --------------------------------------------------------
-    # Dates
-    # --------------------------------------------------------
-
-    df["_SaleDate"] = parse_date_series(
-        df["Sale Date"]
-    )
-
-    df["_SaleDateDisplay"] = (
-        df["_SaleDate"]
-        .apply(format_date_value)
-    )
-
-    df["_CommittedDate"] = parse_date_series(
-        df["Committed Date"]
-    )
-
-    return df
-
-
-# ============================================================
-# LOAD DATA
-# ============================================================
-
-with st.spinner(
-    "Loading Sparta data..."
-):
-
-    try:
-
-        sparta_df = load_sparta()
-        sparta2_df = load_sparta2()
-
-    except Exception as exc:
-
-        logger.exception(
-            "Failed loading source data: %s",
-            exc,
+        html += (
+            f'<span class="stage-badge '
+            f'{css_class}">'
+            f'{label}'
+            f'</span>'
         )
 
-        st.error(
-            "Unable to load the Sparta Google Sheets."
+    return html
+
+
+def dataframe_from_sales() -> pd.DataFrame:
+
+    rows = []
+
+    for sale in st.session_state.pending_sales:
+
+        rows.append(
+            {
+                "Sale Date": sale.get(
+                    "Sale Date"
+                ),
+
+                "Customer Name": sale.get(
+                    "Customer Name",
+                    "",
+                ),
+
+                "Phone Number": sale.get(
+                    "Phone Number",
+                    "",
+                ),
+
+                "Pending Stage": " + ".join(
+                    sale.get(
+                        "Pending Stage",
+                        [],
+                    )
+                ),
+
+                "Notes": sale.get(
+                    "Notes",
+                    "",
+                ),
+            }
         )
 
-        st.stop()
+    if not rows:
+
+        return pd.DataFrame(
+            columns=[
+                "Sale Date",
+                "Customer Name",
+                "Phone Number",
+                "Pending Stage",
+                "Notes",
+            ]
+        )
+
+    return pd.DataFrame(rows)
+
+
+def excel_download() -> bytes:
+
+    df = dataframe_from_sales()
+
+    output = BytesIO()
+
+    with pd.ExcelWriter(
+        output,
+        engine="openpyxl",
+    ) as writer:
+
+        df.to_excel(
+            writer,
+            index=False,
+            sheet_name="Pending Sales",
+        )
+
+    output.seek(0)
+
+    return output.getvalue()
 
 
 # ============================================================
@@ -725,12 +471,12 @@ with st.spinner(
 st.markdown(
     """
     <div class="main-title">
-        ⏳ Sparta Pending Operations
+        ⏳ Sparta Pending Sales
     </div>
 
     <div class="main-subtitle">
-        Current pending sales, organised by exactly where they are waiting
-        for action.
+        Manually track every pending sale and the stage(s)
+        where it is currently waiting.
     </div>
     """,
     unsafe_allow_html=True,
@@ -743,2213 +489,572 @@ st.markdown(
 
 with st.sidebar:
 
-    st.header("⚙️ Dashboard Controls")
-
-    st.caption(
-        "This dashboard does not define or calculate any SLA."
-    )
-
-    st.divider()
-
-    if st.button(
-        "🔄 Refresh Source Data",
-        use_container_width=True,
-    ):
-
-        st.cache_data.clear()
-
-        st.rerun()
-
-    st.divider()
-
     st.markdown(
-        "**Source Sheets**"
+        '<div class="sidebar-title">⚙️ Dashboard</div>',
+        unsafe_allow_html=True,
     )
 
     st.caption(
-        f"Applications: `{APPLICATION_SHEET}`"
-    )
-
-    st.caption(
-        f"Committed: `{LIVE_SHEET}`"
+        "Manual pending-sales tracker"
     )
 
     st.divider()
 
-    st.caption(
-        "Manual pending entries are retained "
-        "for the current browser session."
-    )
+    if st.session_state.pending_sales:
 
-
-# ============================================================
-# MANUAL PENDING ENTRIES
-# ============================================================
-
-if (
-    "manual_pending_rows"
-    not in st.session_state
-):
-
-    st.session_state[
-        "manual_pending_rows"
-    ] = pd.DataFrame(
-        {
-            "Date": pd.Series(
-                dtype="datetime64[ns]"
-            ),
-            "Stage": pd.Series(
-                dtype="string"
-            ),
-            "Customer Name": pd.Series(
-                dtype="string"
-            ),
-            "Telephone No.": pd.Series(
-                dtype="string"
-            ),
-            "Advisor": pd.Series(
-                dtype="string"
-            ),
-            "Notes": pd.Series(
-                dtype="string"
-            ),
-        }
-    )
-
-
-st.divider()
-
-with st.expander(
-    "➕ Add / Edit Manual Pending Sales",
-    expanded=False,
-):
-
-    st.info(
-        "Use this when a sale is missing from the source sheet, "
-        "especially for the current or previous date. "
-        "Add one row per pending stage. "
-        "Manual entries are included immediately in the dashboard."
-    )
-
-    manual_edit = st.data_editor(
-        st.session_state[
-            "manual_pending_rows"
-        ],
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        key="manual_pending_editor",
-        column_config={
-            "Date": st.column_config.DateColumn(
-                "Date",
-                format="DD/MM/YYYY",
-                required=True,
-            ),
-            "Stage": st.column_config.SelectboxColumn(
-                "Stage",
-                options=STAGE_OPTIONS,
-                required=True,
-            ),
-            "Customer Name": st.column_config.TextColumn(
-                "Customer Name",
-            ),
-            "Telephone No.": st.column_config.TextColumn(
-                "Telephone No.",
-            ),
-            "Advisor": st.column_config.TextColumn(
-                "Advisor",
-            ),
-            "Notes": st.column_config.TextColumn(
-                "Notes",
-                width="large",
-            ),
-        },
-    )
-
-    st.session_state[
-        "manual_pending_rows"
-    ] = manual_edit.copy()
-
-    manual_count = len(
-        manual_edit
-    )
-
-    if manual_count:
-
-        st.caption(
-            f"{manual_count:,} manual pending row"
-            f"{'' if manual_count == 1 else 's'} "
-            "currently entered."
+        st.markdown(
+            f"**{len(st.session_state.pending_sales):,}** "
+            "sales currently recorded."
         )
 
     else:
 
         st.caption(
-            "No manual pending sales have been entered."
+            "No pending sales recorded."
         )
 
-
-# ============================================================
-# FILTER RANGE
-# ============================================================
-
-st.subheader("🔎 Filters")
-
-filter_panel = st.container(
-    border=True
-)
-
-with filter_panel:
-
-    col1, col2, col3, col4 = st.columns(
-        [1.15, 1.0, 1.0, 1.55]
-    )
+    st.divider()
 
     # --------------------------------------------------------
-    # Advisor options
+    # Export
     # --------------------------------------------------------
 
-    advisor_series = sparta_df[
-        "Advisor"
-    ].fillna("").astype(str).str.strip()
+    if st.session_state.pending_sales:
 
-    advisor_options = sorted(
-        [
-            x for x in
-            advisor_series.unique()
-            if x
-        ],
-        key=lambda x: x.lower(),
-    )
-
-    with col1:
-
-        selected_advisors = st.multiselect(
-            "Advisor",
-            options=advisor_options,
-            placeholder="All advisors",
+        st.download_button(
+            "📥 Export to Excel",
+            data=excel_download(),
+            file_name=(
+                "Sparta_Pending_Sales.xlsx"
+            ),
+            mime=(
+                "application/vnd.openxmlformats-"
+                "officedocument.spreadsheetml.sheet"
+            ),
+            use_container_width=True,
         )
+
+        st.divider()
 
     # --------------------------------------------------------
-    # Determine sensible default date range
+    # Clear all
     # --------------------------------------------------------
 
-    source_dates = []
+    if st.session_state.pending_sales:
 
-    if (
-        "_SaleDate"
-        in sparta_df.columns
-    ):
+        if st.button(
+            "🗑️ Clear All Sales",
+            use_container_width=True,
+        ):
 
-        source_dates.extend(
-            sparta_df[
-                "_SaleDate"
-            ]
-            .dropna()
-            .tolist()
-        )
+            st.session_state.pending_sales = []
 
-    if (
-        "_SaleDate"
-        in sparta2_df.columns
-    ):
-
-        source_dates.extend(
-            sparta2_df[
-                "_SaleDate"
-            ]
-            .dropna()
-            .tolist()
-        )
-
-    manual_dates = []
-
-    manual_source = (
-        st.session_state[
-            "manual_pending_rows"
-        ]
-        if "manual_pending_rows"
-        in st.session_state
-        else pd.DataFrame()
-    )
-
-    if (
-        not manual_source.empty
-        and "Date" in manual_source.columns
-    ):
-
-        manual_dates.extend(
-            pd.to_datetime(
-                manual_source[
-                    "Date"
-                ],
-                errors="coerce",
-            )
-            .dropna()
-            .tolist()
-        )
-
-    all_known_dates = (
-        source_dates
-        + manual_dates
-    )
-
-    today = now_ist().date()
-
-    if all_known_dates:
-
-        earliest_date = min(
-            pd.Timestamp(x).date()
-            for x in all_known_dates
-        )
-
-        latest_date = max(
-            pd.Timestamp(x).date()
-            for x in all_known_dates
-        )
-
-        # Always allow today's manual/current-date records
-        # even when today's sale does not yet exist in the sheet.
-        min_filter_date = min(
-            earliest_date,
-            today,
-        )
-
-        max_filter_date = max(
-            latest_date,
-            today,
-        )
-
-    else:
-
-        min_filter_date = today
-        max_filter_date = today
-
-    with col2:
-
-        start_date = st.date_input(
-            "Sale Date From",
-            value=min_filter_date,
-            min_value=min_filter_date,
-            max_value=max_filter_date,
-            format="DD/MM/YYYY",
-        )
-
-    with col3:
-
-        end_date = st.date_input(
-            "Sale Date To",
-            value=max_filter_date,
-            min_value=min_filter_date,
-            max_value=max_filter_date,
-            format="DD/MM/YYYY",
-        )
-
-    with col4:
-
-        search_text = st.text_input(
-            "Search",
-            placeholder="Customer, phone or advisor...",
-        )
+            st.rerun()
 
 
 # ============================================================
-# VALIDATE FILTER DATES
+# KPI CARDS
 # ============================================================
 
-if start_date > end_date:
-
-    st.error(
-        "Start Date must be earlier than or equal to End Date."
-    )
-
-    st.stop()
-
-
-# ============================================================
-# BUILD MANUAL DATA
-# ============================================================
-
-def prepare_manual_entries(
-    manual_df: pd.DataFrame,
-) -> pd.DataFrame:
-
-    if manual_df.empty:
-
-        return pd.DataFrame(
-            columns=[
-                "_SaleDate",
-                "_Phone",
-                "Customer Name",
-                "Advisor",
-                "Pending Stage",
-                "Notes",
-                "Source",
-                "_SaleKey",
-            ]
-        )
-
-    result = manual_df.copy()
-
-    result["Date"] = pd.to_datetime(
-        result["Date"],
-        errors="coerce",
-    )
-
-    result = result[
-        result["Date"].notna()
-    ].copy()
-
-    if result.empty:
-
-        return pd.DataFrame(
-            columns=[
-                "_SaleDate",
-                "_Phone",
-                "Customer Name",
-                "Advisor",
-                "Pending Stage",
-                "Notes",
-                "Source",
-                "_SaleKey",
-            ]
-        )
-
-    result["_SaleDate"] = result[
-        "Date"
-    ]
-
-    result["_Phone"] = (
-        result[
-            "Telephone No."
-        ]
-        .fillna("")
-        .astype(str)
-        .apply(
-            clean_phone_value
-        )
-    )
-
-    result["Customer Name"] = (
-        result[
-            "Customer Name"
-        ]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
-
-    result["Advisor"] = (
-        result[
-            "Advisor"
-        ]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
-
-    result["Pending Stage"] = (
-        result[
-            "Stage"
-        ]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
-
-    result["Notes"] = (
-        result[
-            "Notes"
-        ]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
-
-    result["Source"] = "Manual"
-
-    result["_SaleKey"] = result.apply(
-        make_sale_key,
-        axis=1,
-    )
-
-    return result[
-        [
-            "_SaleDate",
-            "_Phone",
-            "Customer Name",
-            "Advisor",
-            "Pending Stage",
-            "Notes",
-            "Source",
-            "_SaleKey",
-        ]
-    ].copy()
-
-
-# ============================================================
-# SALE KEY
-# ============================================================
-
-def make_sale_key(
-    row,
-) -> str:
-
-    phone = clean_phone_value(
-        row.get(
-            "_Phone",
-            "",
-        )
-    )
-
-    sale_date = row.get(
-        "_SaleDate",
-        pd.NaT,
-    )
-
-    date_part = ""
-
-    if not pd.isna(sale_date):
-
-        try:
-            date_part = pd.Timestamp(
-                sale_date
-            ).strftime(
-                "%Y%m%d"
-            )
-        except Exception:
-            date_part = ""
-
-    if phone:
-
-        return (
-            f"PHONE|{phone}|"
-            f"{date_part}"
-        )
-
-    customer = normalised_text(
-        row.get(
-            "Customer Name",
-            "",
-        )
-    )
-
-    if customer:
-
-        return (
-            f"NAME|{customer}|"
-            f"{date_part}"
-        )
-
-    return (
-        f"ROW|"
-        f"{date_part}|"
-        f"{id(row)}"
-    )
-
-
-# ============================================================
-# AUTO QUEUE BUILDERS
-# ============================================================
-
-def quality_pending_auto(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-
-    if df.empty:
-        return df.iloc[0:0].copy()
-
-    status_blank = (
-        df["Quality Status"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .eq("")
-    )
-
-    remarks_blank = (
-        df["Quality Remarks"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .eq("")
-    )
-
-    result = df[
-        status_blank & remarks_blank
-    ].copy()
-
-    result["_PendingStage"] = "Quality"
-
-    result["_Source"] = "Automatic"
-
-    return result
-
-
-def welcome_pending_auto(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-
-    if df.empty:
-        return df.iloc[0:0].copy()
-
-    remarks_blank = (
-        df["Welcome call Remarks"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .eq("")
-    )
-
-    status_blank = (
-        df["Status"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .eq("")
-    )
-
-    result = df[
-        remarks_blank & status_blank
-    ].copy()
-
-    result["_PendingStage"] = "Welcome"
-
-    result["_Source"] = "Automatic"
-
-    return result
-
-
-def provisioning_pending_auto(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-
-    if df.empty:
-        return df.iloc[0:0].copy()
-
-    status_done = (
-        df["Status"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .str.lower()
-        .eq("done")
-    )
-
-    provisioning_not_processed = (
-        df["Provisioning"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .str.lower()
-        .ne("processed")
-    )
-
-    result = df[
-        status_done
-        & provisioning_not_processed
-    ].copy()
-
-    result["_PendingStage"] = "Provisioning"
-
-    result["_Source"] = "Automatic"
-
-    return result
-
-
-def committed_pending_auto(
-    portal_df: pd.DataFrame,
-) -> pd.DataFrame:
-
-    if portal_df.empty:
-        return portal_df.iloc[0:0].copy()
-
-    call_status_blank = (
-        portal_df["CallStatus"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .eq("")
-    )
-
-    comments_blank = (
-        portal_df["Comments"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .eq("")
-    )
-
-    result = portal_df[
-        call_status_blank
-        & comments_blank
-    ].copy()
-
-    result["_PendingStage"] = "Committed"
-
-    result["_Source"] = "Automatic"
-
-    return result
-
-
-# ============================================================
-# AUTO QUEUES
-# ============================================================
-
-quality_auto = quality_pending_auto(
-    sparta_df
+quality_count = count_stage(
+    "Quality"
 )
 
-welcome_auto = welcome_pending_auto(
-    sparta_df
+welcome_count = count_stage(
+    "Welcome"
 )
 
-provisioning_auto = provisioning_pending_auto(
-    sparta_df
+committed_count = count_stage(
+    "Committed"
 )
 
-committed_auto = committed_pending_auto(
-    sparta2_df
+provisioning_count = count_stage(
+    "Provisioning"
+)
+
+total_sales = len(
+    st.session_state.pending_sales
 )
 
 
-# ============================================================
-# ENRICH COMMITTED WITH APPLICATION DETAILS
-# ============================================================
-
-application_lookup_columns = [
-    "_Phone",
-    "Customer Name",
-    "Advisor",
-    "_SaleDate",
-    "Current Provider",
-    "Packageoffered",
+kpi_cards = [
+    (
+        "Pending Quality",
+        quality_count,
+        "🧪",
+        "quality",
+        "Sales awaiting Quality action",
+    ),
+    (
+        "Pending Welcome",
+        welcome_count,
+        "📞",
+        "welcome",
+        "Sales awaiting Welcome action",
+    ),
+    (
+        "Pending Committed",
+        committed_count,
+        "📱",
+        "committed",
+        "Sales awaiting Committed action",
+    ),
+    (
+        "Pending Provisioning",
+        provisioning_count,
+        "⚙️",
+        "provisioning",
+        "Sales awaiting Provisioning action",
+    ),
+    (
+        "Pending Sales",
+        total_sales,
+        "⏳",
+        "total",
+        "Unique sales currently recorded",
+    ),
 ]
 
 
-apps_for_lookup = sparta_df[
-    [
-        c
-        for c in application_lookup_columns
-        if c in sparta_df.columns
-    ]
-].copy()
-
-
-if not apps_for_lookup.empty:
-
-    apps_for_lookup = (
-        apps_for_lookup
-        .sort_values(
-            "_SaleDate",
-            na_position="first",
-        )
-        .drop_duplicates(
-            subset="_Phone",
-            keep="last",
-        )
-    )
-
-    committed_auto = committed_auto.merge(
-        apps_for_lookup,
-        on="_Phone",
-        how="left",
-        suffixes=(
-            "",
-            "_app",
-        ),
-    )
-
-    # Use application-side customer information
-    # only where the portal row itself has none.
-    if "Customer Name" not in committed_auto.columns:
-        committed_auto["Customer Name"] = ""
-
-    if "Advisor" not in committed_auto.columns:
-        committed_auto["Advisor"] = ""
-
-    if "_SaleDate" not in committed_auto.columns:
-        committed_auto["_SaleDate"] = pd.NaT
-
-
-# ============================================================
-# MANUAL ENTRIES
-# ============================================================
-
-manual_entries = prepare_manual_entries(
-    st.session_state[
-        "manual_pending_rows"
-    ]
-)
-
-
-# ============================================================
-# FILTER AUTOMATIC DATA
-# ============================================================
-
-def within_date_range(
-    series: pd.Series,
-) -> pd.Series:
-
-    dates = pd.to_datetime(
-        series,
-        errors="coerce",
-    )
-
-    # Convert the Streamlit date_input values to
-    # pandas timestamps so both sides of the comparison
-    # use the same datetime type.
-    start_ts = pd.Timestamp(start_date)
-    end_ts = pd.Timestamp(end_date)
-
-    return (
-        dates.notna()
-        &
-        (dates >= start_ts)
-        &
-        (dates < end_ts + pd.Timedelta(days=1))
-    )
-
-def filter_by_advisor(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-
-    if df.empty:
-        return df.copy()
-
-    if not selected_advisors:
-        return df.copy()
-
-    selected = {
-        normalised_text(x)
-        for x in selected_advisors
-    }
-
-    advisor_values = (
-        df["Advisor"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .str.lower()
-    )
-
-    return df[
-        advisor_values.isin(
-            selected
-        )
-    ].copy()
-
-
-def filter_by_search(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-
-    if df.empty:
-        return df.copy()
-
-    query = (
-        str(search_text or "")
-        .strip()
-        .lower()
-    )
-
-    if not query:
-        return df.copy()
-
-    customer = (
-        df["Customer Name"]
-        .fillna("")
-        .astype(str)
-        .str.lower()
-    )
-
-    phone = (
-        df["_Phone"]
-        .fillna("")
-        .astype(str)
-        .str.lower()
-    )
-
-    advisor = (
-        df["Advisor"]
-        .fillna("")
-        .astype(str)
-        .str.lower()
-    )
-
-    notes = (
-        df.get(
-            "Notes",
-            pd.Series(
-                "",
-                index=df.index,
-            ),
-        )
-        .fillna("")
-        .astype(str)
-        .str.lower()
-    )
-
-    return df[
-        customer.str.contains(
-            query,
-            na=False,
-        )
-        |
-        phone.str.contains(
-            query,
-            na=False,
-        )
-        |
-        advisor.str.contains(
-            query,
-            na=False,
-        )
-        |
-        notes.str.contains(
-            query,
-            na=False,
-        )
-    ].copy()
-
-
-def apply_common_filters(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-
-    if df.empty:
-        return df.copy()
-
-    if "_SaleDate" in df.columns:
-
-        result = df[
-            within_date_range(
-                df["_SaleDate"]
-            )
-        ].copy()
-
-    else:
-
-        result = df.copy()
-
-    result = filter_by_advisor(
-        result
-    )
-
-    result = filter_by_search(
-        result
-    )
-
-    return result
-
-
-quality_auto = apply_common_filters(
-    quality_auto
-)
-
-welcome_auto = apply_common_filters(
-    welcome_auto
-)
-
-provisioning_auto = apply_common_filters(
-    provisioning_auto
-)
-
-committed_auto = apply_common_filters(
-    committed_auto
-)
-
-
-# ============================================================
-# FILTER MANUAL ENTRIES
-# ============================================================
-
-def filter_manual_entries(
-    df: pd.DataFrame,
-    stage: str,
-) -> pd.DataFrame:
-
-    if df.empty:
-        return df.copy()
-
-    result = df[
-        df["Pending Stage"]
-        .astype(str)
-        .str.strip()
-        .eq(stage)
-    ].copy()
-
-    result = result[
-        within_date_range(
-            result["_SaleDate"]
-        )
-    ].copy()
-
-    if selected_advisors:
-
-        selected = {
-            normalised_text(x)
-            for x in selected_advisors
-        }
-
-        advisor_values = (
-            result["Advisor"]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-            .str.lower()
-        )
-
-        result = result[
-            advisor_values.isin(
-                selected
-            )
-        ].copy()
-
-    query = (
-        str(search_text or "")
-        .strip()
-        .lower()
-    )
-
-    if query:
-
-        customer = (
-            result[
-                "Customer Name"
-            ]
-            .fillna("")
-            .astype(str)
-            .str.lower()
-        )
-
-        phone = (
-            result[
-                "_Phone"
-            ]
-            .fillna("")
-            .astype(str)
-            .str.lower()
-        )
-
-        advisor = (
-            result[
-                "Advisor"
-            ]
-            .fillna("")
-            .astype(str)
-            .str.lower()
-        )
-
-        notes = (
-            result[
-                "Notes"
-            ]
-            .fillna("")
-            .astype(str)
-            .str.lower()
-        )
-
-        result = result[
-            customer.str.contains(
-                query,
-                na=False,
-            )
-            |
-            phone.str.contains(
-                query,
-                na=False,
-            )
-            |
-            advisor.str.contains(
-                query,
-                na=False,
-            )
-            |
-            notes.str.contains(
-                query,
-                na=False,
-            )
-        ].copy()
-
-    return result
-
-
-manual_quality = filter_manual_entries(
-    manual_entries,
-    "Quality",
-)
-
-manual_welcome = filter_manual_entries(
-    manual_entries,
-    "Welcome",
-)
-
-manual_committed = filter_manual_entries(
-    manual_entries,
-    "Committed",
-)
-
-manual_provisioning = filter_manual_entries(
-    manual_entries,
-    "Provisioning",
-)
-
-
-# ============================================================
-# ADD SALE KEYS TO AUTO DATA
-# ============================================================
-
-def add_auto_sale_keys(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-
-    if df.empty:
-        return df.copy()
-
-    result = df.copy()
-
-    result["_SaleKey"] = result.apply(
-        make_sale_key,
-        axis=1,
-    )
-
-    return result
-
-
-quality_auto = add_auto_sale_keys(
-    quality_auto
-)
-
-welcome_auto = add_auto_sale_keys(
-    welcome_auto
-)
-
-provisioning_auto = add_auto_sale_keys(
-    provisioning_auto
-)
-
-committed_auto = add_auto_sale_keys(
-    committed_auto
-)
-
-
-# ============================================================
-# MERGE AUTO + MANUAL WITHOUT DOUBLE COUNTING
-# ============================================================
-
-def combine_stage_queue(
-    auto_df: pd.DataFrame,
-    manual_df: pd.DataFrame,
-    stage: str,
-) -> pd.DataFrame:
-
-    auto = auto_df.copy()
-    manual = manual_df.copy()
-
-    # --------------------------------------------------------
-    # Normalise auto records
-    # --------------------------------------------------------
-
-    if not auto.empty:
-
-        auto["_Source"] = "Automatic"
-        auto["_PendingStage"] = stage
-
-    # --------------------------------------------------------
-    # Convert manual to common structure
-    # --------------------------------------------------------
-
-    manual_common = []
-
-    if not manual.empty:
-
-        for _, row in manual.iterrows():
-
-            manual_common.append(
-                {
-                    "_SaleDate":
-                        row["_SaleDate"],
-
-                    "_Phone":
-                        row["_Phone"],
-
-                    "Customer Name":
-                        row["Customer Name"],
-
-                    "Advisor":
-                        row["Advisor"],
-
-                    "_PendingStage":
-                        stage,
-
-                    "Notes":
-                        row["Notes"],
-
-                    "_Source":
-                        "Manual",
-
-                    "_SaleKey":
-                        row["_SaleKey"],
-                }
-            )
-
-    manual_common_df = pd.DataFrame(
-        manual_common
-    )
-
-    if auto.empty:
-
-        combined = manual_common_df
-
-    elif manual_common_df.empty:
-
-        combined = auto
-
-    else:
-
-        # Automatic row is kept in preference to a duplicate
-        # manual row because the source contains the complete record.
-        combined = pd.concat(
-            [
-                auto,
-                manual_common_df,
-            ],
-            ignore_index=True,
-            sort=False,
-        )
-
-    if combined.empty:
-        return combined
-
-    combined = (
-        combined
-        .drop_duplicates(
-            subset="_SaleKey",
-            keep="first",
-        )
-        .reset_index(drop=True)
-    )
-
-    return combined
-
-
-quality_queue = combine_stage_queue(
-    quality_auto,
-    manual_quality,
-    "Quality",
-)
-
-welcome_queue = combine_stage_queue(
-    welcome_auto,
-    manual_welcome,
-    "Welcome",
-)
-
-committed_queue = combine_stage_queue(
-    committed_auto,
-    manual_committed,
-    "Committed",
-)
-
-provisioning_queue = combine_stage_queue(
-    provisioning_auto,
-    manual_provisioning,
-    "Provisioning",
-)
-
-
-# ============================================================
-# BUILD UNIQUE OVERALL PENDING SALES
-# ============================================================
-
-all_queue_frames = []
-
-for queue_df in [
-    quality_queue,
-    welcome_queue,
-    committed_queue,
-    provisioning_queue,
-]:
-
-    if not queue_df.empty:
-
-        temp = queue_df.copy()
-
-        all_queue_frames.append(
-            temp
-        )
-
-
-if all_queue_frames:
-
-    all_pending_long = pd.concat(
-        all_queue_frames,
-        ignore_index=True,
-        sort=False,
-    )
-
-else:
-
-    all_pending_long = pd.DataFrame()
-
-
-if not all_pending_long.empty:
-
-    all_pending_unique = (
-        all_pending_long
-        .sort_values(
-            "_SaleDate",
-            na_position="last",
-        )
-        .drop_duplicates(
-            subset="_SaleKey",
-            keep="first",
-        )
-        .copy()
-    )
-
-else:
-
-    all_pending_unique = pd.DataFrame()
-
-
-# ============================================================
-# KPI COUNTS
-# ============================================================
-
-quality_count = len(
-    quality_queue
-)
-
-welcome_count = len(
-    welcome_queue
-)
-
-committed_count = len(
-    committed_queue
-)
-
-provisioning_count = len(
-    provisioning_queue
-)
-
-unique_pending_count = len(
-    all_pending_unique
-)
-
-
-# ============================================================
-# KPI CARD HTML
-# Rendered in components.html so the browser never displays
-# the markup as raw HTML in the main Streamlit document.
-# ============================================================
-
-def build_kpi_html():
-
-    cards = [
-        {
-            "title": "Pending Quality",
-            "icon": "🧪",
-            "number": quality_count,
-            "description": "Sales currently awaiting Quality",
-            "class": "quality",
-        },
-        {
-            "title": "Pending Welcome",
-            "icon": "📞",
-            "number": welcome_count,
-            "description": "Sales currently awaiting Welcome",
-            "class": "welcome",
-        },
-        {
-            "title": "Pending Committed",
-            "icon": "📱",
-            "number": committed_count,
-            "description": "Sales currently awaiting Committed action",
-            "class": "committed",
-        },
-        {
-            "title": "Pending Provisioning",
-            "icon": "⚙️",
-            "number": provisioning_count,
-            "description": "Sales currently awaiting provisioning",
-            "class": "provisioning",
-        },
-        {
-            "title": "Pending Sales",
-            "icon": "⏳",
-            "number": unique_pending_count,
-            "description": "Unique sales appearing in pending queues",
-            "class": "total",
-        },
-    ]
-
-    html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <style>
-
-    * {
-        box-sizing: border-box;
-    }
-
-    body {
-        margin: 0;
-        padding: 4px 2px 6px 2px;
-        font-family:
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            Roboto,
-            Arial,
-            sans-serif;
-        background: transparent;
-    }
-
-    .cards {
-        width: 100%;
-        display: flex;
-        gap: 12px;
-    }
-
-    .card {
-        flex: 1 1 0;
-        min-width: 0;
-        height: 126px;
-        border-radius: 14px;
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        box-shadow:
-            0 2px 8px rgba(15, 23, 42, 0.05);
-        padding: 15px 16px;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .card::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 4px;
-    }
-
-    .card.quality::before {
-        background: #f97316;
-    }
-
-    .card.welcome::before {
-        background: #eab308;
-    }
-
-    .card.committed::before {
-        background: #3b82f6;
-    }
-
-    .card.provisioning::before {
-        background: #8b5cf6;
-    }
-
-    .card.total::before {
-        background: #64748b;
-    }
-
-    .top-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .title {
-        color: #64748b;
-        font-size: 11px;
-        font-weight: 800;
-        letter-spacing: 0.7px;
-        text-transform: uppercase;
-    }
-
-    .icon {
-        font-size: 21px;
-        line-height: 1;
-    }
-
-    .number {
-        color: #0f172a;
-        font-size: 31px;
-        line-height: 1;
-        font-weight: 850;
-        margin-top: 16px;
-        letter-spacing: -0.7px;
-    }
-
-    .description {
-        color: #94a3b8;
-        font-size: 11px;
-        margin-top: 9px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    @media (max-width: 1100px) {
-        .cards {
-            flex-wrap: wrap;
-        }
-
-        .card {
-            flex: 1 1 calc(50% - 8px);
-        }
-    }
-
-    </style>
-    </head>
-
-    <body>
-
-    <div class="cards">
-    """
-
-    for card in cards:
-
-        html += f"""
-        <div class="card {card["class"]}">
-
-            <div class="top-row">
-
-                <div class="title">
-                    {escape(card["title"])}
-                </div>
-
-                <div class="icon">
-                    {escape(card["icon"])}
-                </div>
-
+kpi_html = """
+<div class="kpi-row">
+"""
+
+for (
+    title,
+    value,
+    icon,
+    css_class,
+    description,
+) in kpi_cards:
+
+    kpi_html += f"""
+    <div class="kpi-card {css_class}">
+
+        <div class="kpi-top">
+
+            <div class="kpi-label">
+                {title}
             </div>
 
-            <div class="number">
-                {int(card["number"]):,}
-            </div>
-
-            <div class="description">
-                {escape(card["description"])}
+            <div class="kpi-icon">
+                {icon}
             </div>
 
         </div>
-        """
 
-    html += """
+        <div class="kpi-number">
+            {value:,}
+        </div>
+
+        <div class="kpi-description">
+            {description}
+        </div>
+
     </div>
-
-    </body>
-    </html>
     """
 
-    return html
+kpi_html += """
+</div>
+"""
 
+
+# Use components.html so HTML is rendered instead of displayed literally.
+import streamlit.components.v1 as components
 
 components.html(
-    build_kpi_html(),
-    height=145,
+    kpi_html,
+    height=150,
     scrolling=False,
 )
 
 
 # ============================================================
-# PENDING LOGIC SUMMARY
+# INFORMATION
 # ============================================================
 
-with st.expander(
-    "ℹ️ Pending logic used by this dashboard",
-    expanded=False,
+st.markdown(
+    """
+    <div class="info-panel">
+        <strong>How this works:</strong>
+        enter a sale once and select every stage where it is currently
+        pending. A sale can therefore appear in multiple stage counts
+        while still being counted only once under <strong>Pending Sales</strong>.
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ============================================================
+# ADD SALE
+# ============================================================
+
+st.markdown(
+    '<div class="section-heading">➕ Add Pending Sale</div>',
+    unsafe_allow_html=True,
+)
+
+
+with st.container(
+    border=True
 ):
 
-    logic_df = pd.DataFrame(
-        [
-            [
-                "🧪 Quality",
-                "Quality Status blank AND Quality Remarks blank",
-            ],
-            [
-                "📞 Welcome",
-                "Welcome call Remarks blank AND Status blank",
-            ],
-            [
-                "📱 Committed",
-                "CallStatus blank AND Comments blank",
-            ],
-            [
-                "⚙️ Provisioning",
-                'Status = "Done" AND Provisioning != "Processed"',
-            ],
-        ],
-        columns=[
-            "AREA",
-            "PENDING CONDITION",
-        ],
-    )
+    with st.form(
+        "add_pending_sale_form",
+        clear_on_submit=True,
+    ):
 
-    st.dataframe(
-        logic_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "AREA": st.column_config.TextColumn(
-                "AREA",
-                width="medium",
-            ),
-            "PENDING CONDITION": st.column_config.TextColumn(
-                "PENDING CONDITION",
-                width="large",
-            ),
-        },
-    )
+        row1_col1, row1_col2 = st.columns(
+            [1, 2]
+        )
+
+        with row1_col1:
+
+            sale_date = st.date_input(
+                "Sale Date",
+                value=date.today(),
+                format="DD/MM/YYYY",
+            )
+
+        with row1_col2:
+
+            customer_name = st.text_input(
+                "Customer Name",
+                placeholder="Enter customer name",
+            )
+
+        row2_col1, row2_col2 = st.columns(
+            [1, 2]
+        )
+
+        with row2_col1:
+
+            phone_number = st.text_input(
+                "Phone Number",
+                placeholder="Enter phone number",
+            )
+
+        with row2_col2:
+
+            pending_stages = st.multiselect(
+                "Pending Stage(s)",
+                options=STAGES,
+                format_func=lambda stage:
+                    f"{STAGE_ICONS[stage]} {stage}",
+                placeholder="Select one or more stages",
+            )
+
+        notes = st.text_input(
+            "Notes (optional)",
+            placeholder="Optional note about the pending sale",
+        )
+
+        submitted = st.form_submit_button(
+            "➕ Add Pending Sale",
+            type="primary",
+            use_container_width=True,
+        )
 
 
 # ============================================================
-# TABLE PREPARATION
+# ADD VALIDATION
 # ============================================================
 
-def prepare_display_table(
-    df: pd.DataFrame,
-    stage: str,
-) -> pd.DataFrame:
+if submitted:
 
-    if df.empty:
-
-        return pd.DataFrame(
-            columns=[
-                "CUSTOMER",
-                "TELEPHONE",
-                "ADVISOR",
-                "SALE DATE",
-                "SOURCE",
-                "PENDING CONDITION",
-                "DETAILS",
-            ]
-        )
-
-    result = pd.DataFrame(
-        index=df.index
+    customer_name_clean = (
+        customer_name
+        .strip()
     )
 
-    result["CUSTOMER"] = (
-        df["Customer Name"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .replace(
-            "",
-            "Unnamed Customer",
+    phone_clean = (
+        format_phone(
+            phone_number
         )
     )
 
-    result["TELEPHONE"] = (
-        df["_Phone"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
+    if not customer_name_clean:
 
-    result["ADVISOR"] = (
-        df["Advisor"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .replace(
-            "",
-            "Unassigned",
-        )
-    )
-
-    result["SALE DATE"] = (
-        pd.to_datetime(
-            df["_SaleDate"],
-            errors="coerce",
-        )
-        .apply(
-            format_date_value
-        )
-    )
-
-    result["SOURCE"] = (
-        df["_Source"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
-
-    # --------------------------------------------------------
-    # Stage-specific reason / details
-    # --------------------------------------------------------
-
-    if stage == "Quality":
-
-        result["PENDING CONDITION"] = (
-            "Quality Status blank + Quality Remarks blank"
+        st.error(
+            "Please enter the Customer Name."
         )
 
-        auto_status = (
-            df.get(
-                "Quality Status",
-                pd.Series(
-                    "",
-                    index=df.index,
-                ),
-            )
-            .fillna("")
-            .astype(str)
-            .str.strip()
+    elif not phone_clean:
+
+        st.error(
+            "Please enter the Phone Number."
         )
 
-        auto_remarks = (
-            df.get(
-                "Quality Remarks",
-                pd.Series(
-                    "",
-                    index=df.index,
-                ),
-            )
-            .fillna("")
-            .astype(str)
-            .str.strip()
+    elif not pending_stages:
+
+        st.error(
+            "Please select at least one Pending Stage."
         )
-
-        details = []
-
-        for idx in df.index:
-
-            if (
-                str(
-                    df.loc[idx, "_Source"]
-                )
-                == "Manual"
-            ):
-
-                notes = str(
-                    df.loc[idx].get(
-                        "Notes",
-                        "",
-                    )
-                ).strip()
-
-                details.append(
-                    notes
-                    if notes
-                    else "Manual pending entry"
-                )
-
-            else:
-
-                status_value = (
-                    auto_status.loc[idx]
-                    if idx in auto_status.index
-                    else ""
-                )
-
-                remarks_value = (
-                    auto_remarks.loc[idx]
-                    if idx in auto_remarks.index
-                    else ""
-                )
-
-                details.append(
-                    "Status blank"
-                    + " • "
-                    + "Remarks blank"
-                )
-
-        result["DETAILS"] = details
-
-    elif stage == "Welcome":
-
-        result["PENDING CONDITION"] = (
-            "Welcome call Remarks blank + Status blank"
-        )
-
-        details = []
-
-        for idx in df.index:
-
-            if (
-                str(
-                    df.loc[idx, "_Source"]
-                )
-                == "Manual"
-            ):
-
-                notes = str(
-                    df.loc[idx].get(
-                        "Notes",
-                        "",
-                    )
-                ).strip()
-
-                details.append(
-                    notes
-                    if notes
-                    else "Manual pending entry"
-                )
-
-            else:
-
-                details.append(
-                    "Welcome Remarks blank"
-                    " • "
-                    "Status blank"
-                )
-
-        result["DETAILS"] = details
-
-    elif stage == "Committed":
-
-        result["PENDING CONDITION"] = (
-            "CallStatus blank + Comments blank"
-        )
-
-        details = []
-
-        for idx in df.index:
-
-            if (
-                str(
-                    df.loc[idx, "_Source"]
-                )
-                == "Manual"
-            ):
-
-                notes = str(
-                    df.loc[idx].get(
-                        "Notes",
-                        "",
-                    )
-                ).strip()
-
-                details.append(
-                    notes
-                    if notes
-                    else "Manual pending entry"
-                )
-
-            else:
-
-                details.append(
-                    "CallStatus blank"
-                    " • "
-                    "Comments blank"
-                )
-
-        result["DETAILS"] = details
 
     else:
 
-        result["PENDING CONDITION"] = (
-            'Status = "Done" + Provisioning != "Processed"'
+        new_sale = {
+            "Sale Date":
+                sale_date,
+
+            "Customer Name":
+                customer_name_clean,
+
+            "Phone Number":
+                phone_clean,
+
+            "Pending Stage":
+                list(
+                    pending_stages
+                ),
+
+            "Notes":
+                notes.strip(),
+        }
+
+        st.session_state.pending_sales.append(
+            new_sale
         )
 
-        details = []
+        st.success(
+            "Pending sale added successfully."
+        )
 
-        for idx in df.index:
-
-            if (
-                str(
-                    df.loc[idx, "_Source"]
-                )
-                == "Manual"
-            ):
-
-                notes = str(
-                    df.loc[idx].get(
-                        "Notes",
-                        "",
-                    )
-                ).strip()
-
-                details.append(
-                    notes
-                    if notes
-                    else "Manual pending entry"
-                )
-
-            else:
-
-                provisioning_value = str(
-                    df.loc[idx].get(
-                        "Provisioning",
-                        "",
-                    )
-                ).strip()
-
-                details.append(
-                    f'Status = Done'
-                    f" • "
-                    f'Provisioning = '
-                    f'{provisioning_value or "(blank)"}'
-                )
-
-        result["DETAILS"] = details
-
-    return result.reset_index(
-        drop=True
-    )
+        st.rerun()
 
 
 # ============================================================
-# TABLE RENDERER
-# ============================================================
-
-def render_queue_table(
-    df: pd.DataFrame,
-    stage: str,
-    table_id: str,
-):
-
-    display_df = prepare_display_table(
-        df,
-        stage,
-    )
-
-    if display_df.empty:
-
-        st.markdown(
-            f"""
-            <div class="empty-box">
-
-                <div class="empty-icon">
-                    ✅
-                </div>
-
-                <div class="empty-title">
-                    Nothing pending in {escape(stage)}
-                </div>
-
-                <div class="empty-description">
-                    No sales match the current filters.
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        return
-
-    # Native Streamlit dataframe is intentionally used here:
-    # it provides reliable sorting, scrolling and text handling
-    # without exposing HTML markup to the user.
-
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        hide_index=True,
-        height=min(
-            650,
-            max(
-                180,
-                90 + len(display_df) * 38,
-            ),
-        ),
-        column_config={
-            "CUSTOMER": st.column_config.TextColumn(
-                "CUSTOMER",
-                width="medium",
-            ),
-            "TELEPHONE": st.column_config.TextColumn(
-                "TELEPHONE",
-                width="small",
-            ),
-            "ADVISOR": st.column_config.TextColumn(
-                "ADVISOR",
-                width="medium",
-            ),
-            "SALE DATE": st.column_config.TextColumn(
-                "SALE DATE",
-                width="small",
-            ),
-            "SOURCE": st.column_config.TextColumn(
-                "SOURCE",
-                width="small",
-            ),
-            "PENDING CONDITION": st.column_config.TextColumn(
-                "PENDING CONDITION",
-                width="large",
-            ),
-            "DETAILS": st.column_config.TextColumn(
-                "DETAILS",
-                width="large",
-            ),
-        },
-    )
-
-
-# ============================================================
-# ALL PENDING TABLE
-# ============================================================
-
-def build_all_pending_display(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-
-    if df.empty:
-
-        return pd.DataFrame(
-            columns=[
-                "CUSTOMER",
-                "TELEPHONE",
-                "ADVISOR",
-                "SALE DATE",
-                "PENDING WHERE",
-                "SOURCE",
-                "DETAILS",
-            ]
-        )
-
-    rows = []
-
-    grouped = df.groupby(
-        "_SaleKey",
-        dropna=False,
-    )
-
-    for _, group in grouped:
-
-        first = group.iloc[0]
-
-        customer = str(
-            first.get(
-                "Customer Name",
-                "",
-            )
-        ).strip()
-
-        phone = str(
-            first.get(
-                "_Phone",
-                "",
-            )
-        ).strip()
-
-        advisor = str(
-            first.get(
-                "Advisor",
-                "",
-            )
-        ).strip()
-
-        sale_date = first.get(
-            "_SaleDate",
-            pd.NaT,
-        )
-
-        if not customer:
-            customer = "Unnamed Customer"
-
-        if not advisor:
-            advisor = "Unassigned"
-
-        stages = []
-
-        for stage in group[
-            "_PendingStage"
-        ].dropna():
-
-            stage = str(stage).strip()
-
-            if (
-                stage
-                and stage not in stages
-            ):
-                stages.append(stage)
-
-        sources = []
-
-        for source in group[
-            "_Source"
-        ].dropna():
-
-            source = str(source).strip()
-
-            if (
-                source
-                and source not in sources
-            ):
-                sources.append(source)
-
-        notes = []
-
-        for _, source_row in group.iterrows():
-
-            if (
-                str(
-                    source_row.get(
-                        "_Source",
-                        "",
-                    )
-                )
-                == "Manual"
-            ):
-
-                note = str(
-                    source_row.get(
-                        "Notes",
-                        "",
-                    )
-                ).strip()
-
-                if (
-                    note
-                    and note not in notes
-                ):
-
-                    notes.append(note)
-
-        if notes:
-
-            detail = " • ".join(notes)
-
-        else:
-
-            detail = (
-                "Pending in: "
-                + ", ".join(
-                    stages
-                )
-            )
-
-        rows.append(
-            {
-                "CUSTOMER": customer,
-                "TELEPHONE": phone,
-                "ADVISOR": advisor,
-                "SALE DATE":
-                    format_date_value(
-                        sale_date
-                    ),
-                "PENDING WHERE":
-                    " • ".join(
-                        STAGE_LABELS.get(
-                            x,
-                            x,
-                        )
-                        for x in stages
-                    ),
-                "SOURCE":
-                    " + ".join(
-                        sources
-                    ),
-                "DETAILS":
-                    detail,
-            }
-        )
-
-    return pd.DataFrame(
-        rows
-    )
-
-
-# ============================================================
-# TABS
+# CURRENT PENDING SALES
 # ============================================================
 
 st.divider()
 
-st.subheader(
-    "📋 Pending Work Queues"
+st.markdown(
+    '<div class="section-heading">📋 Current Pending Sales</div>',
+    unsafe_allow_html=True,
 )
 
-tab_all, tab_quality, tab_welcome, tab_committed, tab_provisioning = (
-    st.tabs(
-        [
-            f"⏳ All Pending ({unique_pending_count:,})",
-            f"🧪 Quality ({quality_count:,})",
-            f"📞 Welcome ({welcome_count:,})",
-            f"📱 Committed ({committed_count:,})",
-            f"⚙️ Provisioning ({provisioning_count:,})",
-        ]
+
+if not st.session_state.pending_sales:
+
+    st.markdown(
+        """
+        <div class="empty-state">
+
+            <div class="empty-icon">
+                📝
+            </div>
+
+            <div class="empty-title">
+                No pending sales recorded yet
+            </div>
+
+            <div class="empty-text">
+                Add your first pending sale using the form above.
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-)
 
+else:
 
-# ============================================================
-# ALL PENDING
-# ============================================================
+    # --------------------------------------------------------
+    # Search
+    # --------------------------------------------------------
 
-with tab_all:
+    search_col1, search_col2 = st.columns(
+        [2, 1]
+    )
+
+    with search_col1:
+
+        search = st.text_input(
+            "🔎 Search",
+            placeholder="Customer name or phone number...",
+        )
+
+    with search_col2:
+
+        stage_filter = st.multiselect(
+            "Filter by Stage",
+            options=STAGES,
+            format_func=lambda stage:
+                f"{STAGE_ICONS[stage]} {stage}",
+            placeholder="All stages",
+        )
+
+    # --------------------------------------------------------
+    # Build filtered list
+    # --------------------------------------------------------
+
+    filtered_sales = []
+
+    search_lower = (
+        search
+        .strip()
+        .lower()
+    )
+
+    for index, sale in enumerate(
+        st.session_state.pending_sales
+    ):
+
+        customer = str(
+            sale.get(
+                "Customer Name",
+                "",
+            )
+        )
+
+        phone = str(
+            sale.get(
+                "Phone Number",
+                "",
+            )
+        )
+
+        stages = sale.get(
+            "Pending Stage",
+            [],
+        )
+
+        # Search
+        if search_lower:
+
+            searchable = (
+                customer
+                + " "
+                + phone
+            ).lower()
+
+            if search_lower not in searchable:
+                continue
+
+        # Stage filter
+        if stage_filter:
+
+            if not any(
+                stage in stages
+                for stage in stage_filter
+            ):
+                continue
+
+        filtered_sales.append(
+            (
+                index,
+                sale,
+            )
+        )
+
+    # --------------------------------------------------------
+    # Summary
+    # --------------------------------------------------------
 
     st.caption(
-        "Each sale is shown once here even if it is pending in "
-        "more than one area."
+        f"Showing {len(filtered_sales):,} "
+        f"of {len(st.session_state.pending_sales):,} "
+        f"pending sales."
     )
 
-    all_display = build_all_pending_display(
-        all_pending_long
-    )
+    # --------------------------------------------------------
+    # Display table
+    # --------------------------------------------------------
 
-    if all_display.empty:
+    if not filtered_sales:
 
-        st.markdown(
-            """
-            <div class="empty-box">
-
-                <div class="empty-icon">
-                    🎉
-                </div>
-
-                <div class="empty-title">
-                    No pending sales
-                </div>
-
-                <div class="empty-description">
-                    Nothing pending matches the current filters.
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True,
+        st.info(
+            "No pending sales match the selected filters."
         )
 
     else:
 
+        display_rows = []
+
+        for original_index, sale in filtered_sales:
+
+            display_rows.append(
+                {
+                    "Sale Date":
+                        format_date(
+                            sale.get(
+                                "Sale Date"
+                            )
+                        ),
+
+                    "Customer Name":
+                        sale.get(
+                            "Customer Name",
+                            "",
+                        ),
+
+                    "Phone Number":
+                        sale.get(
+                            "Phone Number",
+                            "",
+                        ),
+
+                    "Pending Stage(s)":
+                        " + ".join(
+                            sale.get(
+                                "Pending Stage",
+                                [],
+                            )
+                        ),
+
+                    "Notes":
+                        sale.get(
+                            "Notes",
+                            "",
+                        ),
+
+                    "_index":
+                        original_index,
+                }
+            )
+
+        display_df = pd.DataFrame(
+            display_rows
+        )
+
+        # Don't expose internal index
+        visible_df = display_df.drop(
+            columns=["_index"]
+        )
+
         st.dataframe(
-            all_display,
+            visible_df,
             use_container_width=True,
             hide_index=True,
             height=min(
-                680,
+                650,
                 max(
-                    200,
-                    100 + len(all_display) * 38,
+                    180,
+                    100
+                    + len(visible_df) * 38,
                 ),
             ),
             column_config={
-                "CUSTOMER": st.column_config.TextColumn(
-                    "CUSTOMER",
-                    width="medium",
-                ),
-                "TELEPHONE": st.column_config.TextColumn(
-                    "TELEPHONE",
-                    width="small",
-                ),
-                "ADVISOR": st.column_config.TextColumn(
-                    "ADVISOR",
-                    width="medium",
-                ),
-                "SALE DATE": st.column_config.TextColumn(
+                "Sale Date": st.column_config.TextColumn(
                     "SALE DATE",
                     width="small",
                 ),
-                "PENDING WHERE": st.column_config.TextColumn(
-                    "PENDING WHERE",
+                "Customer Name": st.column_config.TextColumn(
+                    "CUSTOMER NAME",
                     width="medium",
                 ),
-                "SOURCE": st.column_config.TextColumn(
-                    "SOURCE",
-                    width="small",
+                "Phone Number": st.column_config.TextColumn(
+                    "PHONE NUMBER",
+                    width="medium",
                 ),
-                "DETAILS": st.column_config.TextColumn(
-                    "DETAILS",
+                "Pending Stage(s)": st.column_config.TextColumn(
+                    "PENDING STAGE(S)",
+                    width="large",
+                ),
+                "Notes": st.column_config.TextColumn(
+                    "NOTES",
                     width="large",
                 ),
             },
@@ -2957,323 +1062,152 @@ with tab_all:
 
 
 # ============================================================
-# QUALITY
+# EDIT / DELETE
 # ============================================================
 
-with tab_quality:
+if st.session_state.pending_sales:
 
-    st.caption(
-        "Pending when both Quality Status and Quality Remarks "
-        "are blank."
+    st.divider()
+
+    st.markdown(
+        '<div class="section-heading">✏️ Manage Existing Sale</div>',
+        unsafe_allow_html=True,
     )
 
-    render_queue_table(
-        quality_queue,
-        "Quality",
-        "quality-table",
+    sale_options = []
+
+    sale_option_to_index = {}
+
+    for index, sale in enumerate(
+        st.session_state.pending_sales
+    ):
+
+        label = (
+            f"{format_date(sale.get('Sale Date'))}"
+            f" — "
+            f"{sale.get('Customer Name', 'Unnamed')}"
+            f" — "
+            f"{sale.get('Phone Number', '')}"
+        )
+
+        sale_options.append(
+            label
+        )
+
+        sale_option_to_index[
+            label
+        ] = index
+
+    manage_col1, manage_col2 = st.columns(
+        [3, 1]
     )
+
+    with manage_col1:
+
+        selected_sale_label = st.selectbox(
+            "Select a sale to manage",
+            options=sale_options,
+        )
+
+    selected_index = (
+        sale_option_to_index[
+            selected_sale_label
+        ]
+    )
+
+    selected_sale = (
+        st.session_state.pending_sales[
+            selected_index
+        ]
+    )
+
+    with manage_col2:
+
+        st.write("")
+        st.write("")
+
+        delete_sale = st.button(
+            "🗑️ Delete Sale",
+            use_container_width=True,
+        )
+
+    if delete_sale:
+
+        st.session_state.pending_sales.pop(
+            selected_index
+        )
+
+        st.success(
+            "Sale deleted."
+        )
+
+        st.rerun()
 
 
 # ============================================================
-# WELCOME
-# ============================================================
-
-with tab_welcome:
-
-    st.caption(
-        "Pending when both Welcome call Remarks and Status "
-        "are blank."
-    )
-
-    render_queue_table(
-        welcome_queue,
-        "Welcome",
-        "welcome-table",
-    )
-
-
-# ============================================================
-# COMMITTED
-# ============================================================
-
-with tab_committed:
-
-    st.caption(
-        "Pending when both CallStatus and Comments are blank."
-    )
-
-    render_queue_table(
-        committed_queue,
-        "Committed",
-        "committed-table",
-    )
-
-
-# ============================================================
-# PROVISIONING
-# ============================================================
-
-with tab_provisioning:
-
-    st.caption(
-        'Pending when Status is "Done" and Provisioning is '
-        'anything other than "Processed".'
-    )
-
-    render_queue_table(
-        provisioning_queue,
-        "Provisioning",
-        "provisioning-table",
-    )
-
-
-# ============================================================
-# ADVISOR BREAKDOWN
+# STAGE BREAKDOWN
 # ============================================================
 
 st.divider()
 
-st.subheader(
-    "👥 Pending Work by Advisor"
+st.markdown(
+    '<div class="section-heading">📊 Stage Breakdown</div>',
+    unsafe_allow_html=True,
 )
 
 
-advisor_frames = []
+breakdown_rows = []
 
+for stage in STAGES:
 
-for stage, queue_df in [
-    (
-        "Quality",
-        quality_queue,
-    ),
-    (
-        "Welcome",
-        welcome_queue,
-    ),
-    (
-        "Committed",
-        committed_queue,
-    ),
-    (
-        "Provisioning",
-        provisioning_queue,
-    ),
-]:
+    breakdown_rows.append(
+        {
+            "Stage":
+                f"{STAGE_ICONS[stage]} {stage}",
 
-    if queue_df.empty:
-        continue
+            "Pending Sales":
+                count_stage(stage),
 
-    temp = queue_df[
-        [
-            "Advisor",
-            "_SaleKey",
-        ]
-    ].copy()
+            "Description": {
+                "Quality":
+                    "Awaiting Quality action",
 
-    temp["Advisor"] = (
-        temp["Advisor"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .replace(
-            "",
-            "Unassigned",
-        )
-    )
+                "Welcome":
+                    "Awaiting Welcome action",
 
-    temp["Stage"] = stage
+                "Committed":
+                    "Awaiting Committed action",
 
-    temp = (
-        temp
-        .drop_duplicates()
-    )
-
-    advisor_frames.append(
-        temp
-    )
-
-
-if advisor_frames:
-
-    advisor_long = pd.concat(
-        advisor_frames,
-        ignore_index=True,
-    )
-
-    advisor_pivot = (
-        advisor_long
-        .groupby(
-            [
-                "Advisor",
-                "Stage",
-            ],
-            dropna=False,
-        )
-        .size()
-        .unstack(
-            fill_value=0
-        )
-        .reset_index()
-    )
-
-    for stage in STAGE_OPTIONS:
-
-        if stage not in advisor_pivot.columns:
-            advisor_pivot[stage] = 0
-
-    advisor_pivot["TOTAL PENDING"] = (
-        advisor_pivot[
-            STAGE_OPTIONS
-        ].sum(axis=1)
-    )
-
-    advisor_pivot = (
-        advisor_pivot
-        .sort_values(
-            "TOTAL PENDING",
-            ascending=False,
-        )
-    )
-
-    advisor_pivot = advisor_pivot.rename(
-        columns={
-            "Quality": "QUALITY",
-            "Welcome": "WELCOME",
-            "Committed": "COMMITTED",
-            "Provisioning": "PROVISIONING",
+                "Provisioning":
+                    "Awaiting Provisioning action",
+            }[stage],
         }
     )
 
-    advisor_display = advisor_pivot[
-        [
-            "Advisor",
-            "QUALITY",
-            "WELCOME",
-            "COMMITTED",
-            "PROVISIONING",
-            "TOTAL PENDING",
-        ]
-    ].copy()
 
-    # Convert zeros to dash for cleaner presentation
-    for column in [
-        "QUALITY",
-        "WELCOME",
-        "COMMITTED",
-        "PROVISIONING",
-        "TOTAL PENDING",
-    ]:
-
-        advisor_display[column] = (
-            advisor_display[column]
-            .astype(int)
-        )
-
-    st.dataframe(
-        advisor_display,
-        use_container_width=True,
-        hide_index=True,
-        height=min(
-            620,
-            max(
-                190,
-                95 + len(advisor_display) * 38,
-            ),
-        ),
-        column_config={
-            "Advisor": st.column_config.TextColumn(
-                "ADVISOR",
-                width="medium",
-            ),
-            "QUALITY": st.column_config.NumberColumn(
-                "QUALITY",
-                format="%d",
-            ),
-            "WELCOME": st.column_config.NumberColumn(
-                "WELCOME",
-                format="%d",
-            ),
-            "COMMITTED": st.column_config.NumberColumn(
-                "COMMITTED",
-                format="%d",
-            ),
-            "PROVISIONING": st.column_config.NumberColumn(
-                "PROVISIONING",
-                format="%d",
-            ),
-            "TOTAL PENDING": st.column_config.NumberColumn(
-                "TOTAL PENDING",
-                format="%d",
-            ),
-        },
-    )
-
-else:
-
-    st.info(
-        "No pending work matches the current filters."
-    )
-
-
-# ============================================================
-# MANUAL ENTRY SUMMARY
-# ============================================================
-
-manual_total = len(
-    st.session_state[
-        "manual_pending_rows"
-    ]
+breakdown_df = pd.DataFrame(
+    breakdown_rows
 )
 
-if manual_total:
-
-    st.divider()
-
-    st.subheader(
-        "📝 Manual Pending Entries"
-    )
-
-    st.caption(
-        f"{manual_total:,} manual row"
-        f"{'' if manual_total == 1 else 's'} "
-        "currently stored in this browser session."
-    )
-
-    manual_summary = (
-        st.session_state[
-            "manual_pending_rows"
-        ]
-        .copy()
-    )
-
-    manual_summary["Date"] = pd.to_datetime(
-        manual_summary["Date"],
-        errors="coerce",
-    ).dt.strftime(
-        "%d/%m/%Y"
-    )
-
-    st.dataframe(
-        manual_summary[
-            [
-                "Date",
-                "Stage",
-                "Customer Name",
-                "Telephone No.",
-                "Advisor",
-                "Notes",
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True,
-        height=min(
-            400,
-            max(
-                130,
-                80 + len(manual_summary) * 36,
-            ),
+st.dataframe(
+    breakdown_df,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Stage": st.column_config.TextColumn(
+            "STAGE",
+            width="medium",
         ),
-    )
+        "Pending Sales": st.column_config.NumberColumn(
+            "PENDING SALES",
+            format="%d",
+        ),
+        "Description": st.column_config.TextColumn(
+            "DESCRIPTION",
+            width="large",
+        ),
+    },
+)
 
 
 # ============================================================
@@ -3282,22 +1216,21 @@ if manual_total:
 
 st.divider()
 
-footer_left, footer_right = st.columns(
+footer_col1, footer_col2 = st.columns(
     [1, 1]
 )
 
-with footer_left:
+with footer_col1:
 
     st.caption(
-        "Sparta Pending Operations Dashboard"
+        "Sparta Pending Sales — Manual Tracker"
     )
 
-with footer_right:
+with footer_col2:
 
     st.caption(
-        "Dashboard refreshed: "
-        + now_ist().strftime(
+        "Updated "
+        + datetime.now().strftime(
             "%d/%m/%Y %H:%M:%S"
         )
-        + " IST"
     )
