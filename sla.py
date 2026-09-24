@@ -2,16 +2,9 @@
 SPARTA PENDING SALES - MANUAL TRACKER
 =====================================
 
-Simple manual dashboard for recording pending sales.
+Manual dashboard for tracking pending sales.
 
-Each sale is entered once and can be pending in MULTIPLE stages.
-
-Fields:
-    - Sale Date
-    - Customer Name
-    - Phone Number
-    - Pending Stage(s)
-    - Notes
+Each sale is entered ONCE and can be pending in MULTIPLE stages.
 
 Stages:
     - Quality
@@ -19,11 +12,18 @@ Stages:
     - Committed
     - Provisioning
 
-There is NO automatic data loading.
-There is NO SLA calculation.
-There is NO Google Sheets dependency.
+Features:
+    - Manual entry
+    - Multi-stage pending selection
+    - Excel / CSV quick upload
+    - Search and stage filtering
+    - Resolve/remove sales
+    - Excel export
+    - Stage KPI cards
+    - Session-based storage
 
-Data is stored in Streamlit session state.
+There is NO automatic source-sheet integration.
+There is NO SLA calculation.
 """
 
 # ============================================================
@@ -32,6 +32,7 @@ Data is stored in Streamlit session state.
 
 from datetime import date, datetime
 from io import BytesIO
+import re
 
 import pandas as pd
 import streamlit as st
@@ -67,11 +68,11 @@ STAGE_ICONS = {
     "Provisioning": "⚙️",
 }
 
-STAGE_CLASSES = {
-    "Quality": "quality",
-    "Welcome": "welcome",
-    "Committed": "committed",
-    "Provisioning": "provisioning",
+STAGE_DESCRIPTIONS = {
+    "Quality": "Sales awaiting Quality action",
+    "Welcome": "Sales awaiting Welcome action",
+    "Committed": "Sales awaiting Committed action",
+    "Provisioning": "Sales awaiting Provisioning action",
 }
 
 
@@ -82,6 +83,12 @@ STAGE_CLASSES = {
 if "pending_sales" not in st.session_state:
     st.session_state.pending_sales = []
 
+if "upload_message" not in st.session_state:
+    st.session_state.upload_message = ""
+
+if "remove_selection" not in st.session_state:
+    st.session_state.remove_selection = []
+
 
 # ============================================================
 # GLOBAL CSS
@@ -91,13 +98,9 @@ st.markdown(
     """
     <style>
 
-    /* --------------------------------------------------------
-       PAGE
-       -------------------------------------------------------- */
-
     .block-container {
         max-width: 1500px;
-        padding-top: 1.4rem;
+        padding-top: 1.35rem;
         padding-bottom: 2rem;
     }
 
@@ -112,9 +115,8 @@ st.markdown(
     .main-subtitle {
         color: #64748b;
         font-size: 0.94rem;
-        margin-bottom: 1.4rem;
+        margin-bottom: 1.35rem;
     }
-
 
     /* --------------------------------------------------------
        KPI CARDS
@@ -204,61 +206,8 @@ st.markdown(
         margin-top: 8px;
     }
 
-
     /* --------------------------------------------------------
-       SECTION HEADINGS
-       -------------------------------------------------------- */
-
-    .section-heading {
-        color: #0f172a;
-        font-size: 1.15rem;
-        font-weight: 800;
-        margin-bottom: 0.55rem;
-    }
-
-
-    /* --------------------------------------------------------
-       STAGE BADGES
-       -------------------------------------------------------- */
-
-    .stage-badge {
-        display: inline-block;
-        padding: 4px 9px;
-        border-radius: 999px;
-        font-size: 0.67rem;
-        font-weight: 800;
-        margin-right: 4px;
-        margin-bottom: 3px;
-        white-space: nowrap;
-    }
-
-    .stage-quality {
-        color: #c2410c;
-        background: #fff7ed;
-        border: 1px solid #fed7aa;
-    }
-
-    .stage-welcome {
-        color: #a16207;
-        background: #fefce8;
-        border: 1px solid #fde68a;
-    }
-
-    .stage-committed {
-        color: #1d4ed8;
-        background: #eff6ff;
-        border: 1px solid #bfdbfe;
-    }
-
-    .stage-provisioning {
-        color: #6d28d9;
-        background: #f5f3ff;
-        border: 1px solid #ddd6fe;
-    }
-
-
-    /* --------------------------------------------------------
-       INFO BOX
+       INFO
        -------------------------------------------------------- */
 
     .info-panel {
@@ -268,48 +217,78 @@ st.markdown(
         padding: 13px 15px;
         color: #475569;
         font-size: 0.82rem;
-        margin-bottom: 1rem;
+        margin: 0.75rem 0 1rem 0;
     }
-
 
     /* --------------------------------------------------------
        EMPTY STATE
        -------------------------------------------------------- */
 
-    .empty-state {
-        border: 1px dashed #cbd5e1;
-        background: #f8fafc;
-        border-radius: 14px;
-        padding: 45px 25px;
-        text-align: center;
-    }
-
-    .empty-icon {
-        font-size: 2.4rem;
-        margin-bottom: 8px;
-    }
-
     .empty-title {
+        text-align: center;
         color: #334155;
-        font-weight: 800;
         font-size: 1rem;
+        font-weight: 800;
+        margin-top: 0.35rem;
     }
 
     .empty-text {
+        text-align: center;
         color: #64748b;
         font-size: 0.8rem;
-        margin-top: 5px;
+        margin-top: 0.25rem;
+        margin-bottom: 0.5rem;
     }
 
-
     /* --------------------------------------------------------
-       SIDEBAR
+       STAGE BADGE-LIKE TEXT
        -------------------------------------------------------- */
 
-    .sidebar-title {
-        font-size: 1rem;
+    .stage-quality {
+        color: #c2410c;
         font-weight: 800;
+    }
+
+    .stage-welcome {
+        color: #a16207;
+        font-weight: 800;
+    }
+
+    .stage-committed {
+        color: #1d4ed8;
+        font-weight: 800;
+    }
+
+    .stage-provisioning {
+        color: #6d28d9;
+        font-weight: 800;
+    }
+
+    /* --------------------------------------------------------
+       SECTION HEADINGS
+       -------------------------------------------------------- */
+
+    .section-heading {
         color: #0f172a;
+        font-size: 1.16rem;
+        font-weight: 800;
+        margin-bottom: 0.55rem;
+    }
+
+    /* --------------------------------------------------------
+       RESPONSIVE
+       -------------------------------------------------------- */
+
+    @media (max-width: 1100px) {
+
+        .kpi-row {
+            flex-wrap: wrap;
+        }
+
+        .kpi-card {
+            flex: 1 1 calc(50% - 8px);
+        }
+
     }
 
     </style>
@@ -322,32 +301,20 @@ st.markdown(
 # HELPER FUNCTIONS
 # ============================================================
 
-def count_stage(stage: str) -> int:
-    """Count sales that have the given stage selected."""
-
-    count = 0
-
-    for sale in st.session_state.pending_sales:
-
-        stages = sale.get("Pending Stage", [])
-
-        if stage in stages:
-            count += 1
-
-    return count
-
-
-def format_phone(phone: str) -> str:
-
-    if not phone:
+def normalise_phone(value) -> str:
+    """
+    Keep phone numbers readable while removing accidental
+    whitespace around them.
+    """
+    if pd.isna(value):
         return ""
 
-    return str(phone).strip()
+    return str(value).strip()
 
 
 def format_date(value) -> str:
 
-    if value is None:
+    if value is None or pd.isna(value):
         return ""
 
     try:
@@ -358,37 +325,62 @@ def format_date(value) -> str:
         return str(value)
 
 
-def stage_badges(stages) -> str:
+def parse_stage_cell(value) -> list:
+    """
+    Accept multiple common separators.
 
-    if not isinstance(stages, list):
-        stages = [stages]
+    Examples:
+        Quality, Welcome
+        Quality + Welcome
+        Quality;Welcome
+        Quality | Welcome
+        Quality / Welcome
+    """
 
-    html = ""
+    if pd.isna(value):
+        return []
 
-    for stage in stages:
+    text = str(value).strip()
 
-        if stage not in STAGES:
-            continue
+    if not text:
+        return []
 
-        css_class = (
-            "stage-"
-            + STAGE_CLASSES[stage]
+    parts = re.split(
+        r"\s*(?:\+|,|;|\||/)\s*",
+        text,
+    )
+
+    cleaned = []
+
+    stage_lookup = {
+        stage.lower(): stage
+        for stage in STAGES
+    }
+
+    for part in parts:
+
+        key = part.strip().lower()
+
+        if key in stage_lookup:
+
+            canonical = stage_lookup[key]
+
+            if canonical not in cleaned:
+                cleaned.append(canonical)
+
+    return cleaned
+
+
+def count_stage(stage: str) -> int:
+
+    return sum(
+        1
+        for sale in st.session_state.pending_sales
+        if stage in sale.get(
+            "Pending Stage",
+            [],
         )
-
-        label = (
-            STAGE_ICONS[stage]
-            + " "
-            + stage
-        )
-
-        html += (
-            f'<span class="stage-badge '
-            f'{css_class}">'
-            f'{label}'
-            f'</span>'
-        )
-
-    return html
+    )
 
 
 def dataframe_from_sales() -> pd.DataFrame:
@@ -399,31 +391,36 @@ def dataframe_from_sales() -> pd.DataFrame:
 
         rows.append(
             {
-                "Sale Date": sale.get(
-                    "Sale Date"
-                ),
-
-                "Customer Name": sale.get(
-                    "Customer Name",
-                    "",
-                ),
-
-                "Phone Number": sale.get(
-                    "Phone Number",
-                    "",
-                ),
-
-                "Pending Stage": " + ".join(
+                "Sale Date":
                     sale.get(
-                        "Pending Stage",
-                        [],
-                    )
-                ),
+                        "Sale Date"
+                    ),
 
-                "Notes": sale.get(
-                    "Notes",
-                    "",
-                ),
+                "Customer Name":
+                    sale.get(
+                        "Customer Name",
+                        "",
+                    ),
+
+                "Phone Number":
+                    sale.get(
+                        "Phone Number",
+                        "",
+                    ),
+
+                "Pending Stage(s)":
+                    " + ".join(
+                        sale.get(
+                            "Pending Stage",
+                            [],
+                        )
+                    ),
+
+                "Notes":
+                    sale.get(
+                        "Notes",
+                        "",
+                    ),
             }
         )
 
@@ -434,12 +431,21 @@ def dataframe_from_sales() -> pd.DataFrame:
                 "Sale Date",
                 "Customer Name",
                 "Phone Number",
-                "Pending Stage",
+                "Pending Stage(s)",
                 "Notes",
             ]
         )
 
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+
+    df["Sale Date"] = pd.to_datetime(
+        df["Sale Date"],
+        errors="coerce",
+    ).dt.strftime(
+        "%d/%m/%Y"
+    )
+
+    return df
 
 
 def excel_download() -> bytes:
@@ -464,6 +470,124 @@ def excel_download() -> bytes:
     return output.getvalue()
 
 
+def create_sale(
+    sale_date,
+    customer_name,
+    phone_number,
+    pending_stages,
+    notes,
+):
+
+    return {
+        "Sale Date":
+            sale_date,
+
+        "Customer Name":
+            str(customer_name).strip(),
+
+        "Phone Number":
+            normalise_phone(
+                phone_number
+            ),
+
+        "Pending Stage":
+            list(
+                pending_stages
+            ),
+
+        "Notes":
+            str(notes).strip(),
+    }
+
+
+def sale_identifier(
+    index: int,
+    sale: dict,
+) -> str:
+
+    sale_date = format_date(
+        sale.get(
+            "Sale Date"
+        )
+    )
+
+    customer = sale.get(
+        "Customer Name",
+        "",
+    )
+
+    phone = sale.get(
+        "Phone Number",
+        "",
+    )
+
+    stages = " + ".join(
+        sale.get(
+            "Pending Stage",
+            [],
+        )
+    )
+
+    return (
+        f"{index} | "
+        f"{sale_date} | "
+        f"{customer} | "
+        f"{phone} | "
+        f"{stages}"
+    )
+
+
+def quick_upload_dataframe(
+    uploaded_file,
+) -> pd.DataFrame:
+
+    file_name = uploaded_file.name.lower()
+
+    if file_name.endswith(".csv"):
+
+        # utf-8-sig handles Excel-generated CSVs with BOM
+        return pd.read_csv(
+            uploaded_file,
+            dtype=str,
+            keep_default_na=False,
+        )
+
+    if file_name.endswith(
+        (".xlsx", ".xls")
+    ):
+
+        return pd.read_excel(
+            uploaded_file,
+            dtype=str,
+        )
+
+    raise ValueError(
+        "Unsupported file type. "
+        "Please upload CSV or Excel."
+    )
+
+
+def find_column(
+    df: pd.DataFrame,
+    possible_names: list,
+):
+
+    normalised_columns = {
+        str(col).strip().lower(): col
+        for col in df.columns
+    }
+
+    for name in possible_names:
+
+        if name.lower() in normalised_columns:
+
+            return normalised_columns[
+                name.lower()
+            ]
+
+    return None
+
+
 # ============================================================
 # TITLE
 # ============================================================
@@ -475,7 +599,7 @@ st.markdown(
     </div>
 
     <div class="main-subtitle">
-        Manually track every pending sale and the stage(s)
+        Manually track every pending sale and the stage or stages
         where it is currently waiting.
     </div>
     """,
@@ -490,8 +614,7 @@ st.markdown(
 with st.sidebar:
 
     st.markdown(
-        '<div class="sidebar-title">⚙️ Dashboard</div>',
-        unsafe_allow_html=True,
+        "**⚙️ Dashboard Controls**"
     )
 
     st.caption(
@@ -500,33 +623,19 @@ with st.sidebar:
 
     st.divider()
 
-    if st.session_state.pending_sales:
-
-        st.markdown(
-            f"**{len(st.session_state.pending_sales):,}** "
-            "sales currently recorded."
-        )
-
-    else:
-
-        st.caption(
-            "No pending sales recorded."
-        )
+    st.write(
+        f"**{len(st.session_state.pending_sales):,}** "
+        "sales currently recorded."
+    )
 
     st.divider()
-
-    # --------------------------------------------------------
-    # Export
-    # --------------------------------------------------------
 
     if st.session_state.pending_sales:
 
         st.download_button(
-            "📥 Export to Excel",
+            "📥 Export Current Sales",
             data=excel_download(),
-            file_name=(
-                "Sparta_Pending_Sales.xlsx"
-            ),
+            file_name="Sparta_Pending_Sales.xlsx",
             mime=(
                 "application/vnd.openxmlformats-"
                 "officedocument.spreadsheetml.sheet"
@@ -535,10 +644,6 @@ with st.sidebar:
         )
 
         st.divider()
-
-    # --------------------------------------------------------
-    # Clear all
-    # --------------------------------------------------------
 
     if st.session_state.pending_sales:
 
@@ -553,7 +658,7 @@ with st.sidebar:
 
 
 # ============================================================
-# KPI CARDS
+# KPI COUNTS
 # ============================================================
 
 quality_count = count_stage(
@@ -576,6 +681,10 @@ total_sales = len(
     st.session_state.pending_sales
 )
 
+
+# ============================================================
+# KPI CARDS
+# ============================================================
 
 kpi_cards = [
     (
@@ -659,9 +768,6 @@ kpi_html += """
 """
 
 
-# Use components.html so HTML is rendered instead of displayed literally.
-import streamlit.components.v1 as components
-
 components.html(
     kpi_html,
     height=150,
@@ -673,43 +779,37 @@ components.html(
 # INFORMATION
 # ============================================================
 
-st.markdown(
-    """
-    <div class="info-panel">
-        <strong>How this works:</strong>
-        enter a sale once and select every stage where it is currently
-        pending. A sale can therefore appear in multiple stage counts
-        while still being counted only once under <strong>Pending Sales</strong>.
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.info(
+    "Enter a sale once and select every stage where it is "
+    "currently pending. The sale is counted once under "
+    "'Pending Sales' but contributes to every selected stage."
 )
 
 
 # ============================================================
-# ADD SALE
+# ADD / QUICK UPLOAD ACCORDION
+# CLOSED BY DEFAULT
 # ============================================================
 
-st.markdown(
-    '<div class="section-heading">➕ Add Pending Sale</div>',
-    unsafe_allow_html=True,
-)
-
-
-with st.container(
-    border=True
+with st.expander(
+    "➕ Add Pending Sales",
+    expanded=False,
 ):
+
+    st.markdown(
+        "### Add a single sale"
+    )
 
     with st.form(
         "add_pending_sale_form",
         clear_on_submit=True,
     ):
 
-        row1_col1, row1_col2 = st.columns(
+        col1, col2 = st.columns(
             [1, 2]
         )
 
-        with row1_col1:
+        with col1:
 
             sale_date = st.date_input(
                 "Sale Date",
@@ -717,115 +817,512 @@ with st.container(
                 format="DD/MM/YYYY",
             )
 
-        with row1_col2:
+        with col2:
 
             customer_name = st.text_input(
                 "Customer Name",
                 placeholder="Enter customer name",
             )
 
-        row2_col1, row2_col2 = st.columns(
+        col3, col4 = st.columns(
             [1, 2]
         )
 
-        with row2_col1:
+        with col3:
 
             phone_number = st.text_input(
                 "Phone Number",
                 placeholder="Enter phone number",
             )
 
-        with row2_col2:
+        with col4:
 
             pending_stages = st.multiselect(
                 "Pending Stage(s)",
                 options=STAGES,
-                format_func=lambda stage:
-                    f"{STAGE_ICONS[stage]} {stage}",
+                format_func=lambda x:
+                    f"{STAGE_ICONS[x]} {x}",
                 placeholder="Select one or more stages",
             )
 
         notes = st.text_input(
-            "Notes (optional)",
-            placeholder="Optional note about the pending sale",
+            "Notes",
+            placeholder="Optional note",
         )
 
-        submitted = st.form_submit_button(
+        add_clicked = st.form_submit_button(
             "➕ Add Pending Sale",
             type="primary",
             use_container_width=True,
         )
 
+    if add_clicked:
 
-# ============================================================
-# ADD VALIDATION
-# ============================================================
+        customer_clean = (
+            str(customer_name).strip()
+        )
 
-if submitted:
+        phone_clean = (
+            normalise_phone(
+                phone_number
+            )
+        )
 
-    customer_name_clean = (
-        customer_name
-        .strip()
+        if not customer_clean:
+
+            st.error(
+                "Please enter the Customer Name."
+            )
+
+        elif not phone_clean:
+
+            st.error(
+                "Please enter the Phone Number."
+            )
+
+        elif not pending_stages:
+
+            st.error(
+                "Please select at least one Pending Stage."
+            )
+
+        else:
+
+            st.session_state.pending_sales.append(
+                create_sale(
+                    sale_date,
+                    customer_clean,
+                    phone_clean,
+                    pending_stages,
+                    notes,
+                )
+            )
+
+            st.success(
+                "Pending sale added."
+            )
+
+            st.rerun()
+
+
+    # ========================================================
+    # QUICK UPLOAD
+    # ========================================================
+
+    st.divider()
+
+    st.markdown(
+        "### 📤 Quick Upload"
     )
 
-    phone_clean = (
-        format_phone(
-            phone_number
-        )
+    st.caption(
+        "Upload an Excel or CSV file to add multiple pending "
+        "sales at once."
     )
 
-    if not customer_name_clean:
+    upload_template = pd.DataFrame(
+        [
+            {
+                "Sale Date":
+                    date.today(),
 
-        st.error(
-            "Please enter the Customer Name."
+                "Customer Name":
+                    "Example Customer",
+
+                "Phone Number":
+                    "07123456789",
+
+                "Pending Stage(s)":
+                    "Quality + Welcome",
+
+                "Notes":
+                    "Example note",
+            }
+        ]
+    )
+
+    template_output = BytesIO()
+
+    with pd.ExcelWriter(
+        template_output,
+        engine="openpyxl",
+    ) as writer:
+
+        upload_template.to_excel(
+            writer,
+            index=False,
+            sheet_name="Pending Sales",
         )
 
-    elif not phone_clean:
+    template_output.seek(0)
 
-        st.error(
-            "Please enter the Phone Number."
+    template_col1, template_col2 = st.columns(
+        [1, 2]
+    )
+
+    with template_col1:
+
+        st.download_button(
+            "📄 Download Upload Template",
+            data=template_output.getvalue(),
+            file_name="Sparta_Pending_Sales_Template.xlsx",
+            mime=(
+                "application/vnd.openxmlformats-"
+                "officedocument.spreadsheetml.sheet"
+            ),
+            use_container_width=True,
         )
 
-    elif not pending_stages:
+    with template_col2:
 
-        st.error(
-            "Please select at least one Pending Stage."
+        uploaded_file = st.file_uploader(
+            "Upload CSV / Excel",
+            type=[
+                "csv",
+                "xlsx",
+                "xls",
+            ],
+            label_visibility="collapsed",
         )
 
-    else:
+    if uploaded_file is not None:
 
-        new_sale = {
-            "Sale Date":
-                sale_date,
+        try:
 
-            "Customer Name":
-                customer_name_clean,
+            upload_df = quick_upload_dataframe(
+                uploaded_file
+            )
 
-            "Phone Number":
-                phone_clean,
+            if upload_df.empty:
 
-            "Pending Stage":
-                list(
-                    pending_stages
-                ),
+                st.warning(
+                    "The uploaded file is empty."
+                )
 
-            "Notes":
-                notes.strip(),
-        }
+            else:
 
-        st.session_state.pending_sales.append(
-            new_sale
-        )
+                # --------------------------------------------
+                # Find columns flexibly
+                # --------------------------------------------
 
-        st.success(
-            "Pending sale added successfully."
-        )
+                date_col = find_column(
+                    upload_df,
+                    [
+                        "Sale Date",
+                        "Date",
+                    ],
+                )
 
-        st.rerun()
+                customer_col = find_column(
+                    upload_df,
+                    [
+                        "Customer Name",
+                        "Customer",
+                        "Name",
+                    ],
+                )
+
+                phone_col = find_column(
+                    upload_df,
+                    [
+                        "Phone Number",
+                        "Phone",
+                        "Telephone No.",
+                        "Telephone",
+                        "CLI",
+                    ],
+                )
+
+                stage_col = find_column(
+                    upload_df,
+                    [
+                        "Pending Stage(s)",
+                        "Pending Stages",
+                        "Pending Stage",
+                        "Stage",
+                        "Stages",
+                    ],
+                )
+
+                notes_col = find_column(
+                    upload_df,
+                    [
+                        "Notes",
+                        "Note",
+                        "Comments",
+                    ],
+                )
+
+                missing = []
+
+                if not date_col:
+                    missing.append(
+                        "Sale Date"
+                    )
+
+                if not customer_col:
+                    missing.append(
+                        "Customer Name"
+                    )
+
+                if not phone_col:
+                    missing.append(
+                        "Phone Number"
+                    )
+
+                if not stage_col:
+                    missing.append(
+                        "Pending Stage(s)"
+                    )
+
+                if missing:
+
+                    st.error(
+                        "Missing required column(s): "
+                        + ", ".join(
+                            missing
+                        )
+                    )
+
+                else:
+
+                    # ----------------------------------------
+                    # Preview
+                    # ----------------------------------------
+
+                    preview_rows = []
+
+                    for _, row in upload_df.iterrows():
+
+                        stages = parse_stage_cell(
+                            row[stage_col]
+                        )
+
+                        parsed_date = pd.to_datetime(
+                            row[date_col],
+                            errors="coerce",
+                            dayfirst=True,
+                        )
+
+                        preview_rows.append(
+                            {
+                                "Sale Date":
+                                    (
+                                        parsed_date.strftime(
+                                            "%d/%m/%Y"
+                                        )
+                                        if not pd.isna(
+                                            parsed_date
+                                        )
+                                        else ""
+                                    ),
+
+                                "Customer Name":
+                                    str(
+                                        row[
+                                            customer_col
+                                        ]
+                                    ).strip(),
+
+                                "Phone Number":
+                                    normalise_phone(
+                                        row[
+                                            phone_col
+                                        ]
+                                    ),
+
+                                "Pending Stage(s)":
+                                    " + ".join(
+                                        stages
+                                    ),
+
+                                "Notes":
+                                    (
+                                        str(
+                                            row[
+                                                notes_col
+                                            ]
+                                        ).strip()
+                                        if notes_col
+                                        else ""
+                                    ),
+                            }
+                        )
+
+                    preview_df = pd.DataFrame(
+                        preview_rows
+                    )
+
+                    st.markdown(
+                        "**Upload Preview**"
+                    )
+
+                    st.dataframe(
+                        preview_df.head(10),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                    st.caption(
+                        f"{len(upload_df):,} row"
+                        f"{'' if len(upload_df) == 1 else 's'} "
+                        "detected."
+                    )
+
+                    # ----------------------------------------
+                    # Import button
+                    # ----------------------------------------
+
+                    if st.button(
+                        "📥 Add Uploaded Sales",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+
+                        imported = 0
+                        skipped = 0
+                        errors = []
+
+                        for row_number, (_, row) in enumerate(
+                            upload_df.iterrows(),
+                            start=2,
+                        ):
+
+                            # Date
+                            parsed_date = pd.to_datetime(
+                                row[date_col],
+                                errors="coerce",
+                                dayfirst=True,
+                            )
+
+                            # Customer
+                            customer = str(
+                                row[
+                                    customer_col
+                                ]
+                            ).strip()
+
+                            # Phone
+                            phone = normalise_phone(
+                                row[
+                                    phone_col
+                                ]
+                            )
+
+                            # Stages
+                            stages = parse_stage_cell(
+                                row[
+                                    stage_col
+                                ]
+                            )
+
+                            # Notes
+                            notes_value = ""
+
+                            if notes_col:
+
+                                notes_value = str(
+                                    row[
+                                        notes_col
+                                    ]
+                                ).strip()
+
+                            # -----------------------------
+                            # Validation
+                            # -----------------------------
+
+                            row_errors = []
+
+                            if pd.isna(
+                                parsed_date
+                            ):
+
+                                row_errors.append(
+                                    "invalid Sale Date"
+                                )
+
+                            if not customer:
+
+                                row_errors.append(
+                                    "missing Customer Name"
+                                )
+
+                            if not phone:
+
+                                row_errors.append(
+                                    "missing Phone Number"
+                                )
+
+                            if not stages:
+
+                                row_errors.append(
+                                    "no valid Pending Stage"
+                                )
+
+                            if row_errors:
+
+                                skipped += 1
+
+                                errors.append(
+                                    f"Row {row_number}: "
+                                    + ", ".join(
+                                        row_errors
+                                    )
+                                )
+
+                                continue
+
+                            # -----------------------------
+                            # Add
+                            # -----------------------------
+
+                            new_sale = create_sale(
+                                parsed_date,
+                                customer,
+                                phone,
+                                stages,
+                                notes_value,
+                            )
+
+                            st.session_state.pending_sales.append(
+                                new_sale
+                            )
+
+                            imported += 1
+
+                        if imported:
+
+                            st.success(
+                                f"{imported:,} sale"
+                                f"{'' if imported == 1 else 's'} "
+                                "added successfully."
+                            )
+
+                        if skipped:
+
+                            st.warning(
+                                f"{skipped:,} row"
+                                f"{'' if skipped == 1 else 's'} "
+                                "skipped."
+                            )
+
+                            with st.expander(
+                                "View skipped rows"
+                            ):
+
+                                for error in errors:
+
+                                    st.write(
+                                        f"• {error}"
+                                    )
+
+                        if imported:
+
+                            st.rerun()
 
 
 # ============================================================
-# CURRENT PENDING SALES
+# CURRENT SALES
 # ============================================================
 
 st.divider()
@@ -836,67 +1333,54 @@ st.markdown(
 )
 
 
+# ============================================================
+# EMPTY STATE
+# ============================================================
+
 if not st.session_state.pending_sales:
 
-    st.markdown(
-        """
-        <div class="empty-state">
-
-            <div class="empty-icon">
-                📝
-            </div>
-
-            <div class="empty-title">
-                No pending sales recorded yet
-            </div>
-
-            <div class="empty-text">
-                Add your first pending sale using the form above.
-            </div>
-
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.info(
+        "📝 No pending sales recorded yet. "
+        "Open 'Add Pending Sales' above to add a sale "
+        "manually or upload an Excel/CSV file."
     )
 
 else:
 
-    # --------------------------------------------------------
-    # Search
-    # --------------------------------------------------------
+    # ========================================================
+    # SEARCH / FILTERS
+    # ========================================================
 
-    search_col1, search_col2 = st.columns(
+    filter_col1, filter_col2 = st.columns(
         [2, 1]
     )
 
-    with search_col1:
+    with filter_col1:
 
-        search = st.text_input(
+        search_text = st.text_input(
             "🔎 Search",
-            placeholder="Customer name or phone number...",
+            placeholder=(
+                "Search customer name or phone number..."
+            ),
         )
 
-    with search_col2:
+    with filter_col2:
 
-        stage_filter = st.multiselect(
+        selected_stage_filters = st.multiselect(
             "Filter by Stage",
             options=STAGES,
-            format_func=lambda stage:
-                f"{STAGE_ICONS[stage]} {stage}",
+            format_func=lambda x:
+                f"{STAGE_ICONS[x]} {x}",
             placeholder="All stages",
         )
 
-    # --------------------------------------------------------
-    # Build filtered list
-    # --------------------------------------------------------
-
-    filtered_sales = []
-
     search_lower = (
-        search
+        search_text
         .strip()
         .lower()
     )
+
+    filtered_sales = []
 
     for index, sale in enumerate(
         st.session_state.pending_sales
@@ -921,7 +1405,7 @@ else:
             [],
         )
 
-        # Search
+        # Search filter
         if search_lower:
 
             searchable = (
@@ -934,11 +1418,11 @@ else:
                 continue
 
         # Stage filter
-        if stage_filter:
+        if selected_stage_filters:
 
             if not any(
                 stage in stages
-                for stage in stage_filter
+                for stage in selected_stage_filters
             ):
                 continue
 
@@ -949,23 +1433,26 @@ else:
             )
         )
 
-    # --------------------------------------------------------
-    # Summary
-    # --------------------------------------------------------
+
+    # ========================================================
+    # RESULT COUNT
+    # ========================================================
 
     st.caption(
         f"Showing {len(filtered_sales):,} "
         f"of {len(st.session_state.pending_sales):,} "
-        f"pending sales."
+        f"pending sale"
+        f"{'' if len(st.session_state.pending_sales) == 1 else 's'}."
     )
 
-    # --------------------------------------------------------
-    # Display table
-    # --------------------------------------------------------
+
+    # ========================================================
+    # TABLE
+    # ========================================================
 
     if not filtered_sales:
 
-        st.info(
+        st.warning(
             "No pending sales match the selected filters."
         )
 
@@ -1010,7 +1497,7 @@ else:
                             "",
                         ),
 
-                    "_index":
+                    "_Index":
                         original_index,
                 }
             )
@@ -1019,9 +1506,8 @@ else:
             display_rows
         )
 
-        # Don't expose internal index
         visible_df = display_df.drop(
-            columns=["_index"]
+            columns=["_Index"]
         )
 
         st.dataframe(
@@ -1037,32 +1523,41 @@ else:
                 ),
             ),
             column_config={
-                "Sale Date": st.column_config.TextColumn(
-                    "SALE DATE",
-                    width="small",
-                ),
-                "Customer Name": st.column_config.TextColumn(
-                    "CUSTOMER NAME",
-                    width="medium",
-                ),
-                "Phone Number": st.column_config.TextColumn(
-                    "PHONE NUMBER",
-                    width="medium",
-                ),
-                "Pending Stage(s)": st.column_config.TextColumn(
-                    "PENDING STAGE(S)",
-                    width="large",
-                ),
-                "Notes": st.column_config.TextColumn(
-                    "NOTES",
-                    width="large",
-                ),
+                "Sale Date":
+                    st.column_config.TextColumn(
+                        "SALE DATE",
+                        width="small",
+                    ),
+
+                "Customer Name":
+                    st.column_config.TextColumn(
+                        "CUSTOMER NAME",
+                        width="medium",
+                    ),
+
+                "Phone Number":
+                    st.column_config.TextColumn(
+                        "PHONE NUMBER",
+                        width="medium",
+                    ),
+
+                "Pending Stage(s)":
+                    st.column_config.TextColumn(
+                        "PENDING STAGE(S)",
+                        width="large",
+                    ),
+
+                "Notes":
+                    st.column_config.TextColumn(
+                        "NOTES",
+                        width="large",
+                    ),
             },
         )
 
 
 # ============================================================
-# EDIT / DELETE
+# RESOLVE / REMOVE SALES
 # ============================================================
 
 if st.session_state.pending_sales:
@@ -1070,78 +1565,78 @@ if st.session_state.pending_sales:
     st.divider()
 
     st.markdown(
-        '<div class="section-heading">✏️ Manage Existing Sale</div>',
+        '<div class="section-heading">✅ Resolve Pending Sales</div>',
         unsafe_allow_html=True,
     )
 
-    sale_options = []
+    st.caption(
+        "When a sale is no longer pending, select it below and "
+        "remove it from the active pending list."
+    )
 
+    sale_options = []
     sale_option_to_index = {}
 
     for index, sale in enumerate(
         st.session_state.pending_sales
     ):
 
-        label = (
-            f"{format_date(sale.get('Sale Date'))}"
-            f" — "
-            f"{sale.get('Customer Name', 'Unnamed')}"
-            f" — "
-            f"{sale.get('Phone Number', '')}"
+        option = sale_identifier(
+            index,
+            sale,
         )
 
         sale_options.append(
-            label
+            option
         )
 
         sale_option_to_index[
-            label
+            option
         ] = index
 
-    manage_col1, manage_col2 = st.columns(
-        [3, 1]
+    selected_to_remove = st.multiselect(
+        "Select sale(s) to remove",
+        options=sale_options,
+        placeholder="Select resolved sales...",
     )
 
-    with manage_col1:
+    if selected_to_remove:
 
-        selected_sale_label = st.selectbox(
-            "Select a sale to manage",
-            options=sale_options,
+        st.warning(
+            f"{len(selected_to_remove):,} sale"
+            f"{'' if len(selected_to_remove) == 1 else 's'} "
+            "will be removed from the pending dashboard."
         )
 
-    selected_index = (
-        sale_option_to_index[
-            selected_sale_label
-        ]
-    )
-
-    selected_sale = (
-        st.session_state.pending_sales[
-            selected_index
-        ]
-    )
-
-    with manage_col2:
-
-        st.write("")
-        st.write("")
-
-        delete_sale = st.button(
-            "🗑️ Delete Sale",
+        if st.button(
+            "✅ Mark Selected Sales as Resolved",
+            type="primary",
             use_container_width=True,
-        )
+        ):
 
-    if delete_sale:
+            indexes_to_remove = sorted(
+                [
+                    sale_option_to_index[
+                        option
+                    ]
+                    for option in selected_to_remove
+                ],
+                reverse=True,
+            )
 
-        st.session_state.pending_sales.pop(
-            selected_index
-        )
+            for index in indexes_to_remove:
 
-        st.success(
-            "Sale deleted."
-        )
+                st.session_state.pending_sales.pop(
+                    index
+                )
 
-        st.rerun()
+            st.success(
+                f"{len(indexes_to_remove):,} sale"
+                f"{'' if len(indexes_to_remove) == 1 else 's'} "
+                "removed from pending."
+            )
+
+            st.rerun()
 
 
 # ============================================================
@@ -1168,19 +1663,8 @@ for stage in STAGES:
             "Pending Sales":
                 count_stage(stage),
 
-            "Description": {
-                "Quality":
-                    "Awaiting Quality action",
-
-                "Welcome":
-                    "Awaiting Welcome action",
-
-                "Committed":
-                    "Awaiting Committed action",
-
-                "Provisioning":
-                    "Awaiting Provisioning action",
-            }[stage],
+            "Description":
+                STAGE_DESCRIPTIONS[stage],
         }
     )
 
@@ -1194,18 +1678,23 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
     column_config={
-        "Stage": st.column_config.TextColumn(
-            "STAGE",
-            width="medium",
-        ),
-        "Pending Sales": st.column_config.NumberColumn(
-            "PENDING SALES",
-            format="%d",
-        ),
-        "Description": st.column_config.TextColumn(
-            "DESCRIPTION",
-            width="large",
-        ),
+        "Stage":
+            st.column_config.TextColumn(
+                "STAGE",
+                width="medium",
+            ),
+
+        "Pending Sales":
+            st.column_config.NumberColumn(
+                "PENDING SALES",
+                format="%d",
+            ),
+
+        "Description":
+            st.column_config.TextColumn(
+                "DESCRIPTION",
+                width="large",
+            ),
     },
 )
 
@@ -1216,17 +1705,17 @@ st.dataframe(
 
 st.divider()
 
-footer_col1, footer_col2 = st.columns(
+footer_left, footer_right = st.columns(
     [1, 1]
 )
 
-with footer_col1:
+with footer_left:
 
     st.caption(
         "Sparta Pending Sales — Manual Tracker"
     )
 
-with footer_col2:
+with footer_right:
 
     st.caption(
         "Updated "
