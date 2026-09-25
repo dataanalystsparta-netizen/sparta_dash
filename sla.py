@@ -622,7 +622,7 @@ with metric_cols[4]:
 # ============================================================
 # INFORMATION PANEL
 # ============================================================
-'''
+"""
 st.info(
     "A single sale may have multiple pending stages. "
     "The stage cards count each selected stage, while the "
@@ -630,7 +630,7 @@ st.info(
     "Resolving one stage does not resolve the other stages."
 )
 
-'''
+"""
 # ============================================================
 # ADD PENDING SALES ACCORDION
 # CLOSED BY DEFAULT
