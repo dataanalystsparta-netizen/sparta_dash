@@ -1,11 +1,11 @@
 """
-SPARTA PENDING OPERATIONS — API QUEUE
-=====================================
+SPARTA PENDING OPERATIONS — GOOGLE SHEET QUEUE
+================================================
 
-Live operational queue driven directly from the Sparta CRM dashboard Excel API.
+Live operational queue driven by the CRM data mirrored into Google Sheets.
 
-The API returns an XLSX workbook. This dashboard reads that workbook directly and
-lists records whose workflow stages are still pending.
+The dashboard reads the dedicated Google worksheet directly. The CRM API is
+upstream of the separate sync process and is not called by this app.
 
 Stages tracked:
     - Quality
@@ -22,16 +22,16 @@ There is deliberately:
     - NO SLA calculation
     - NO ageing / breach / RAG logic
 
-A sale can be pending in multiple stages at the same time.
+A sale can be pending in multiple stages when the source statuses indicate
+open work at multiple workflow points.
 """
 
 from datetime import datetime, date
-from io import BytesIO
 import re
-import time
 
 import pandas as pd
-import requests
+import gspread
+from google.oauth2.service_account import Credentials
 import streamlit as st
 
 
@@ -51,19 +51,12 @@ st.set_page_config(
 # CONFIG
 # ============================================================
 
-DEFAULT_API_URL = "https://spartacrm.fastranking.cloud/api/dashboard/dashboard-data"
-
-SPARTA_API_URL = str(
-    st.secrets.get("SPARTA_API_URL", "") or DEFAULT_API_URL
+SPREADSHEET_ID = st.secrets.get(
+    "SPREADSHEET_ID",
+    "1R1nXJHnmsHQhisEDronG-DMo5tWeI3Ysh8TyQmKQ2fQ",
 ).strip()
-SPARTA_API_TOKEN = str(
-    st.secrets.get("SPARTA_API_TOKEN", "")
-).strip()
-SPARTA_API_TIMEOUT = int(
-    st.secrets.get("SPARTA_API_TIMEOUT_SECONDS", 60)
-)
-SPARTA_API_MAX_RETRIES = int(
-    st.secrets.get("SPARTA_API_MAX_RETRIES", 3)
+CRM_MIRROR_WORKSHEET_GID = int(
+    st.secrets.get("CRM_MIRROR_WORKSHEET_GID", "1647226826")
 )
 DATA_CACHE_TTL = int(
     st.secrets.get("DATA_CACHE_TTL_SECONDS", 300)
@@ -71,7 +64,7 @@ DATA_CACHE_TTL = int(
 
 
 # ============================================================
-# EXACT API HEADERS
+# EXACT GOOGLE SHEET HEADERS
 # ============================================================
 
 API_COLUMNS = {
@@ -544,10 +537,10 @@ def make_record_key(sale_date, phone) -> str:
     return f"{date_part}|{phone_part}"
 
 
-def build_queue_dataframe(api_df: pd.DataFrame) -> pd.DataFrame:
+def build_queue_dataframe(source_df: pd.DataFrame) -> pd.DataFrame:
     rows = []
 
-    for _, row in api_df.iterrows():
+    for _, row in source_df.iterrows():
         stages = classify_pending_stages(row)
         if not stages:
             continue
@@ -600,113 +593,59 @@ def build_queue_dataframe(api_df: pd.DataFrame) -> pd.DataFrame:
     return result[columns]
 
 
-def extract_workbook_dataframe(content: bytes) -> pd.DataFrame:
-    """Locate the workbook sheet containing the CRM status columns."""
-    workbook = pd.ExcelFile(BytesIO(content), engine="openpyxl")
+def load_google_sheet_data():
+    """Load the CRM mirror worksheet directly from Google Sheets."""
+    info = st.secrets["gcp_service_account"]
+    creds = Credentials.from_service_account_info(
+        info,
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets.readonly",
+            "https://www.googleapis.com/auth/drive.readonly",
+        ],
+    )
+    client = gspread.authorize(creds)
+    spreadsheet = client.open_by_key(SPREADSHEET_ID)
 
-    best_df = None
-    best_score = -1
+    try:
+        worksheet = spreadsheet.get_worksheet_by_id(CRM_MIRROR_WORKSHEET_GID)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not open Google Sheet worksheet GID {CRM_MIRROR_WORKSHEET_GID}: {exc}"
+        ) from exc
 
-    required_normalized = {normalize_header(c) for c in REQUIRED_HEADERS}
+    records = worksheet.get_all_records()
+    df = pd.DataFrame(records)
+    if df.empty:
+        raise ValueError("The CRM mirror Google Sheet contains no records.")
 
-    for sheet_name in workbook.sheet_names:
-        df = pd.read_excel(
-            workbook,
-            sheet_name=sheet_name,
-            dtype=str,
-        )
-        if df.empty:
-            continue
+    df.columns = [normalize_header(c) for c in df.columns]
 
-        df.columns = [normalize_header(c) for c in df.columns]
-        score = len({c for c in df.columns if c in required_normalized})
-
-        if score > best_score:
-            best_score = score
-            best_df = df
-
-        if score == len(required_normalized):
-            return df
-
-    if best_df is None:
-        raise ValueError("The API workbook contains no usable worksheet.")
-
-    missing = [
-        col for col in REQUIRED_HEADERS
-        if normalize_header(col) not in best_df.columns
+    required = [
+        API_COLUMNS["sale_date"],
+        API_COLUMNS["advisor"],
+        API_COLUMNS["customer"],
+        API_COLUMNS["phone"],
+        API_COLUMNS["quality"],
+        API_COLUMNS["welcome"],
+        API_COLUMNS["provisioning"],
+        API_COLUMNS["dispatch"],
+        API_COLUMNS["confirmation"],
+        API_COLUMNS["live"],
     ]
 
-    raise ValueError(
-        "Could not find the expected Sparta CRM status columns. "
-        "Missing: " + ", ".join(missing)
-    )
-
-
-# ============================================================
-# API FETCH
-# ============================================================
-
-@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
-def fetch_api_data():
-    if not SPARTA_API_TOKEN:
-        raise RuntimeError(
-            "SPARTA_API_TOKEN is missing from Streamlit Secrets."
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(
+            "Google Sheet is missing required CRM columns: " + ", ".join(missing)
         )
 
-    headers = {
-        "Authorization": f"Bearer {SPARTA_API_TOKEN}",
-        "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream, */*",
-        "User-Agent": "Sparta-Pending-Operations/1.0",
-    }
-
-    last_error = None
-
-    for attempt in range(1, SPARTA_API_MAX_RETRIES + 2):
-        try:
-            response = requests.get(
-                SPARTA_API_URL,
-                headers=headers,
-                timeout=SPARTA_API_TIMEOUT,
-            )
-            response.raise_for_status()
-
-            if not response.content:
-                raise RuntimeError("API returned an empty response.")
-
-            if not response.content.startswith(b"PK"):
-                content_type = response.headers.get("Content-Type", "")
-                preview = response.text[:250].strip()
-                raise RuntimeError(
-                    "API did not return an XLSX workbook. "
-                    f"Content-Type: {content_type}. Response: {preview}"
-                )
-
-            api_df = extract_workbook_dataframe(response.content)
-            fetched_at = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            return api_df, fetched_at
-
-        except Exception as exc:
-            last_error = exc
-            if attempt <= SPARTA_API_MAX_RETRIES:
-                time.sleep(min(2 ** (attempt - 1), 6))
-
-    raise RuntimeError(
-        f"Unable to retrieve Sparta CRM API data after retries: {last_error}"
-    )
+    fetched_at = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    return df, fetched_at
 
 
-# ============================================================
-# LOAD DATA
-# ============================================================
-
-with st.spinner("Loading live Sparta CRM data…"):
-    try:
-        api_df, fetched_at = fetch_api_data()
-        queue_df = build_queue_dataframe(api_df)
-    except Exception as exc:
-        st.error("Unable to load the Sparta CRM API data.")
-        st.exception(exc)
-        st.stop()
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def fetch_google_sheet_data():
+    return load_google_sheet_data()
 
 
 # ============================================================
@@ -721,12 +660,12 @@ st.markdown(
                 <div class="hero-kicker">SPARTA CRM · OPERATIONS QUEUE</div>
                 <div class="hero-title">⏳ Sparta Pending Operations</div>
                 <div class="hero-subtitle">
-                    Live records from the CRM API showing where each sale is still pending.
+                    Live records from the CRM data mirrored into Google Sheets showing where each sale is still pending.
                     A single sale can appear in multiple queues when multiple workflow stages remain open.
                 </div>
             </div>
             <div class="hero-right">
-                Last API refresh
+                Last Google Sheet refresh
                 <strong>{fetched_at}</strong>
             </div>
         </div>
@@ -742,13 +681,17 @@ st.markdown(
 
 with st.sidebar:
     st.markdown("### ⚙️ Queue Controls")
-    st.caption("Direct from Sparta CRM dashboard-data API")
+    st.caption("Direct from the CRM mirror Google Sheet")
     st.divider()
-    st.metric("API Records", f"{len(api_df):,}")
+    st.metric("Sheet Records", f"{len(sheet_df):,}")
     st.metric("Pending Sales", f"{len(queue_df):,}")
 
     st.divider()
     st.caption(f"Cache TTL: {DATA_CACHE_TTL:,} seconds")
+
+    if st.button("↻ Refresh Google Sheet data", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
     if not queue_df.empty:
         export_df_sidebar = queue_df.drop(columns=["Record Key"], errors="ignore").copy()
@@ -807,7 +750,7 @@ for col, stage in zip(extra_cols, ["Live / Onboarding", "Potential Opportunity"]
 st.markdown(
     """
     <div class="queue-note">
-        <b>Queue logic:</b> blank / follow-up / pending / delay / other-work / in-progress type statuses are treated as open work. Completed, approved, provisioned, processed, confirmed, dispatched, live, cancelled, and rejected outcomes are not shown as pending for that stage. The queue is status-based only; it does not calculate SLA targets or breaches.
+        <b>Queue logic:</b> blank / follow-up / pending / delay / other-work / in-progress type statuses are treated as open work. Completed, approved, provisioned, processed, confirmed, dispatched, live, cancelled, and rejected outcomes are not shown as pending for that stage. The queue is status-based only; it reads the current workflow status from the CRM mirror sheet and does not calculate SLA targets or breaches.
     </div>
     """,
     unsafe_allow_html=True,
@@ -978,8 +921,8 @@ for tab, stage in zip(queue_tabs, STAGES):
             source_row = None
             # Recover the source record using Sale Date + Phone where possible.
             sale_date_key = make_record_key(row.get("Sale Date"), row.get("Phone Number"))
-            matches = api_df[
-                api_df.apply(
+            matches = sheet_df[
+                sheet_df.apply(
                     lambda x: make_record_key(
                         x.get(API_COLUMNS["sale_date"]),
                         x.get(API_COLUMNS["phone"]),
@@ -1071,6 +1014,6 @@ with st.expander("🔍 View current CRM status fields", expanded=False):
 st.divider()
 footer_left, footer_right = st.columns(2)
 with footer_left:
-    st.caption("Sparta Pending Operations · Live API queue")
+    st.caption("Sparta Pending Operations · Live Google Sheet queue")
 with footer_right:
-    st.caption(f"Last API fetch: {fetched_at}")
+    st.caption(f"Last Google Sheet fetch: {fetched_at}")
