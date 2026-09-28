@@ -649,6 +649,18 @@ def fetch_google_sheet_data():
 
 
 # ============================================================
+# LOAD GOOGLE SHEET DATA
+# ============================================================
+
+try:
+    sheet_df, fetched_at = fetch_google_sheet_data()
+    queue_df = build_queue_dataframe(sheet_df)
+except Exception as exc:
+    st.error(f"Unable to load the Sparta CRM Google Sheet: {exc}")
+    st.stop()
+
+
+# ============================================================
 # PAGE HEADER
 # ============================================================
 
