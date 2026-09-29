@@ -1,314 +1,656 @@
-import io
-import streamlit as st
+import re
+from datetime import date, datetime
+import gspread
+from google.oauth2.service_account import Credentials
 import pandas as pd
-import numpy as np
+import streamlit as st
 
-# Set page layout
-st.set_page_config(
-    page_title="Queue Management & Workflow Dashboard",
-    page_icon="📊",
-    layout="wide",
-)
-
-# -----------------------------------------------------------------------------
-# WORKFLOW DEFINITIONS & MAPPINGS
-# -----------------------------------------------------------------------------
-
-STAGE_NEXT_DESTINATIONS = {
-    "Quality Control": {
-        "QA Pending": "Quality Control",
-        "QA Rejected": "END",
-        "Potential Opportunity": "Potential Opportunity",
-        "QA Approved": "Welcome",
-    },
-    "Welcome": {
-        "Pending": "Welcome",
-        "Appointment Missed": "Welcome",
-        "Followup": "Welcome",
-        "Rejected": "END",
-        "QA-Reassessment": "Quality Control",
-        "Completed": "Provisioning",
-    },
-    "Provisioning": {
-        "Pending": "Provisioning",
-        "Provisioned": "Provisioning",
-        "Delayed": "Provisioning",
-        "Hold": "Provisioning",
-        "To Be Extended": "Provisioning",
-        "Send For Rework": "Welcome",  # Backward transition
-        "To Be Cancelled": "Provisioning -> Cancellation",
-        "Cancelled": "END",
-        "Completed": "Dispatch",
-    },
-    "Dispatch": {
-        "Pending": "Dispatch",
-        "To Be Extended": "Provisioning",  # Backward transition
-        "To Be Cancelled": "Dispatch -> Cancellation",
-        "Completed": "Committed Call",
-    },
-    "Committed Call": {
-        "Pending": "Committed Call",
-        "Followup": "Committed Call",
-        "To Be Extended": "Provisioning",  # Backward transition
-        "To Be Cancelled": "Committed Call -> Cancellation",
-        "Satisfied": "Onboarding",
-    },
-    "Onboarding": {
-        "Installation Pending": "Onboarding",
-        "Port-Pending": "Onboarding",
-        "Delayed": "Onboarding",
-        "Missed Appointment": "Welcome",  # Backward transition
-        "To Be Extended": "Provisioning",  # Backward transition
-        "To Be Cancelled": "Onboarding -> Cancellation",
-        "Completed": "LIVE / COMPLETE",
-    },
-    "Potential Opportunity": {
-        "Pending": "Potential Opportunity",
-        "Followup": "Potential Opportunity",
-        "Rejected": "END",
-        "Qualified": "Quality Control",
-    },
-}
-
-# Pending statuses for active stage queues
-PENDING_STATUSES = {
-    "Quality Control": ["QA Pending"],
-    "Welcome": ["Pending", "Appointment Missed", "Followup"],
-    "Provisioning": [
-        "Pending",
-        "Provisioned",
-        "Delayed",
-        "Hold",
-        "To Be Extended",
-    ],
-    "Dispatch": ["Pending"],
-    "Committed Call": ["Pending", "Followup"],
-    "Onboarding": ["Installation Pending", "Port-Pending", "Delayed"],
-    "Potential Opportunity": ["Pending", "Followup"],
-}
-
-# -----------------------------------------------------------------------------
-# MOCK DATA GENERATOR
-# -----------------------------------------------------------------------------
+# ============================================================
+# GOOGLE SHEET
+# ============================================================
 
 
-@st.cache_data
-def generate_mock_data():
-    np.random.seed(42)
-    n = 120
+def load_google_sheet_data():
+    info = st.secrets["gcp_service_account"]
 
-    stages = list(STAGE_NEXT_DESTINATIONS.keys())
-    advisors = [
-        "Alex Mercer",
-        "Sarah Jenkins",
-        "David Chen",
-        "Elena Rostova",
-        "Marcus Vance",
-    ]
-
-    records = []
-    for i in range(1, n + 1):
-        stage = np.random.choice(stages)
-        status_options = list(STAGE_NEXT_DESTINATIONS[stage].keys())
-        status = np.random.choice(status_options)
-        advisor = np.random.choice(advisors)
-
-        created_date = pd.Timestamp("2026-09-01") + pd.Timedelta(
-            days=int(np.random.randint(0, 28))
-        )
-
-        records.append(
-            {
-                "Ticket_ID": f"TICK-{1000 + i}",
-                "Customer_Name": f"Customer {i}",
-                "Current_Stage": stage,
-                "Status": status,
-                "Advisor": advisor,
-                "Created_Date": created_date.strftime("%Y-%m-%d"),
-                "Remarks": f"Standard workflow processing for Ticket {1000 + i}",
-            }
-        )
-
-    df = pd.DataFrame(records)
-
-    # Determine Next Destination based on rules
-    def get_next_dest(row):
-        return STAGE_NEXT_DESTINATIONS.get(row["Current_Stage"], {}).get(
-            row["Status"], "Unknown"
-        )
-
-    df["Next_Destination"] = df.apply(get_next_dest, axis=1)
-    return df
-
-
-# -----------------------------------------------------------------------------
-# MAIN APP LAYOUT
-# -----------------------------------------------------------------------------
-
-
-def main():
-    st.title("⚡ Dynamic Queue & Workflow Management Dashboard")
-    st.caption(
-        "Real-time monitoring of customer transitions, backward loops, and stage destinations."
+    creds = Credentials.from_service_account_info(
+        info,
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets.readonly",
+            "https://www.googleapis.com/auth/drive.readonly",
+        ],
     )
 
-    # Load Data
-    df = generate_mock_data()
+    client = gspread.authorize(creds)
+    spreadsheet = client.open_by_key(SPREADSHEET_ID)
 
-    # -------------------------------------------------------------------------
-    # SIDEBAR CONTROLS & FILTERS
-    # -------------------------------------------------------------------------
-    st.sidebar.header("🔍 Filters & Controls")
+    try:
+        worksheet = spreadsheet.get_worksheet_by_id(CRM_MIRROR_WORKSHEET_GID)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not open Google Sheet worksheet GID {CRM_MIRROR_WORKSHEET_GID}: {exc}"
+        ) from exc
 
-    if st.sidebar.button("↻ Refresh Data", use_container_width=True):
+    records = worksheet.get_all_records()
+    df = pd.DataFrame(records)
+
+    if df.empty:
+        raise ValueError("The CRM mirror Google Sheet contains no records.")
+
+    df.columns = [normalize_header(c) for c in df.columns]
+
+    missing = [c for c in REQUIRED_HEADERS if c not in df.columns]
+
+    if missing:
+        raise ValueError(
+            "Google Sheet is missing required CRM columns: " + ", ".join(missing)
+        )
+
+    fetched_at = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+    return df, fetched_at
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def fetch_google_sheet_data():
+    return load_google_sheet_data()
+
+
+# ============================================================
+# LOAD
+# ============================================================
+
+try:
+    sheet_df, fetched_at = fetch_google_sheet_data()
+    queue_df = build_queue_dataframe(sheet_df)
+except Exception as exc:
+    st.error(f"Unable to load the Sparta CRM Google Sheet: {exc}")
+    st.stop()
+
+
+# ============================================================
+# HEADER
+# ============================================================
+
+header_left, header_right = st.columns([5, 1], vertical_alignment="center")
+
+with header_left:
+    st.caption("SPARTA CRM · OPERATIONS QUEUE")
+    st.title("⏳ Sparta Pending Operations")
+    st.write(
+        "Live records from the CRM mirror showing only workflow stages where "
+        "work is genuinely pending. Downstream stages open only after "
+        "the previous stage is completed."
+    )
+
+with header_right:
+    st.caption("Last Google Sheet refresh")
+    st.write(f"**{fetched_at}**")
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+with st.sidebar:
+    st.header("⚙️ Queue Controls")
+    st.caption("Direct from the CRM mirror Google Sheet")
+    st.divider()
+
+    st.metric("Sheet Records", f"{len(sheet_df):,}")
+    st.metric("Pending Sales", f"{len(queue_df):,}")
+    st.divider()
+
+    st.caption(f"Cache TTL: {DATA_CACHE_TTL:,} seconds")
+
+    if st.button("↻ Refresh Google Sheet data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-    st.sidebar.markdown("---")
+    if not queue_df.empty:
+        export_df = queue_df.drop(
+            columns=[
+                "_QualityReason",
+                "_WelcomeReason",
+                "_ProvisioningReason",
+                "_DispatchReason",
+                "_ConfirmationReason",
+                "_LiveReason",
+                "_PotentialReason",
+                "Record Key",
+            ],
+            errors="ignore",
+        ).copy()
 
-    # Advisor Filter
-    selected_advisors = st.sidebar.multiselect(
-        "Filter by Advisor",
-        options=sorted(df["Advisor"].unique()),
-        default=sorted(df["Advisor"].unique()),
+        export_df["Sale Date"] = pd.to_datetime(
+            export_df["Sale Date"], errors="coerce"
+        ).dt.strftime("%d/%m/%Y")
+
+        export_bytes = export_df.to_csv(index=False).encode("utf-8-sig")
+
+        st.download_button(
+            "📥 Export All Pending",
+            data=export_bytes,
+            file_name="Sparta_Pending_Operations.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+
+# ============================================================
+# COUNTS
+# ============================================================
+
+
+def count_reason(column, value):
+    if queue_df.empty:
+        return 0
+
+    return int(
+        queue_df[column]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .eq(value)
+        .sum()
     )
 
-    # Search Box
-    search_query = st.sidebar.text_input(
-        "Search Ticket ID / Customer", value=""
+
+# Quality
+quality_pending_count = count_reason("_QualityReason", "QA-Pending")
+
+# Welcome
+welcome_followup_count = count_reason("_WelcomeReason", "Followup")
+welcome_pending_count = count_reason("_WelcomeReason", "Pending")
+
+# Provisioning
+provisioning_pending_count = count_reason("_ProvisioningReason", "Pending")
+
+# Dispatch
+dispatch_pending_count = count_reason("_DispatchReason", "Pending")
+
+# Confirmation
+confirmation_pending_count = count_reason("_ConfirmationReason", "Pending")
+
+# Live / Onboarding
+live_pending_count = (
+    int(
+        queue_df["_LiveReason"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .ne("")
+        .sum()
+    )
+    if not queue_df.empty
+    else 0
+)
+
+# Potential Opportunity
+potential_count = (
+    int(
+        queue_df["_PotentialReason"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .ne("")
+        .sum()
+    )
+    if not queue_df.empty
+    else 0
+)
+
+stage_counts = {
+    "Quality": quality_pending_count,
+    "Welcome": welcome_followup_count + welcome_pending_count,
+    "Provisioning": provisioning_pending_count,
+    "Dispatch": dispatch_pending_count,
+    "Confirmation": confirmation_pending_count,
+    "Live / Onboarding": live_pending_count,
+    "Potential Opportunity": potential_count,
+}
+
+
+# ============================================================
+# KPI SECTION
+# ============================================================
+
+st.subheader("📊 Pending Breakdown")
+st.caption(
+    "A blank downstream status becomes Pending only after "
+    "the sale has reached that stage. Blank is not shown "
+    "as a separate category."
+)
+
+row1 = st.columns(5, gap="small")
+
+with row1[0]:
+    st.metric("🧪 QA-Pending", quality_pending_count)
+
+with row1[1]:
+    st.metric("📞 Welcome Followup", welcome_followup_count)
+
+with row1[2]:
+    st.metric("📞 Welcome Pending", welcome_pending_count)
+
+with row1[3]:
+    st.metric("⚙️ Provisioning Pending", provisioning_pending_count)
+
+with row1[4]:
+    st.metric("✉️ Dispatch Pending", dispatch_pending_count)
+
+
+row2 = st.columns(4, gap="small")
+
+with row2[0]:
+    st.metric("✅ Confirmation Pending", confirmation_pending_count)
+
+with row2[1]:
+    st.metric("📡 Live / Onboarding", live_pending_count)
+
+with row2[2]:
+    st.metric("🎯 Potential Opportunity", potential_count)
+
+with row2[3]:
+    st.metric("📋 Total Pending Sales", len(queue_df))
+
+
+st.info(
+    "Queue logic is sequential: "
+    "QA-Pending stays in Quality; only QA-Approved records "
+    "enter Welcome; only Welcome Approved records enter "
+    "Provisioning; only dispatch-ready provisioning records "
+    "enter Dispatch; and only Dispatch Approved records "
+    "enter Confirmation."
+)
+
+
+# ============================================================
+# FILTERS
+# ============================================================
+
+st.subheader("🔎 Filters")
+st.caption("Filter the pending queues without changing the underlying CRM data.")
+
+filter_cols = st.columns([2.0, 1.2, 1.2, 1.2])
+
+with filter_cols[0]:
+    search_text = st.text_input(
+        "Search", placeholder="Customer, phone number or advisor…"
     )
 
-    # Apply global filters
-    filtered_df = df[df["Advisor"].isin(selected_advisors)]
-    if search_query:
-        filtered_df = filtered_df[
-            filtered_df["Ticket_ID"].str.contains(search_query, case=False)
-            | filtered_df["Customer_Name"].str.contains(
-                search_query, case=False
-            )
-        ]
+sale_dates = (
+    pd.to_datetime(queue_df["Sale Date"], errors="coerce")
+    if not queue_df.empty
+    else pd.Series(dtype="datetime64[ns]")
+)
 
-    # -------------------------------------------------------------------------
-    # TOP LEVEL KPI METRICS
-    # -------------------------------------------------------------------------
-    st.subheader("📈 Queue Highlights")
+valid_dates = sale_dates.dropna()
 
-    total_tickets = len(filtered_df)
+if not valid_dates.empty:
+    min_date = valid_dates.min().date()
+    max_date = valid_dates.max().date()
+else:
+    min_date = date.today()
+    max_date = date.today()
 
-    # Calculate Total Pending across all stages
-    total_pending = 0
-    for stage, statuses in PENDING_STATUSES.items():
-        total_pending += len(
-            filtered_df[
-                (filtered_df["Current_Stage"] == stage)
-                & (filtered_df["Status"].isin(statuses))
+with filter_cols[1]:
+    date_from = st.date_input(
+        "Sale Date From",
+        value=min_date,
+        min_value=min_date,
+        max_value=max_date,
+        format="DD/MM/YYYY",
+    )
+
+with filter_cols[2]:
+    date_to = st.date_input(
+        "Sale Date To",
+        value=max_date,
+        min_value=min_date,
+        max_value=max_date,
+        format="DD/MM/YYYY",
+    )
+
+with filter_cols[3]:
+    advisor_options = (
+        sorted(
+            [
+                x
+                for x in queue_df["Advisor"]
+                .dropna()
+                .astype(str)
+                .unique()
+                .tolist()
+                if x
             ]
         )
-
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Tickets", total_tickets)
-    col2.metric("Total Pending Action", total_pending)
-    col3.metric(
-        "Live / Completed",
-        len(filtered_df[filtered_df["Next_Destination"] == "LIVE / COMPLETE"]),
-    )
-    col4.metric(
-        "Terminated / END",
-        len(filtered_df[filtered_df["Next_Destination"] == "END"]),
+        if not queue_df.empty
+        else []
     )
 
-    st.markdown("---")
+    selected_advisor = st.selectbox(
+        "Advisor", options=["All Advisors"] + advisor_options
+    )
 
-    # -------------------------------------------------------------------------
-    # STAGE TABS
-    # -------------------------------------------------------------------------
-    stages_list = list(STAGE_NEXT_DESTINATIONS.keys())
-    tabs = st.tabs(["📋 All Tickets Summary"] + stages_list)
+stage_filter = st.multiselect(
+    "Pending Stage",
+    options=STAGES,
+    format_func=lambda x: f"{STAGE_ICONS[x]} {x}",
+    placeholder="All pending stages",
+)
 
-    # TAB 0: ALL TICKETS
-    with tabs[0]:
-        st.write("### All Active Tickets")
-        st.dataframe(
-            filtered_df,
-            column_config={
-                "Ticket_ID": "Ticket ID",
-                "Customer_Name": "Customer Name",
-                "Current_Stage": "Current Stage",
-                "Status": "Current Status",
-                "Next_Destination": "Next Destination ➔",
-            },
-            use_container_width=True,
-            hide_index=True,
+
+# ============================================================
+# FILTER DATA
+# ============================================================
+
+filtered_df = queue_df.copy()
+
+if not filtered_df.empty:
+    filtered_df["_SaleDate"] = pd.to_datetime(
+        filtered_df["Sale Date"], errors="coerce"
+    )
+
+    filtered_df = filtered_df[
+        filtered_df["_SaleDate"].dt.date.between(
+            date_from, date_to, inclusive="both"
+        )
+    ]
+
+    if selected_advisor != "All Advisors":
+        filtered_df = filtered_df[filtered_df["Advisor"] == selected_advisor]
+
+    if search_text.strip():
+        needle = search_text.strip()
+        blob = (
+            filtered_df[["Customer Name", "Phone Number", "Advisor"]]
+            .fillna("")
+            .astype(str)
+            .agg(" | ".join, axis=1)
+        )
+        filtered_df = filtered_df[
+            blob.str.contains(needle, case=False, regex=False, na=False)
+        ]
+
+    if stage_filter:
+        stage_regex = "|".join(re.escape(stage) for stage in stage_filter)
+        filtered_df = filtered_df[
+            filtered_df["Pending Stage(s)"]
+            .fillna("")
+            .str.contains(stage_regex, regex=True, na=False)
+        ]
+
+    filtered_df = filtered_df.drop(
+        columns=["_SaleDate"], errors="ignore"
+    )
+
+
+st.caption(
+    f"Showing {len(filtered_df):,} pending sale(s) from {len(queue_df):,} total pending sale(s)."
+)
+
+
+# ============================================================
+# ALL PENDING
+# ============================================================
+
+st.subheader("📋 All Pending")
+st.caption(
+    "One row per sale. Pending Stage(s) shows only stages where the sale is genuinely pending."
+)
+
+all_display = filtered_df.drop(
+    columns=[
+        "Record Key",
+        "_QualityReason",
+        "_WelcomeReason",
+        "_ProvisioningReason",
+        "_DispatchReason",
+        "_ConfirmationReason",
+        "_LiveReason",
+        "_PotentialReason",
+    ],
+    errors="ignore",
+).copy()
+
+if not all_display.empty:
+    # Header Sort Options Controls
+    sort_cols = st.columns([2, 1])
+    with sort_cols[0]:
+        sort_by = st.selectbox(
+            "Sort Table By",
+            options=list(all_display.columns),
+            index=0,
+            key="sort_all_pending_col",
+        )
+    with sort_cols[1]:
+        sort_order = st.radio(
+            "Order",
+            options=["Ascending", "Descending"],
+            horizontal=True,
+            key="sort_all_pending_order",
         )
 
-    # TABS 1..7: STAGE SPECIFIC VIEWS
-    for idx, stage in enumerate(stages_list, start=1):
-        with tabs[idx]:
-            st.write(f"### {stage} Stage Overview")
+    # Sort logic handling dates properly
+    if sort_by == "Sale Date":
+        all_display["_temp_sort"] = pd.to_datetime(
+            all_display["Sale Date"], errors="coerce"
+        )
+        all_display = all_display.sort_values(
+            by="_temp_sort", ascending=(sort_order == "Ascending")
+        ).drop(columns=["_temp_sort"])
+    else:
+        all_display = all_display.sort_values(
+            by=sort_by, ascending=(sort_order == "Ascending")
+        )
 
-            stage_df = filtered_df[filtered_df["Current_Stage"] == stage]
-            pending_list = PENDING_STATUSES.get(stage, [])
+    all_display["Sale Date"] = pd.to_datetime(
+        all_display["Sale Date"], errors="coerce"
+    ).dt.strftime("%d/%m/%Y")
 
-            # Stage Metrics
-            stage_pending_count = len(
-                stage_df[stage_df["Status"].isin(pending_list)]
-            )
-            col_a, col_b = st.columns(2)
-            col_a.metric(f"Total in {stage}", len(stage_df))
-            col_b.metric(f"Pending Action in {stage}", stage_pending_count)
-
-            # Workflow Reference Table
-            with st.expander(
-                f"ℹ️ View {stage} Status-to-Destination Mapping Rules"
-            ):
-                rule_mapping = STAGE_NEXT_DESTINATIONS[stage]
-                rule_df = pd.DataFrame(
-                    list(rule_mapping.items()),
-                    columns=["Status", "Next Destination"],
-                )
-                st.table(rule_df)
-
-            st.write("#### Tickets in Stage")
-            if stage_df.empty:
-                st.info(f"No tickets currently in {stage}.")
-            else:
-                st.dataframe(
-                    stage_df[
-                        [
-                            "Ticket_ID",
-                            "Customer_Name",
-                            "Status",
-                            "Next_Destination",
-                            "Advisor",
-                            "Created_Date",
-                            "Remarks",
-                        ]
-                    ],
-                    column_config={
-                        "Ticket_ID": "Ticket ID",
-                        "Status": "Status",
-                        "Next_Destination": "Next Destination ➔",
-                    },
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-    # -------------------------------------------------------------------------
-    # CSV EXPORT
-    # -------------------------------------------------------------------------
-    st.markdown("---")
-    st.subheader("📥 Export Summary Data")
-
-    csv_buffer = io.StringIO()
-    filtered_df.to_csv(csv_buffer, index=False)
-
-    st.download_button(
-        label="Download Processed Queue as CSV",
-        data=csv_buffer.getvalue(),
-        file_name="queue_workflow_summary.csv",
-        mime="text/csv",
+    st.dataframe(
+        all_display,
+        use_container_width=True,
+        hide_index=True,
+        height=min(
+            610,
+            max(200, 120 + len(all_display) * 35),
+        ),
+        column_config={
+            "Sale Date": st.column_config.TextColumn(
+                "SALE DATE", width="small"
+            ),
+            "Advisor": st.column_config.TextColumn(
+                "ADVISOR", width="medium"
+            ),
+            "Customer Name": st.column_config.TextColumn(
+                "CUSTOMER NAME", width="medium"
+            ),
+            "Phone Number": st.column_config.TextColumn(
+                "PHONE NUMBER", width="medium"
+            ),
+            "Pending Stage(s)": st.column_config.TextColumn(
+                "PENDING STAGE(S)", width="large"
+            ),
+            "Pending Detail": st.column_config.TextColumn(
+                "PENDING DETAIL", width="large"
+            ),
+            "Pending Count": st.column_config.NumberColumn(
+                "OPEN STAGES", format="%d", width="small"
+            ),
+        },
     )
 
+else:
+    st.info("No pending records match the current filters.")
 
-if __name__ == "__main__":
-    main()
+
+# ============================================================
+# STAGE QUEUES
+# ============================================================
+
+st.divider()
+
+st.subheader("🗂️️ Stage Queues")
+st.caption(
+    "Each tab contains only sales that have actually reached "
+    "that workflow stage and are still pending there."
+)
+
+
+queue_tabs = st.tabs(
+    [
+        f"{STAGE_ICONS[stage]} {stage} ({stage_counts[stage]:,})"
+        for stage in STAGES
+    ]
+)
+
+
+stage_reason_columns = {
+    "Quality": "_QualityReason",
+    "Welcome": "_WelcomeReason",
+    "Provisioning": "_ProvisioningReason",
+    "Dispatch": "_DispatchReason",
+    "Confirmation": "_ConfirmationReason",
+    "Live / Onboarding": "_LiveReason",
+    "Potential Opportunity": "_PotentialReason",
+}
+
+
+for tab, stage in zip(queue_tabs, STAGES):
+    with tab:
+        reason_column = stage_reason_columns[stage]
+
+        if filtered_df.empty:
+            stage_df = pd.DataFrame()
+        else:
+            stage_df = filtered_df[
+                filtered_df[reason_column]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+                .ne("")
+            ].copy()
+
+        if stage_df.empty:
+            st.success(
+                f"No {stage} records are pending for the current filters."
+            )
+            continue
+
+        display_rows = []
+
+        for _, row in stage_df.iterrows():
+            reason = safe_text(row.get(reason_column, ""))
+
+            source_rows = sheet_df[
+                sheet_df.apply(
+                    lambda source_row: make_record_key(
+                        source_row.get(API_COLUMNS["sale_date"]),
+                        source_row.get(API_COLUMNS["phone"]),
+                    )
+                    == safe_text(row.get("Record Key", "")),
+                    axis=1,
+                )
+            ]
+
+            source_row = (
+                source_rows.iloc[-1] if not source_rows.empty else None
+            )
+
+            display_rows.append(
+                {
+                    "Sale Date": row.get("Sale Date"),
+                    "Advisor": row.get("Advisor", ""),
+                    "Customer Name": row.get("Customer Name", ""),
+                    "Phone Number": row.get("Phone Number", ""),
+                    "Pending Stage": stage,
+                    "Pending Type": reason,
+                    "Current Status": (
+                        status_display(source_row, stage)
+                        if source_row is not None
+                        else ""
+                    ),
+                    "Remarks / Latest Note": (
+                        remarks_display(source_row, stage)
+                        if source_row is not None
+                        else ""
+                    ),
+                    "Other Open Stages": row.get("Pending Stage(s)", ""),
+                }
+            )
+
+        stage_display = pd.DataFrame(display_rows)
+
+        # Header Sort Options for Stage Tab
+        tab_sort_cols = st.columns([2, 1])
+        with tab_sort_cols[0]:
+            stage_sort_by = st.selectbox(
+                "Sort Table By",
+                options=list(stage_display.columns),
+                index=0,
+                key=f"sort_stage_col_{stage}",
+            )
+        with tab_sort_cols[1]:
+            stage_sort_order = st.radio(
+                "Order",
+                options=["Ascending", "Descending"],
+                horizontal=True,
+                key=f"sort_stage_order_{stage}",
+            )
+
+        if stage_sort_by == "Sale Date":
+            stage_display["_temp_sort"] = pd.to_datetime(
+                stage_display["Sale Date"], errors="coerce"
+            )
+            stage_display = stage_display.sort_values(
+                by="_temp_sort", ascending=(stage_sort_order == "Ascending")
+            ).drop(columns=["_temp_sort"])
+        else:
+            stage_display = stage_display.sort_values(
+                by=stage_sort_by, ascending=(stage_sort_order == "Ascending")
+            )
+
+        stage_display["Sale Date"] = pd.to_datetime(
+            stage_display["Sale Date"], errors="coerce"
+        ).dt.strftime("%d/%m/%Y")
+
+        st.dataframe(
+            stage_display,
+            use_container_width=True,
+            hide_index=True,
+            height=min(
+                620,
+                max(220, 120 + len(stage_display) * 36),
+            ),
+            column_config={
+                "Sale Date": st.column_config.TextColumn(
+                    "SALE DATE", width="small"
+                ),
+                "Advisor": st.column_config.TextColumn(
+                    "ADVISOR", width="medium"
+                ),
+                "Customer Name": st.column_config.TextColumn(
+                    "CUSTOMER NAME", width="medium"
+                ),
+                "Phone Number": st.column_config.TextColumn(
+                    "PHONE NUMBER", width="medium"
+                ),
+                "Pending Stage": st.column_config.TextColumn(
+                    "STAGE", width="medium"
+                ),
+                "Pending Type": st.column_config.TextColumn(
+                    "PENDING TYPE", width="medium"
+                ),
+                "Current Status": st.column_config.TextColumn(
+                    "CURRENT STATUS", width="large"
+                ),
+                "Remarks / Latest Note": st.column_config.TextColumn(
+                    "REMARKS / LATEST NOTE", width="large"
+                ),
+                "Other Open Stages": st.column_config.TextColumn(
+                    "OTHER OPEN STAGES", width="large"
+                ),
+            },
+        )
