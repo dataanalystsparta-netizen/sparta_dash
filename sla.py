@@ -4,43 +4,55 @@ SPARTA PENDING OPERATIONS — GOOGLE SHEET QUEUE
 
 Live operational queue driven by the CRM data mirrored into Google Sheets.
 
-Workflow logic:
+Workflow:
+
     Quality
         ↓ QA-Approved
     Welcome
         ↓ Welcome Approved
     Provisioning
-        ↓ Connectivity: Committed / Order Provisioned
+        ↓ Connectivity: Committed / Connectivity: Order Provisioned
     Dispatch
         ↓ Dispatch Approved
     Confirmation
         ↓ Confirmation Approved / Confirmed / Complete
     Live / Onboarding
 
-Important queue rule:
-    A blank downstream status is only counted/displayed when the record has
-    actually reached that stage.
+Queue rules:
 
-Examples:
-    QA-Pending + Welcome blank
-        -> Quality pending only.
-        -> Welcome is NOT counted because QA is not approved.
+    1. Quality
+       Only QA-Pending is counted.
 
-    QA-Approved + Welcome blank
-        -> Welcome Blank.
+    2. Welcome
+       Only opens after QA-Approved.
+       - Welcome Followup = separate queue
+       - Welcome Pending = explicit Welcome Pending
+         OR blank after QA-Approved
 
-    QA-Approved + Welcome Followup
-        -> Welcome Followup.
+    3. Provisioning
+       Only opens after Welcome Approved.
+       - Provisioning Pending = explicit Pending
+         OR blank after Welcome Approved
 
-    QA-Approved + Welcome Approved + Provisioning blank
-        -> Provisioning Blank.
+    4. Dispatch
+       Only opens after Provisioning reaches:
+       - Connectivity: Committed
+       - Connectivity: Order Provisioned
 
-    QA-Approved + Welcome Approved +
-    Provisioning "Connectivity: Committed" + Dispatch blank
-        -> Dispatch Blank.
+       Dispatch Pending =
+       explicit Dispatch Pending
+       OR blank after provisioning is ready.
 
-    Dispatch Pending
-        -> Dispatch Pending only; Confirmation is not opened yet.
+    5. Confirmation
+       Only opens after Dispatch Approved.
+
+       Confirmation Pending =
+       explicit Confirmation Pending
+       OR blank after Dispatch Approved.
+
+    Blank statuses are therefore used internally to determine
+    whether the next stage is pending, but blanks are never
+    displayed as their own category.
 
 No:
     - Manual entry
@@ -80,11 +92,17 @@ SPREADSHEET_ID = st.secrets.get(
 ).strip()
 
 CRM_MIRROR_WORKSHEET_GID = int(
-    st.secrets.get("CRM_MIRROR_WORKSHEET_GID", "1647226826")
+    st.secrets.get(
+        "CRM_MIRROR_WORKSHEET_GID",
+        "1647226826",
+    )
 )
 
 DATA_CACHE_TTL = int(
-    st.secrets.get("DATA_CACHE_TTL_SECONDS", 300)
+    st.secrets.get(
+        "DATA_CACHE_TTL_SECONDS",
+        300,
+    )
 )
 
 
@@ -180,53 +198,19 @@ STAGE_ICONS = {
     "Potential Opportunity": "🎯",
 }
 
-STAGE_COLORS = {
-    "Quality": "#f97316",
-    "Welcome": "#eab308",
-    "Provisioning": "#8b5cf6",
-    "Dispatch": "#06b6d4",
-    "Confirmation": "#10b981",
-    "Live / Onboarding": "#2563eb",
-    "Potential Opportunity": "#ec4899",
-}
-
 
 # ============================================================
 # WORKFLOW GATES
 # ============================================================
-#
-# These are the statuses that allow the record to move into the
-# next operational section.
-#
-# Based on the sample supplied:
-#
-# Quality -> Welcome:
-#     QA-Approved
-#
-# Welcome -> Provisioning:
-#     Welcome Approved
-#
-# Provisioning -> Dispatch:
-#     Connectivity: Committed
-#     Connectivity: Order Provisioned
-#
-# Dispatch -> Confirmation:
-#     Dispatch Approved
-#
-# Confirmation -> Live / Onboarding:
-#     Approved / Confirmed / Complete / Completed
-#
-# These are deliberately kept separate from "pending" statuses.
 
+QUALITY_APPROVED_STATUS = "qa approved"
+WELCOME_APPROVED_STATUS = "welcome approved"
+DISPATCH_APPROVED_STATUS = "dispatch approved"
 
 PROVISIONING_READY_FOR_DISPATCH = {
     "connectivity committed",
     "connectivity order provisioned",
 }
-
-WELCOME_APPROVED_STATUS = "welcome approved"
-QUALITY_APPROVED_STATUS = "qa approved"
-DISPATCH_APPROVED_STATUS = "dispatch approved"
 
 
 # ============================================================
@@ -236,64 +220,15 @@ DISPATCH_APPROVED_STATUS = "dispatch approved"
 st.markdown(
     """
     <style>
+
     .block-container {
         max-width: 1540px;
         padding-top: 1.25rem;
         padding-bottom: 2.2rem;
     }
 
-    .hero {
-        padding: 22px 24px;
-        border-radius: 20px;
-        color: white;
-        background:
-            radial-gradient(circle at 88% 10%, rgba(6,182,212,.22), transparent 28%),
-            radial-gradient(circle at 4% 100%, rgba(59,130,246,.25), transparent 35%),
-            linear-gradient(135deg, #09142f 0%, #10275a 60%, #143a70 100%);
-        border: 1px solid rgba(255,255,255,.08);
-        box-shadow: 0 16px 35px rgba(15,23,42,.11);
-        margin-bottom: 16px;
-    }
-
-    .hero-kicker {
-        font-size: .66rem;
-        text-transform: uppercase;
-        letter-spacing: 1.6px;
-        font-weight: 900;
-        color: #8db4ff;
-        margin-bottom: 3px;
-    }
-
-    .hero-title {
-        font-size: 1.75rem;
-        font-weight: 900;
-        letter-spacing: -.03em;
-        margin: 0;
-    }
-
-    .hero-subtitle {
-        color: #c5d4f3;
-        font-size: .82rem;
-        margin-top: 6px;
-        max-width: 950px;
-    }
-
-    .hero-right {
-        text-align: right;
-        color: #a9bde2;
-        font-size: .70rem;
-        padding-top: 7px;
-    }
-
-    .hero-right strong {
-        display: inline-block;
-        margin-top: 4px;
-        color: #fff;
-        font-size: .84rem;
-    }
-
     [data-testid="stMetric"] {
-        background: #fff;
+        background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 14px;
         padding: 14px 16px 12px;
@@ -314,35 +249,13 @@ st.markdown(
         font-weight: 900 !important;
     }
 
-    .queue-note {
-        border: 1px solid #dbeafe;
-        background: #f8fbff;
-        border-radius: 12px;
-        padding: 11px 14px;
-        color: #475569;
-        font-size: .80rem;
-        margin: 12px 0 16px;
-    }
-
-    .section-title {
-        color: #0f172a;
-        font-size: 1.14rem;
-        font-weight: 850;
-        margin: 8px 0 3px;
-    }
-
-    .section-subtitle {
-        color: #64748b;
-        font-size: .78rem;
-        margin-bottom: 10px;
-    }
-
     [data-testid="stDataFrame"] {
         border-radius: 12px;
         overflow: hidden;
         border: 1px solid #e2e8f0;
         box-shadow: 0 5px 16px rgba(15,23,42,.035);
     }
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -350,7 +263,7 @@ st.markdown(
 
 
 # ============================================================
-# BASIC HELPERS
+# HELPERS
 # ============================================================
 
 def safe_text(value) -> str:
@@ -434,6 +347,7 @@ def clean_phone(value) -> str:
 # ============================================================
 
 def parse_date(value):
+
     if value is None:
         return pd.NaT
 
@@ -463,6 +377,7 @@ def parse_date(value):
 
             if not pd.isna(parsed):
                 return parsed
+
         except Exception:
             pass
 
@@ -482,28 +397,34 @@ def parse_date(value):
 
 
 def format_date(value) -> str:
+
     parsed = parse_date(value)
 
     if pd.isna(parsed):
         return ""
 
-    return parsed.strftime("%d/%m/%Y")
+    return parsed.strftime(
+        "%d/%m/%Y"
+    )
 
 
 # ============================================================
 # STATUS HELPERS
 # ============================================================
 
-def is_blank_status(value) -> bool:
+def is_blank(value) -> bool:
     return normalize_status(value) == ""
 
 
-def contains_status(value, text) -> bool:
-    return text in normalize_status(value)
+def is_exact_status(value, expected) -> bool:
+    return (
+        normalize_status(value)
+        == normalize_status(expected)
+    )
 
 
-def is_exact_status(value, text) -> bool:
-    return normalize_status(value) == normalize_status(text)
+def contains_pending(value) -> bool:
+    return "pending" in normalize_status(value)
 
 
 # ============================================================
@@ -525,9 +446,10 @@ def welcome_approved(value) -> bool:
 
 
 def provisioning_ready_for_dispatch(value) -> bool:
-    status = normalize_status(value)
-
-    return status in PROVISIONING_READY_FOR_DISPATCH
+    return (
+        normalize_status(value)
+        in PROVISIONING_READY_FOR_DISPATCH
+    )
 
 
 def dispatch_approved(value) -> bool:
@@ -537,7 +459,8 @@ def dispatch_approved(value) -> bool:
     )
 
 
-def confirmation_approved(value) -> bool:
+def confirmation_completed(value) -> bool:
+
     status = normalize_status(value)
 
     if not status:
@@ -556,114 +479,106 @@ def confirmation_approved(value) -> bool:
 
 
 # ============================================================
-# STAGE CLASSIFICATION
+# PENDING STAGE CLASSIFICATION
 # ============================================================
 #
-# Returns only genuine pending queue entries.
-#
 # IMPORTANT:
-# A blank downstream status is ONLY returned when the previous
-# workflow stage has successfully completed.
 #
-# Therefore:
+# A blank downstream status is NOT displayed as "Blank".
 #
-#     QA-Pending + Welcome blank
-#         -> Quality only
+# Instead:
 #
 #     QA-Approved + Welcome blank
-#         -> Welcome Blank
+#         -> Welcome = Pending
 #
-#     QA-Approved + Welcome Approved + Provisioning blank
-#         -> Provisioning Blank
+#     Welcome Approved + Provisioning blank
+#         -> Provisioning = Pending
 #
-#     Provisioning not completed
-#         -> Dispatch is NOT shown
-#
-#     Dispatch Pending
-#         -> Confirmation is NOT shown
+#     Provisioning Ready + Dispatch blank
+#         -> Dispatch = Pending
 #
 #     Dispatch Approved + Confirmation blank
-#         -> Confirmation Blank
+#         -> Confirmation = Pending
+#
+# This means the sale has reached that stage and is genuinely
+# waiting there.
 
 
 def classify_pending_stages(row) -> dict:
+
     result = {}
 
     quality = safe_text(
-        row.get(API_COLUMNS["quality"], "")
+        row.get(
+            API_COLUMNS["quality"],
+            "",
+        )
     )
 
     welcome = safe_text(
-        row.get(API_COLUMNS["welcome"], "")
+        row.get(
+            API_COLUMNS["welcome"],
+            "",
+        )
     )
 
     provisioning = safe_text(
-        row.get(API_COLUMNS["provisioning"], "")
+        row.get(
+            API_COLUMNS["provisioning"],
+            "",
+        )
     )
 
     dispatch = safe_text(
-        row.get(API_COLUMNS["dispatch"], "")
+        row.get(
+            API_COLUMNS["dispatch"],
+            "",
+        )
     )
 
     confirmation = safe_text(
-        row.get(API_COLUMNS["confirmation"], "")
+        row.get(
+            API_COLUMNS["confirmation"],
+            "",
+        )
     )
 
     live = safe_text(
-        row.get(API_COLUMNS["live"], "")
+        row.get(
+            API_COLUMNS["live"],
+            "",
+        )
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # 1. QUALITY
-    # --------------------------------------------------------
-    #
-    # ONLY QA-Pending counts.
-    #
-    # QA-Reject, Rework, QA-Approved, blank etc. are not
-    # Quality pending.
-    #
+    # ========================================================
 
     if normalize_status(quality) == "qa pending":
         result["Quality"] = "QA-Pending"
 
-    # --------------------------------------------------------
+    # ========================================================
     # 2. WELCOME
-    # --------------------------------------------------------
-    #
-    # Welcome only opens once Quality is QA-Approved.
-    #
-    # Blanks therefore mean:
-    #     Quality is approved,
-    #     but Welcome has not yet been started/completed.
-    #
+    # ========================================================
 
     if quality_approved(quality):
 
-        welcome_status = normalize_status(welcome)
+        welcome_status = normalize_status(
+            welcome
+        )
 
-        if not welcome_status:
-            result["Welcome"] = "Blank"
+        if welcome_status == "welcome followup":
+            result["Welcome"] = "Followup"
 
         elif welcome_status == "welcome pending":
             result["Welcome"] = "Pending"
 
-        elif welcome_status == "welcome followup":
-            result["Welcome"] = "Followup"
+        elif not welcome_status:
+            result["Welcome"] = "Pending"
 
-    # --------------------------------------------------------
+    # ========================================================
     # 3. PROVISIONING
-    # --------------------------------------------------------
-    #
-    # Provisioning only opens after Welcome Approved.
-    #
-    # Blank = reached provisioning but no provisioning status.
-    #
-    # Pending = the provisioning status explicitly contains
-    # "pending".
-    #
-    # Completed / committed / cancelled / rejected / rework
-    # states do not automatically become pending.
-    #
+    # ========================================================
 
     if welcome_approved(welcome):
 
@@ -672,32 +587,27 @@ def classify_pending_stages(row) -> dict:
         )
 
         if not provisioning_status:
-            result["Provisioning"] = "Blank"
-
-        elif "pending" in provisioning_status:
             result["Provisioning"] = "Pending"
 
-    # --------------------------------------------------------
+        elif contains_pending(
+            provisioning_status
+        ):
+            result["Provisioning"] = "Pending"
+
+    # ========================================================
     # 4. DISPATCH
-    # --------------------------------------------------------
-    #
-    # Dispatch only opens once Provisioning has reached one
-    # of the positive hand-off states from the supplied sample:
-    #
-    #     Connectivity: Committed
-    #     Connectivity: Order Provisioned
-    #
-    # Blank = dispatch not started.
-    #
-    # Dispatch Pending = explicitly pending at dispatch.
-    #
+    # ========================================================
 
-    if provisioning_ready_for_dispatch(provisioning):
+    if provisioning_ready_for_dispatch(
+        provisioning
+    ):
 
-        dispatch_status = normalize_status(dispatch)
+        dispatch_status = normalize_status(
+            dispatch
+        )
 
         if not dispatch_status:
-            result["Dispatch"] = "Blank"
+            result["Dispatch"] = "Pending"
 
         elif "dispatch pending" in dispatch_status:
             result["Dispatch"] = "Pending"
@@ -705,16 +615,9 @@ def classify_pending_stages(row) -> dict:
         elif "pending" in dispatch_status:
             result["Dispatch"] = "Pending"
 
-    # --------------------------------------------------------
+    # ========================================================
     # 5. CONFIRMATION
-    # --------------------------------------------------------
-    #
-    # Confirmation only opens after Dispatch Approved.
-    #
-    # Blank = reached confirmation but no confirmation status.
-    #
-    # Pending = explicit pending confirmation.
-    #
+    # ========================================================
 
     if dispatch_approved(dispatch):
 
@@ -723,26 +626,27 @@ def classify_pending_stages(row) -> dict:
         )
 
         if not confirmation_status:
-            result["Confirmation"] = "Blank"
-
-        elif "pending" in confirmation_status:
             result["Confirmation"] = "Pending"
 
-    # --------------------------------------------------------
+        elif contains_pending(
+            confirmation_status
+        ):
+            result["Confirmation"] = "Pending"
+
+    # ========================================================
     # 6. LIVE / ONBOARDING
-    # --------------------------------------------------------
-    #
-    # Kept as a genuine downstream queue too.
-    #
-    # It only opens after confirmation has completed.
-    #
+    # ========================================================
 
-    if confirmation_approved(confirmation):
+    if confirmation_completed(
+        confirmation
+    ):
 
-        live_status = normalize_status(live)
+        live_status = normalize_status(
+            live
+        )
 
         if not live_status:
-            result["Live / Onboarding"] = "Blank"
+            result["Live / Onboarding"] = "Pending"
 
         elif any(
             term in live_status
@@ -759,13 +663,9 @@ def classify_pending_stages(row) -> dict:
                 live
             )
 
-    # --------------------------------------------------------
+    # ========================================================
     # 7. POTENTIAL OPPORTUNITY
-    # --------------------------------------------------------
-    #
-    # This is an explicit special state rather than a normal
-    # sequential workflow blank.
-    #
+    # ========================================================
 
     fields = [
         API_COLUMNS["provisioning"],
@@ -777,26 +677,30 @@ def classify_pending_stages(row) -> dict:
     ]
 
     for field in fields:
+
         if field not in row.index:
             continue
 
         if (
             "potential opportunity"
-            in normalize_status(row[field])
-        ):
-            result["Potential Opportunity"] = (
-                "Potential Opportunity"
+            in normalize_status(
+                row[field]
             )
+        ):
+            result[
+                "Potential Opportunity"
+            ] = "Potential Opportunity"
+
             break
 
     return result
 
 
 # ============================================================
-# DISPLAY STATUS / REMARKS
+# DISPLAY HELPERS
 # ============================================================
 
-def status_display(row, stage: str) -> str:
+def status_display(row, stage):
 
     mapping = {
         "Quality": API_COLUMNS["quality"],
@@ -818,7 +722,7 @@ def status_display(row, stage: str) -> str:
     )
 
 
-def remarks_display(row, stage: str) -> str:
+def remarks_display(row, stage):
 
     mapping = {
         "Quality": API_COLUMNS["quality_remarks"],
@@ -845,19 +749,27 @@ def remarks_display(row, stage: str) -> str:
 def make_record_key(
     sale_date,
     phone,
-) -> str:
+):
 
-    parsed = parse_date(sale_date)
+    parsed = parse_date(
+        sale_date
+    )
 
     date_part = (
-        parsed.strftime("%Y-%m-%d")
+        parsed.strftime(
+            "%Y-%m-%d"
+        )
         if not pd.isna(parsed)
         else ""
     )
 
-    phone_part = clean_phone(phone)
+    phone_part = clean_phone(
+        phone
+    )
 
-    return f"{date_part}|{phone_part}"
+    return (
+        f"{date_part}|{phone_part}"
+    )
 
 
 # ============================================================
@@ -865,130 +777,196 @@ def make_record_key(
 # ============================================================
 
 def build_queue_dataframe(
-    source_df: pd.DataFrame,
-) -> pd.DataFrame:
+    source_df,
+):
 
     rows = []
 
-    internal_reason_columns = [
-        "_QualityReason",
-        "_WelcomeReason",
-        "_ProvisioningReason",
-        "_DispatchReason",
-        "_ConfirmationReason",
-        "_LiveReason",
-        "_PotentialReason",
-    ]
-
     for _, row in source_df.iterrows():
 
-        stage_reasons = classify_pending_stages(row)
+        stage_reasons = (
+            classify_pending_stages(
+                row
+            )
+        )
 
         if not stage_reasons:
             continue
 
-        pending_stages = list(stage_reasons.keys())
+        pending_stages = list(
+            stage_reasons.keys()
+        )
 
         pending_detail = "; ".join(
             f"{stage}: {reason}"
-            for stage, reason in stage_reasons.items()
+            for stage, reason
+            in stage_reasons.items()
         )
 
-        row_data = {
-            "Sale Date": parse_date(
-                row.get(API_COLUMNS["sale_date"])
-            ),
+        rows.append(
+            {
+                "Sale Date":
+                    parse_date(
+                        row.get(
+                            API_COLUMNS[
+                                "sale_date"
+                            ]
+                        )
+                    ),
 
-            "Advisor": clean_display_text(
-                row.get(API_COLUMNS["advisor"])
-            ),
+                "Advisor":
+                    clean_display_text(
+                        row.get(
+                            API_COLUMNS[
+                                "advisor"
+                            ]
+                        )
+                    ),
 
-            "Customer Name": clean_display_text(
-                row.get(API_COLUMNS["customer"])
-            ),
+                "Customer Name":
+                    clean_display_text(
+                        row.get(
+                            API_COLUMNS[
+                                "customer"
+                            ]
+                        )
+                    ),
 
-            "Phone Number": clean_phone(
-                row.get(API_COLUMNS["phone"])
-            ),
+                "Phone Number":
+                    clean_phone(
+                        row.get(
+                            API_COLUMNS[
+                                "phone"
+                            ]
+                        )
+                    ),
 
-            "Pending Stage(s)": ", ".join(
-                pending_stages
-            ),
+                "Pending Stage(s)":
+                    ", ".join(
+                        pending_stages
+                    ),
 
-            "Pending Detail": pending_detail,
+                "Pending Detail":
+                    pending_detail,
 
-            "Pending Count": len(
-                pending_stages
-            ),
+                "Pending Count":
+                    len(
+                        pending_stages
+                    ),
 
-            "Quality Status": clean_display_text(
-                row.get(API_COLUMNS["quality"])
-            ),
+                "Quality Status":
+                    clean_display_text(
+                        row.get(
+                            API_COLUMNS[
+                                "quality"
+                            ]
+                        )
+                    ),
 
-            "Welcome Call Status": clean_display_text(
-                row.get(API_COLUMNS["welcome"])
-            ),
+                "Welcome Call Status":
+                    clean_display_text(
+                        row.get(
+                            API_COLUMNS[
+                                "welcome"
+                            ]
+                        )
+                    ),
 
-            "Provisioning Status": clean_display_text(
-                row.get(API_COLUMNS["provisioning"])
-            ),
+                "Provisioning Status":
+                    clean_display_text(
+                        row.get(
+                            API_COLUMNS[
+                                "provisioning"
+                            ]
+                        )
+                    ),
 
-            "Dispatch Status": clean_display_text(
-                row.get(API_COLUMNS["dispatch"])
-            ),
+                "Dispatch Status":
+                    clean_display_text(
+                        row.get(
+                            API_COLUMNS[
+                                "dispatch"
+                            ]
+                        )
+                    ),
 
-            "Confirmation Status": clean_display_text(
-                row.get(API_COLUMNS["confirmation"])
-            ),
+                "Confirmation Status":
+                    clean_display_text(
+                        row.get(
+                            API_COLUMNS[
+                                "confirmation"
+                            ]
+                        )
+                    ),
 
-            "Live / Onboarding Status": clean_display_text(
-                row.get(API_COLUMNS["live"])
-            ),
+                "Live / Onboarding Status":
+                    clean_display_text(
+                        row.get(
+                            API_COLUMNS[
+                                "live"
+                            ]
+                        )
+                    ),
 
-            "Record Key": make_record_key(
-                row.get(API_COLUMNS["sale_date"]),
-                row.get(API_COLUMNS["phone"]),
-            ),
+                "_QualityReason":
+                    stage_reasons.get(
+                        "Quality",
+                        "",
+                    ),
 
-            "_QualityReason": stage_reasons.get(
-                "Quality",
-                "",
-            ),
+                "_WelcomeReason":
+                    stage_reasons.get(
+                        "Welcome",
+                        "",
+                    ),
 
-            "_WelcomeReason": stage_reasons.get(
-                "Welcome",
-                "",
-            ),
+                "_ProvisioningReason":
+                    stage_reasons.get(
+                        "Provisioning",
+                        "",
+                    ),
 
-            "_ProvisioningReason": stage_reasons.get(
-                "Provisioning",
-                "",
-            ),
+                "_DispatchReason":
+                    stage_reasons.get(
+                        "Dispatch",
+                        "",
+                    ),
 
-            "_DispatchReason": stage_reasons.get(
-                "Dispatch",
-                "",
-            ),
+                "_ConfirmationReason":
+                    stage_reasons.get(
+                        "Confirmation",
+                        "",
+                    ),
 
-            "_ConfirmationReason": stage_reasons.get(
-                "Confirmation",
-                "",
-            ),
+                "_LiveReason":
+                    stage_reasons.get(
+                        "Live / Onboarding",
+                        "",
+                    ),
 
-            "_LiveReason": stage_reasons.get(
-                "Live / Onboarding",
-                "",
-            ),
+                "_PotentialReason":
+                    stage_reasons.get(
+                        "Potential Opportunity",
+                        "",
+                    ),
 
-            "_PotentialReason": stage_reasons.get(
-                "Potential Opportunity",
-                "",
-            ),
-        }
+                "Record Key":
+                    make_record_key(
+                        row.get(
+                            API_COLUMNS[
+                                "sale_date"
+                            ]
+                        ),
+                        row.get(
+                            API_COLUMNS[
+                                "phone"
+                            ]
+                        ),
+                    ),
+            }
+        )
 
-        rows.append(row_data)
-
-    public_columns = [
+    columns = [
         "Sale Date",
         "Advisor",
         "Customer Name",
@@ -1002,17 +980,24 @@ def build_queue_dataframe(
         "Dispatch Status",
         "Confirmation Status",
         "Live / Onboarding Status",
+        "_QualityReason",
+        "_WelcomeReason",
+        "_ProvisioningReason",
+        "_DispatchReason",
+        "_ConfirmationReason",
+        "_LiveReason",
+        "_PotentialReason",
         "Record Key",
     ]
 
-    all_columns = public_columns + internal_reason_columns
-
     if not rows:
         return pd.DataFrame(
-            columns=all_columns
+            columns=columns
         )
 
-    result = pd.DataFrame(rows)
+    result = pd.DataFrame(
+        rows
+    )
 
     result = result.sort_values(
         by=[
@@ -1024,52 +1009,72 @@ def build_queue_dataframe(
             True,
         ],
         na_position="last",
-    ).reset_index(drop=True)
+    ).reset_index(
+        drop=True
+    )
 
-    return result[all_columns]
+    return result[columns]
 
 
 # ============================================================
-# GOOGLE SHEET LOAD
+# GOOGLE SHEET
 # ============================================================
 
 def load_google_sheet_data():
 
-    info = st.secrets["gcp_service_account"]
+    info = st.secrets[
+        "gcp_service_account"
+    ]
 
-    creds = Credentials.from_service_account_info(
-        info,
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets.readonly",
-            "https://www.googleapis.com/auth/drive.readonly",
-        ],
+    creds = (
+        Credentials
+        .from_service_account_info(
+            info,
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets.readonly",
+                "https://www.googleapis.com/auth/drive.readonly",
+            ],
+        )
     )
 
-    client = gspread.authorize(creds)
+    client = gspread.authorize(
+        creds
+    )
 
     spreadsheet = client.open_by_key(
         SPREADSHEET_ID
     )
 
     try:
-        worksheet = spreadsheet.get_worksheet_by_id(
-            CRM_MIRROR_WORKSHEET_GID
+
+        worksheet = (
+            spreadsheet
+            .get_worksheet_by_id(
+                CRM_MIRROR_WORKSHEET_GID
+            )
         )
 
     except Exception as exc:
 
         raise RuntimeError(
-            "Could not open Google Sheet worksheet "
-            f"GID {CRM_MIRROR_WORKSHEET_GID}: {exc}"
+            "Could not open Google Sheet "
+            f"worksheet GID "
+            f"{CRM_MIRROR_WORKSHEET_GID}: "
+            f"{exc}"
         ) from exc
 
-    records = worksheet.get_all_records()
+    records = (
+        worksheet.get_all_records()
+    )
 
-    df = pd.DataFrame(records)
+    df = pd.DataFrame(
+        records
+    )
 
     if df.empty:
         raise ValueError(
-            "The CRM mirror Google Sheet contains no records."
+            "The CRM mirror Google Sheet "
+            "contains no records."
         )
 
     df.columns = [
@@ -1084,16 +1089,24 @@ def load_google_sheet_data():
     ]
 
     if missing:
+
         raise ValueError(
-            "Google Sheet is missing required CRM columns: "
+            "Google Sheet is missing "
+            "required CRM columns: "
             + ", ".join(missing)
         )
 
-    fetched_at = datetime.now().strftime(
-        "%d/%m/%Y %H:%M:%S"
+    fetched_at = (
+        datetime.now()
+        .strftime(
+            "%d/%m/%Y %H:%M:%S"
+        )
     )
 
-    return df, fetched_at
+    return (
+        df,
+        fetched_at,
+    )
 
 
 @st.cache_data(
@@ -1106,7 +1119,7 @@ def fetch_google_sheet_data():
 
 
 # ============================================================
-# LOAD DATA
+# LOAD
 # ============================================================
 
 try:
@@ -1115,54 +1128,58 @@ try:
         fetch_google_sheet_data()
     )
 
-    queue_df = build_queue_dataframe(
-        sheet_df
+    queue_df = (
+        build_queue_dataframe(
+            sheet_df
+        )
     )
 
 except Exception as exc:
 
     st.error(
-        "Unable to load the Sparta CRM Google Sheet: "
-        f"{exc}"
+        "Unable to load the Sparta CRM "
+        f"Google Sheet: {exc}"
     )
 
     st.stop()
 
 
 # ============================================================
-# PAGE HEADER
+# HEADER
 # ============================================================
 
-st.markdown(
-    f"""
-    <div class="hero">
-        <div style="display:flex;justify-content:space-between;gap:24px;align-items:flex-start;">
-            <div>
-                <div class="hero-kicker">
-                    SPARTA CRM · OPERATIONS QUEUE
-                </div>
-
-                <div class="hero-title">
-                    ⏳ Sparta Pending Operations
-                </div>
-
-                <div class="hero-subtitle">
-                    Live records from the CRM mirror showing only
-                    workflow stages where work is genuinely pending.
-                    Blank downstream stages are counted only after
-                    the sale has reached that stage.
-                </div>
-            </div>
-
-            <div class="hero-right">
-                Last Google Sheet refresh
-                <strong>{fetched_at}</strong>
-            </div>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
+header_left, header_right = st.columns(
+    [5, 1],
+    vertical_alignment="center",
 )
+
+with header_left:
+
+    st.caption(
+        "SPARTA CRM · OPERATIONS QUEUE"
+    )
+
+    st.title(
+        "⏳ Sparta Pending Operations"
+    )
+
+    st.write(
+        "Live records from the CRM mirror "
+        "showing only workflow stages where "
+        "work is genuinely pending. "
+        "Downstream stages open only after "
+        "the previous stage is completed."
+    )
+
+with header_right:
+
+    st.caption(
+        "Last Google Sheet refresh"
+    )
+
+    st.write(
+        f"**{fetched_at}**"
+    )
 
 
 # ============================================================
@@ -1171,8 +1188,8 @@ st.markdown(
 
 with st.sidebar:
 
-    st.markdown(
-        "### ⚙️ Queue Controls"
+    st.header(
+        "⚙️ Queue Controls"
     )
 
     st.caption(
@@ -1194,7 +1211,8 @@ with st.sidebar:
     st.divider()
 
     st.caption(
-        f"Cache TTL: {DATA_CACHE_TTL:,} seconds"
+        f"Cache TTL: "
+        f"{DATA_CACHE_TTL:,} seconds"
     )
 
     if st.button(
@@ -1207,11 +1225,10 @@ with st.sidebar:
 
     if not queue_df.empty:
 
-        export_df_sidebar = (
+        export_df = (
             queue_df
             .drop(
                 columns=[
-                    "Record Key",
                     "_QualityReason",
                     "_WelcomeReason",
                     "_ProvisioningReason",
@@ -1219,26 +1236,35 @@ with st.sidebar:
                     "_ConfirmationReason",
                     "_LiveReason",
                     "_PotentialReason",
+                    "Record Key",
                 ],
                 errors="ignore",
             )
             .copy()
         )
 
-        export_df_sidebar["Sale Date"] = (
+        export_df[
+            "Sale Date"
+        ] = (
             pd.to_datetime(
-                export_df_sidebar[
+                export_df[
                     "Sale Date"
                 ],
                 errors="coerce",
             )
-            .dt.strftime("%d/%m/%Y")
+            .dt.strftime(
+                "%d/%m/%Y"
+            )
         )
 
         export_bytes = (
-            export_df_sidebar
-            .to_csv(index=False)
-            .encode("utf-8-sig")
+            export_df
+            .to_csv(
+                index=False
+            )
+            .encode(
+                "utf-8-sig"
+            )
         )
 
         st.download_button(
@@ -1251,22 +1277,26 @@ with st.sidebar:
 
 
 # ============================================================
-# STAGE COUNTS
+# COUNTS
 # ============================================================
 
-def count_reason(column, reason):
+def count_reason(
+    column,
+    value,
+):
 
     if queue_df.empty:
         return 0
 
     return int(
-        (
-            queue_df[column]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-            .eq(reason)
-        ).sum()
+        queue_df[
+            column
+        ]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .eq(value)
+        .sum()
     )
 
 
@@ -1288,21 +1318,11 @@ welcome_pending_count = count_reason(
     "Pending",
 )
 
-welcome_blank_count = count_reason(
-    "_WelcomeReason",
-    "Blank",
-)
-
 
 # Provisioning
 provisioning_pending_count = count_reason(
     "_ProvisioningReason",
     "Pending",
-)
-
-provisioning_blank_count = count_reason(
-    "_ProvisioningReason",
-    "Blank",
 )
 
 
@@ -1312,11 +1332,6 @@ dispatch_pending_count = count_reason(
     "Pending",
 )
 
-dispatch_blank_count = count_reason(
-    "_DispatchReason",
-    "Blank",
-)
-
 
 # Confirmation
 confirmation_pending_count = count_reason(
@@ -1324,235 +1339,154 @@ confirmation_pending_count = count_reason(
     "Pending",
 )
 
-confirmation_blank_count = count_reason(
-    "_ConfirmationReason",
-    "Blank",
+
+# Live / Onboarding
+live_pending_count = (
+    int(
+        queue_df[
+            "_LiveReason"
+        ]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .ne("")
+        .sum()
+    )
+    if not queue_df.empty
+    else 0
 )
 
 
-# Live / Onboarding
-live_pending_count = int(
-    (
-        queue_df["_LiveReason"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .ne("")
-    ).sum()
-) if not queue_df.empty else 0
-
-
 # Potential Opportunity
-potential_count = int(
-    (
-        queue_df["_PotentialReason"]
+potential_count = (
+    int(
+        queue_df[
+            "_PotentialReason"
+        ]
         .fillna("")
         .astype(str)
         .str.strip()
         .ne("")
-    ).sum()
-) if not queue_df.empty else 0
+        .sum()
+    )
+    if not queue_df.empty
+    else 0
+)
 
 
-# Total stage counts for tabs
 stage_counts = {
-    "Quality": quality_pending_count,
+    "Quality":
+        quality_pending_count,
 
-    "Welcome": (
+    "Welcome":
         welcome_followup_count
-        + welcome_pending_count
-        + welcome_blank_count
-    ),
+        + welcome_pending_count,
 
-    "Provisioning": (
-        provisioning_pending_count
-        + provisioning_blank_count
-    ),
+    "Provisioning":
+        provisioning_pending_count,
 
-    "Dispatch": (
-        dispatch_pending_count
-        + dispatch_blank_count
-    ),
+    "Dispatch":
+        dispatch_pending_count,
 
-    "Confirmation": (
-        confirmation_pending_count
-        + confirmation_blank_count
-    ),
+    "Confirmation":
+        confirmation_pending_count,
 
-    "Live / Onboarding": live_pending_count,
+    "Live / Onboarding":
+        live_pending_count,
 
-    "Potential Opportunity": potential_count,
+    "Potential Opportunity":
+        potential_count,
 }
 
 
 # ============================================================
-# KPI HEADER
+# KPI SECTION
 # ============================================================
 
-st.markdown(
-    "<div class='section-title'>📊 Pending Breakdown</div>",
-    unsafe_allow_html=True,
+st.subheader(
+    "📊 Pending Breakdown"
 )
 
-st.markdown(
-    """
-    <div class='section-subtitle'>
-        Blank means the sale has reached that workflow stage but
-        the stage itself has not yet been completed. Explicit
-        Pending / Followup statuses are counted separately.
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.caption(
+    "A blank downstream status becomes Pending only after "
+    "the sale has reached that stage. Blank is not shown "
+    "as a separate category."
 )
 
 
-# ------------------------------------------------------------
-# ROW 1
-# ------------------------------------------------------------
-
-metric_row_1 = st.columns(
+row1 = st.columns(
     5,
     gap="small",
 )
 
-with metric_row_1[0]:
-
+with row1[0]:
     st.metric(
         "🧪 QA-Pending",
         quality_pending_count,
     )
 
-with metric_row_1[1]:
-
+with row1[1]:
     st.metric(
         "📞 Welcome Followup",
         welcome_followup_count,
     )
 
-with metric_row_1[2]:
-
+with row1[2]:
     st.metric(
         "📞 Welcome Pending",
         welcome_pending_count,
     )
 
-with metric_row_1[3]:
-
-    st.metric(
-        "📞 Welcome Blank",
-        welcome_blank_count,
-    )
-
-with metric_row_1[4]:
-
+with row1[3]:
     st.metric(
         "⚙️ Provisioning Pending",
         provisioning_pending_count,
     )
 
-
-# ------------------------------------------------------------
-# ROW 2
-# ------------------------------------------------------------
-
-metric_row_2 = st.columns(
-    5,
-    gap="small",
-)
-
-with metric_row_2[0]:
-
-    st.metric(
-        "⚙️ Provisioning Blank",
-        provisioning_blank_count,
-    )
-
-with metric_row_2[1]:
-
+with row1[4]:
     st.metric(
         "✉️ Dispatch Pending",
         dispatch_pending_count,
     )
 
-with metric_row_2[2]:
 
-    st.metric(
-        "✉️ Dispatch Blank",
-        dispatch_blank_count,
-    )
+row2 = st.columns(
+    4,
+    gap="small",
+)
 
-with metric_row_2[3]:
-
+with row2[0]:
     st.metric(
         "✅ Confirmation Pending",
         confirmation_pending_count,
     )
 
-with metric_row_2[4]:
-
-    st.metric(
-        "✅ Confirmation Blank",
-        confirmation_blank_count,
-    )
-
-
-# ------------------------------------------------------------
-# ROW 3
-# ------------------------------------------------------------
-
-metric_row_3 = st.columns(
-    2,
-    gap="small",
-)
-
-with metric_row_3[0]:
-
+with row2[1]:
     st.metric(
         "📡 Live / Onboarding",
         live_pending_count,
     )
 
-with metric_row_3[1]:
-
+with row2[2]:
     st.metric(
         "🎯 Potential Opportunity",
         potential_count,
     )
 
+with row2[3]:
+    st.metric(
+        "📋 Total Pending Sales",
+        len(queue_df),
+    )
 
-# ============================================================
-# QUEUE NOTE
-# ============================================================
 
-st.markdown(
-    """
-    <div class="queue-note">
-
-        <b>Sequential queue logic:</b>
-
-        Quality only shows <b>QA-Pending</b>.
-
-        Welcome only opens after <b>QA-Approved</b> and then
-        separates <b>Followup</b>, <b>Pending</b> and
-        <b>Blank</b>.
-
-        Provisioning only opens after <b>Welcome Approved</b>
-        and separates <b>Pending</b> and <b>Blank</b>.
-
-        Dispatch only opens after provisioning reaches
-        <b>Connectivity: Committed</b> or
-        <b>Connectivity: Order Provisioned</b>, and separates
-        <b>Pending</b> and <b>Blank</b>.
-
-        Confirmation only opens after <b>Dispatch Approved</b>,
-        and separates <b>Pending</b> and <b>Blank</b>.
-
-        A blank status therefore does <b>not</b> automatically
-        make every downstream stage pending.
-
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.info(
+    "Queue logic is sequential: "
+    "QA-Pending stays in Quality; only QA-Approved records "
+    "enter Welcome; only Welcome Approved records enter "
+    "Provisioning; only dispatch-ready provisioning records "
+    "enter Dispatch; and only Dispatch Approved records "
+    "enter Confirmation."
 )
 
 
@@ -1560,18 +1494,13 @@ st.markdown(
 # FILTERS
 # ============================================================
 
-st.markdown(
-    "<div class='section-title'>🔎 Filters</div>",
-    unsafe_allow_html=True,
+st.subheader(
+    "🔎 Filters"
 )
 
-st.markdown(
-    """
-    <div class='section-subtitle'>
-        Filter the pending queues without changing the CRM source data.
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.caption(
+    "Filter the pending queues without changing the "
+    "underlying CRM data."
 )
 
 filter_cols = st.columns(
@@ -1583,7 +1512,9 @@ with filter_cols[0]:
 
     search_text = st.text_input(
         "Search",
-        placeholder="Customer, phone number or advisor…",
+        placeholder=(
+            "Customer, phone number or advisor…"
+        ),
     )
 
 
@@ -1602,8 +1533,13 @@ valid_dates = sale_dates.dropna()
 
 if not valid_dates.empty:
 
-    min_date = valid_dates.min().date()
-    max_date = valid_dates.max().date()
+    min_date = (
+        valid_dates.min().date()
+    )
+
+    max_date = (
+        valid_dates.max().date()
+    )
 
 else:
 
@@ -1639,14 +1575,15 @@ with filter_cols[3]:
         sorted(
             [
                 x
-                for x in
-                queue_df[
-                    "Advisor"
-                ]
-                .dropna()
-                .astype(str)
-                .unique()
-                .tolist()
+                for x in (
+                    queue_df[
+                        "Advisor"
+                    ]
+                    .dropna()
+                    .astype(str)
+                    .unique()
+                    .tolist()
+                )
                 if x
             ]
         )
@@ -1672,20 +1609,26 @@ stage_filter = st.multiselect(
 
 
 # ============================================================
-# APPLY FILTERS
+# FILTER DATA
 # ============================================================
 
 filtered_df = queue_df.copy()
 
 if not filtered_df.empty:
 
-    filtered_df["_SaleDate"] = pd.to_datetime(
-        filtered_df["Sale Date"],
-        errors="coerce",
+    filtered_df["_SaleDate"] = (
+        pd.to_datetime(
+            filtered_df[
+                "Sale Date"
+            ],
+            errors="coerce",
+        )
     )
 
     filtered_df = filtered_df[
-        filtered_df["_SaleDate"]
+        filtered_df[
+            "_SaleDate"
+        ]
         .dt.date
         .between(
             date_from,
@@ -1694,16 +1637,24 @@ if not filtered_df.empty:
         )
     ]
 
-    if selected_advisor != "All Advisors":
+    if (
+        selected_advisor
+        != "All Advisors"
+    ):
 
         filtered_df = filtered_df[
-            filtered_df["Advisor"]
+            filtered_df[
+                "Advisor"
+            ]
             == selected_advisor
         ]
 
     if search_text.strip():
 
-        needle = search_text.strip()
+        needle = (
+            search_text
+            .strip()
+        )
 
         blob = (
             filtered_df[
@@ -1733,8 +1684,8 @@ if not filtered_df.empty:
     if stage_filter:
 
         stage_regex = "|".join(
-            re.escape(x)
-            for x in stage_filter
+            re.escape(stage)
+            for stage in stage_filter
         )
 
         filtered_df = filtered_df[
@@ -1749,35 +1700,35 @@ if not filtered_df.empty:
             )
         ]
 
-    filtered_df = filtered_df.drop(
-        columns=["_SaleDate"],
-        errors="ignore",
+    filtered_df = (
+        filtered_df
+        .drop(
+            columns=[
+                "_SaleDate"
+            ],
+            errors="ignore",
+        )
     )
 
 
 st.caption(
-    f"Showing {len(filtered_df):,} pending sale(s) "
-    f"from {len(queue_df):,} total pending sale(s)."
+    f"Showing {len(filtered_df):,} "
+    f"pending sale(s) from "
+    f"{len(queue_df):,} total pending sale(s)."
 )
 
 
 # ============================================================
-# ALL PENDING TABLE
+# ALL PENDING
 # ============================================================
 
-st.markdown(
-    "<div class='section-title'>📋 All Pending</div>",
-    unsafe_allow_html=True,
+st.subheader(
+    "📋 All Pending"
 )
 
-st.markdown(
-    """
-    <div class='section-subtitle'>
-        One row per sale. Pending Stage(s) shows only workflow
-        stages where the sale is genuinely pending.
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.caption(
+    "One row per sale. Pending Stage(s) shows only stages "
+    "where the sale is genuinely pending."
 )
 
 all_display = (
@@ -1798,17 +1749,20 @@ all_display = (
     .copy()
 )
 
-
 if not all_display.empty:
 
-    all_display["Sale Date"] = (
+    all_display[
+        "Sale Date"
+    ] = (
         pd.to_datetime(
             all_display[
                 "Sale Date"
             ],
             errors="coerce",
         )
-        .dt.strftime("%d/%m/%Y")
+        .dt.strftime(
+            "%d/%m/%Y"
+        )
     )
 
     st.dataframe(
@@ -1883,26 +1837,21 @@ else:
 
 st.divider()
 
-st.markdown(
-    "<div class='section-title'>🗂️ Stage Queues</div>",
-    unsafe_allow_html=True,
+st.subheader(
+    "🗂️ Stage Queues"
 )
 
-st.markdown(
-    """
-    <div class='section-subtitle'>
-        Each tab contains only sales that are genuinely pending
-        at that specific stage. A sale is not pushed into a
-        downstream queue until the preceding stage is complete.
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.caption(
+    "Each tab contains only sales that have actually reached "
+    "that workflow stage and are still pending there."
 )
 
 
 queue_tabs = st.tabs(
     [
-        f"{STAGE_ICONS[stage]} {stage} ({stage_counts[stage]:,})"
+        f"{STAGE_ICONS[stage]} "
+        f"{stage} "
+        f"({stage_counts[stage]:,})"
         for stage in STAGES
     ]
 )
@@ -1926,9 +1875,11 @@ for tab, stage in zip(
 
     with tab:
 
-        reason_column = stage_reason_columns[
-            stage
-        ]
+        reason_column = (
+            stage_reason_columns[
+                stage
+            ]
+        )
 
         if filtered_df.empty:
 
@@ -1949,203 +1900,206 @@ for tab, stage in zip(
                 .copy()
             )
 
-        if not stage_df.empty:
-
-            display_rows = []
-
-            for _, row in stage_df.iterrows():
-
-                reason = safe_text(
-                    row.get(
-                        reason_column,
-                        "",
-                    )
-                )
-
-                # Try to identify the source row by the record key.
-                source_rows = sheet_df[
-                    sheet_df.apply(
-                        lambda x:
-                            make_record_key(
-                                x.get(
-                                    API_COLUMNS[
-                                        "sale_date"
-                                    ]
-                                ),
-                                x.get(
-                                    API_COLUMNS[
-                                        "phone"
-                                    ]
-                                ),
-                            )
-                            == safe_text(
-                                row.get(
-                                    "Record Key",
-                                    "",
-                                )
-                            ),
-                        axis=1,
-                    )
-                ]
-
-                source_row = (
-                    source_rows.iloc[-1]
-                    if not source_rows.empty
-                    else None
-                )
-
-                display_rows.append(
-                    {
-                        "Sale Date":
-                            row.get(
-                                "Sale Date"
-                            ),
-
-                        "Advisor":
-                            row.get(
-                                "Advisor",
-                                "",
-                            ),
-
-                        "Customer Name":
-                            row.get(
-                                "Customer Name",
-                                "",
-                            ),
-
-                        "Phone Number":
-                            row.get(
-                                "Phone Number",
-                                "",
-                            ),
-
-                        "Pending Stage":
-                            stage,
-
-                        "Pending Reason":
-                            reason,
-
-                        "Current Status":
-                            (
-                                status_display(
-                                    source_row,
-                                    stage,
-                                )
-                                if source_row
-                                is not None
-                                else ""
-                            ),
-
-                        "Remarks / Latest Note":
-                            (
-                                remarks_display(
-                                    source_row,
-                                    stage,
-                                )
-                                if source_row
-                                is not None
-                                else ""
-                            ),
-
-                        "Other Open Stages":
-                            row.get(
-                                "Pending Stage(s)",
-                                "",
-                            ),
-                    }
-                )
-
-            stage_display = pd.DataFrame(
-                display_rows
-            )
-
-            stage_display["Sale Date"] = (
-                pd.to_datetime(
-                    stage_display[
-                        "Sale Date"
-                    ],
-                    errors="coerce",
-                )
-                .dt.strftime("%d/%m/%Y")
-            )
-
-            st.dataframe(
-                stage_display,
-                use_container_width=True,
-                hide_index=True,
-                height=min(
-                    620,
-                    max(
-                        220,
-                        120
-                        + len(stage_display)
-                        * 36,
-                    ),
-                ),
-                column_config={
-
-                    "Sale Date":
-                        st.column_config.TextColumn(
-                            "SALE DATE",
-                            width="small",
-                        ),
-
-                    "Advisor":
-                        st.column_config.TextColumn(
-                            "ADVISOR",
-                            width="medium",
-                        ),
-
-                    "Customer Name":
-                        st.column_config.TextColumn(
-                            "CUSTOMER NAME",
-                            width="medium",
-                        ),
-
-                    "Phone Number":
-                        st.column_config.TextColumn(
-                            "PHONE NUMBER",
-                            width="medium",
-                        ),
-
-                    "Pending Stage":
-                        st.column_config.TextColumn(
-                            "STAGE",
-                            width="medium",
-                        ),
-
-                    "Pending Reason":
-                        st.column_config.TextColumn(
-                            "PENDING TYPE",
-                            width="medium",
-                        ),
-
-                    "Current Status":
-                        st.column_config.TextColumn(
-                            "CURRENT STATUS",
-                            width="large",
-                        ),
-
-                    "Remarks / Latest Note":
-                        st.column_config.TextColumn(
-                            "REMARKS / LATEST NOTE",
-                            width="large",
-                        ),
-
-                    "Other Open Stages":
-                        st.column_config.TextColumn(
-                            "OTHER OPEN STAGES",
-                            width="large",
-                        ),
-                },
-            )
-
-        else:
+        if stage_df.empty:
 
             st.success(
                 f"No {stage} records are pending "
                 "for the current filters."
             )
+
+            continue
+
+        display_rows = []
+
+        for _, row in stage_df.iterrows():
+
+            reason = safe_text(
+                row.get(
+                    reason_column,
+                    "",
+                )
+            )
+
+            source_rows = sheet_df[
+                sheet_df.apply(
+                    lambda source_row:
+                        make_record_key(
+                            source_row.get(
+                                API_COLUMNS[
+                                    "sale_date"
+                                ]
+                            ),
+                            source_row.get(
+                                API_COLUMNS[
+                                    "phone"
+                                ]
+                            ),
+                        )
+                        == safe_text(
+                            row.get(
+                                "Record Key",
+                                "",
+                            )
+                        ),
+                    axis=1,
+                )
+            ]
+
+            source_row = (
+                source_rows.iloc[-1]
+                if not source_rows.empty
+                else None
+            )
+
+            display_rows.append(
+                {
+                    "Sale Date":
+                        row.get(
+                            "Sale Date"
+                        ),
+
+                    "Advisor":
+                        row.get(
+                            "Advisor",
+                            "",
+                        ),
+
+                    "Customer Name":
+                        row.get(
+                            "Customer Name",
+                            "",
+                        ),
+
+                    "Phone Number":
+                        row.get(
+                            "Phone Number",
+                            "",
+                        ),
+
+                    "Pending Stage":
+                        stage,
+
+                    "Pending Type":
+                        reason,
+
+                    "Current Status":
+                        (
+                            status_display(
+                                source_row,
+                                stage,
+                            )
+                            if source_row
+                            is not None
+                            else ""
+                        ),
+
+                    "Remarks / Latest Note":
+                        (
+                            remarks_display(
+                                source_row,
+                                stage,
+                            )
+                            if source_row
+                            is not None
+                            else ""
+                        ),
+
+                    "Other Open Stages":
+                        row.get(
+                            "Pending Stage(s)",
+                            "",
+                        ),
+                }
+            )
+
+        stage_display = pd.DataFrame(
+            display_rows
+        )
+
+        stage_display[
+            "Sale Date"
+        ] = (
+            pd.to_datetime(
+                stage_display[
+                    "Sale Date"
+                ],
+                errors="coerce",
+            )
+            .dt.strftime(
+                "%d/%m/%Y"
+            )
+        )
+
+        st.dataframe(
+            stage_display,
+            use_container_width=True,
+            hide_index=True,
+            height=min(
+                620,
+                max(
+                    220,
+                    120
+                    + len(stage_display)
+                    * 36,
+                ),
+            ),
+            column_config={
+
+                "Sale Date":
+                    st.column_config.TextColumn(
+                        "SALE DATE",
+                        width="small",
+                    ),
+
+                "Advisor":
+                    st.column_config.TextColumn(
+                        "ADVISOR",
+                        width="medium",
+                    ),
+
+                "Customer Name":
+                    st.column_config.TextColumn(
+                        "CUSTOMER NAME",
+                        width="medium",
+                    ),
+
+                "Phone Number":
+                    st.column_config.TextColumn(
+                        "PHONE NUMBER",
+                        width="medium",
+                    ),
+
+                "Pending Stage":
+                    st.column_config.TextColumn(
+                        "STAGE",
+                        width="medium",
+                    ),
+
+                "Pending Type":
+                    st.column_config.TextColumn(
+                        "PENDING TYPE",
+                        width="medium",
+                    ),
+
+                "Current Status":
+                    st.column_config.TextColumn(
+                        "CURRENT STATUS",
+                        width="large",
+                    ),
+
+                "Remarks / Latest Note":
+                    st.column_config.TextColumn(
+                        "REMARKS / LATEST NOTE",
+                        width="large",
+                    ),
+
+                "Other Open Stages":
+                    st.column_config.TextColumn(
+                        "OTHER OPEN STAGES",
+                        width="large",
+                    ),
+            },
+        )
 
 
 # ============================================================
@@ -2204,14 +2158,18 @@ with st.expander(
 
     if not status_snapshot.empty:
 
-        status_snapshot["Sale Date"] = (
+        status_snapshot[
+            "Sale Date"
+        ] = (
             pd.to_datetime(
                 status_snapshot[
                     "Sale Date"
                 ],
                 errors="coerce",
             )
-            .dt.strftime("%d/%m/%Y")
+            .dt.strftime(
+                "%d/%m/%Y"
+            )
         )
 
     st.dataframe(
@@ -2247,5 +2205,6 @@ with footer_left:
 with footer_right:
 
     st.caption(
-        f"Last Google Sheet fetch: {fetched_at}"
+        f"Last Google Sheet fetch: "
+        f"{fetched_at}"
     )
