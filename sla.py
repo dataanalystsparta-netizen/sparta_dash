@@ -220,44 +220,260 @@ PROVISIONING_READY_FOR_DISPATCH = {
 st.markdown(
     """
     <style>
+    :root {
+        --sparta-bg: #f5f7fb;
+        --sparta-card: #ffffff;
+        --sparta-border: #e5eaf2;
+        --sparta-text: #0f172a;
+        --sparta-muted: #64748b;
+        --sparta-blue: #2563eb;
+        --sparta-blue-2: #4f46e5;
+        --sparta-green: #16a34a;
+        --sparta-yellow: #d97706;
+        --sparta-red: #dc2626;
+    }
+
+    .stApp {
+        background: radial-gradient(circle at top left, #eef4ff 0%, #f7f9fc 34%, var(--sparta-bg) 100%);
+    }
 
     .block-container {
-        max-width: 1540px;
-        padding-top: 1.25rem;
-        padding-bottom: 2.2rem;
+        max-width: 1560px;
+        padding-top: 1rem;
+        padding-bottom: 2.6rem;
     }
 
-    [data-testid="stMetric"] {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 9px 10px 8px;
-        min-height: 82px;
-        box-shadow: 0 3px 10px rgba(15,23,42,.04);
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0f172a 0%, #111827 55%, #172033 100%);
+        border-right: 1px solid rgba(255,255,255,.06);
     }
 
-    [data-testid="stMetricLabel"] {
-        font-size: .60rem !important;
-        font-weight: 850 !important;
-        text-transform: uppercase !important;
-        letter-spacing: .35px !important;
-        line-height: 1.15 !important;
+    [data-testid="stSidebar"] * {
+        color: #e2e8f0;
     }
 
-    [data-testid="stMetricValue"] {
-        color: #0f172a !important;
-        font-size: 1.50rem !important;
-        font-weight: 900 !important;
-        line-height: 1.05 !important;
+    [data-testid="stSidebar"] [data-testid="stMetric"] {
+        background: rgba(255,255,255,.055);
+        border: 1px solid rgba(255,255,255,.08);
+        box-shadow: none;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stMetricLabel"] {
+        color: #94a3b8 !important;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stMetricValue"] {
+        color: #f8fafc !important;
+    }
+
+    .sparta-hero {
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 1.15rem;
+        padding: 1.35rem 1.45rem;
+        border: 1px solid #dbe5f4;
+        border-radius: 22px;
+        background: linear-gradient(135deg, #0f172a 0%, #172554 58%, #1d4ed8 100%);
+        box-shadow: 0 18px 40px rgba(15,23,42,.14);
+    }
+
+    .sparta-hero::after {
+        content: "";
+        position: absolute;
+        width: 240px;
+        height: 240px;
+        right: -80px;
+        top: -120px;
+        border-radius: 50%;
+        background: rgba(255,255,255,.08);
+    }
+
+    .sparta-kicker {
+        color: #93c5fd;
+        font-size: .72rem;
+        font-weight: 850;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        margin-bottom: .18rem;
+    }
+
+    .sparta-title {
+        color: #ffffff;
+        font-size: clamp(1.55rem, 2.5vw, 2.15rem);
+        font-weight: 900;
+        line-height: 1.08;
+        margin: 0;
+    }
+
+    .sparta-subtitle {
+        color: #cbd5e1;
+        font-size: .92rem;
+        line-height: 1.48;
+        max-width: 900px;
+        margin-top: .48rem;
+    }
+
+    .sparta-refresh {
+        text-align: right;
+        color: #cbd5e1;
+        font-size: .73rem;
+        line-height: 1.35;
+        position: relative;
+        z-index: 2;
+    }
+
+    .sparta-refresh strong {
+        display: block;
+        color: #ffffff;
+        font-size: .86rem;
+        margin-top: .15rem;
+    }
+
+    .sparta-section {
+        margin-top: 1.15rem;
+        margin-bottom: .65rem;
+    }
+
+    .sparta-section-title {
+        color: var(--sparta-text);
+        font-size: 1.12rem;
+        font-weight: 900;
+        letter-spacing: -.01em;
+        margin-bottom: .08rem;
+    }
+
+    .sparta-section-caption {
+        color: var(--sparta-muted);
+        font-size: .82rem;
+        line-height: 1.45;
+    }
+
+    .sparta-card {
+        background: rgba(255,255,255,.94);
+        border: 1px solid var(--sparta-border);
+        border-radius: 18px;
+        box-shadow: 0 8px 24px rgba(15,23,42,.055);
+    }
+
+    .sparta-kpis {
+        display: grid;
+        grid-template-columns: repeat(8, minmax(0, 1fr));
+        gap: .7rem;
+        margin: .55rem 0 .35rem;
+    }
+
+    .sparta-kpi {
+        position: relative;
+        overflow: hidden;
+        padding: .85rem .85rem .72rem;
+        min-height: 92px;
+        border: 1px solid var(--sparta-border);
+        border-radius: 16px;
+        background: rgba(255,255,255,.96);
+        box-shadow: 0 7px 20px rgba(15,23,42,.05);
+    }
+
+    .sparta-kpi::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 4px;
+        background: var(--sparta-blue);
+    }
+
+    .sparta-kpi-label {
+        color: #64748b;
+        font-size: .66rem;
+        font-weight: 850;
+        letter-spacing: .045em;
+        text-transform: uppercase;
+        line-height: 1.15;
+    }
+
+    .sparta-kpi-value {
+        color: #0f172a;
+        font-size: 1.42rem;
+        font-weight: 900;
+        line-height: 1.05;
+        margin-top: .3rem;
+    }
+
+    .sparta-kpi-sub {
+        color: #94a3b8;
+        font-size: .64rem;
+        margin-top: .28rem;
+        white-space: nowrap;
+    }
+
+    .sparta-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem;
+        margin: .55rem 0 .8rem;
+    }
+
+    .sparta-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .34rem .62rem;
+        border-radius: 999px;
+        font-size: .7rem;
+        font-weight: 800;
+        border: 1px solid transparent;
+    }
+
+    .sparta-pill.green { background:#ecfdf5; color:#166534; border-color:#bbf7d0; }
+    .sparta-pill.yellow { background:#fffbeb; color:#92400e; border-color:#fde68a; }
+    .sparta-pill.red { background:#fef2f2; color:#991b1b; border-color:#fecaca; }
+
+    .sparta-filter-box {
+        padding: .95rem 1rem .8rem;
+        margin-bottom: .9rem;
+        border: 1px solid var(--sparta-border);
+        border-radius: 18px;
+        background: rgba(255,255,255,.9);
+        box-shadow: 0 7px 20px rgba(15,23,42,.04);
     }
 
     [data-testid="stDataFrame"] {
-        border-radius: 12px;
+        border-radius: 16px;
         overflow: hidden;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 5px 16px rgba(15,23,42,.035);
+        border: 1px solid var(--sparta-border);
+        box-shadow: 0 8px 24px rgba(15,23,42,.055);
+        background: #ffffff;
     }
 
+    [data-testid="stDataFrame"] [role="columnheader"] {
+        font-weight: 850;
+    }
+
+    .stButton > button, .stDownloadButton > button {
+        border-radius: 11px;
+        font-weight: 800;
+    }
+
+    .stTextInput > div > div,
+    .stSelectbox > div > div,
+    .stMultiSelect > div > div {
+        border-radius: 11px;
+    }
+
+    div[data-testid="stExpander"] {
+        border: 1px solid var(--sparta-border);
+        border-radius: 16px;
+        background: rgba(255,255,255,.86);
+        overflow: hidden;
+    }
+
+    @media (max-width: 1250px) {
+        .sparta-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 720px) {
+        .sparta-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .sparta-refresh { text-align: left; margin-top: .5rem; }
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1373,38 +1589,37 @@ except Exception as exc:
 # ============================================================
 
 header_left, header_right = st.columns(
-    [5, 1],
+    [5.2, 1.4],
     vertical_alignment="center",
 )
 
 with header_left:
-
-    st.caption(
-        "SPARTA CRM · OPERATIONS QUEUE"
-    )
-
-    st.title(
-        "⏳ Sparta Pending Operations"
-    )
-
-    st.write(
-        "Live records from the CRM mirror "
-        "showing only workflow stages where "
-        "work is genuinely pending. "
-        "Downstream stages open only after "
-        "the previous stage is completed."
+    st.markdown(
+        f"""
+        <div class="sparta-hero">
+            <div class="sparta-kicker">SPARTA CRM · OPERATIONS QUEUE</div>
+            <div class="sparta-title">⏳ Sparta Pending Operations</div>
+            <div class="sparta-subtitle">
+                A live operational view of records waiting at each workflow stage.
+                Downstream stages appear only after the preceding stage is completed.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 with header_right:
-
-    st.caption(
-        "Last Google Sheet refresh"
+    st.markdown(
+        f"""
+        <div class="sparta-hero" style="height:100%;">
+            <div class="sparta-refresh">
+                Last Google Sheet refresh
+                <strong>{fetched_at}</strong>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-
-    st.write(
-        f"**{fetched_at}**"
-    )
-
 
 # ============================================================
 # SIDEBAR
@@ -1630,54 +1845,76 @@ stage_counts = {
 # KPI SECTION
 # ============================================================
 
-st.subheader("📊 Pending Breakdown")
-st.caption(
-    "Counts are distinct pending sales by workflow stage. A sale can appear in "
-    "more than one stage when multiple stages are still open in the CRM."
+st.markdown(
+    """
+    <div class="sparta-section">
+        <div class="sparta-section-title">📊 Pending Breakdown</div>
+        <div class="sparta-section-caption">
+            Distinct pending sales by workflow stage. A sale can appear in more than one stage when multiple stages remain open.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 welcome_total_count = welcome_followup_count + welcome_pending_count
 
 kpi_items = [
-    ("🧪 QA", quality_pending_count),
-    ("📞 Welcome", welcome_total_count),
-    ("⚙️ Provisioning", provisioning_pending_count),
-    ("✉️ Dispatch", dispatch_pending_count),
-    ("✅ Confirmation", confirmation_pending_count),
-    ("📡 Live", live_pending_count),
-    ("🎯 Potential", potential_count),
-    ("📋 Pending Sales", len(queue_df)),
+    ("🧪", "QA", quality_pending_count, "QA-Pending"),
+    ("📞", "Welcome", welcome_total_count, f"{welcome_pending_count:,} pending · {welcome_followup_count:,} follow-up"),
+    ("⚙️", "Provisioning", provisioning_pending_count, "Pending"),
+    ("✉️", "Dispatch", dispatch_pending_count, "Pending"),
+    ("✅", "Confirmation", confirmation_pending_count, "Pending"),
+    ("📡", "Onboarding", live_pending_count, "Pending"),
+    ("🎯", "Potential", potential_count, "Potential Opportunity"),
+    ("📋", "Pending Sales", len(queue_df), "Distinct sales"),
 ]
 
-kpi_cols = st.columns(8, gap="small")
-for col, (label, value) in zip(kpi_cols, kpi_items):
-    with col:
-        st.metric(label, f"{value:,}")
+card_html = '<div class="sparta-kpis">'
+for icon, label, value, sub in kpi_items:
+    card_html += (
+        '<div class="sparta-kpi">'
+        f'<div class="sparta-kpi-label">{icon} {label}</div>'
+        f'<div class="sparta-kpi-value">{value:,}</div>'
+        f'<div class="sparta-kpi-sub">{sub}</div>'
+        '</div>'
+    )
+card_html += '</div>'
 
-st.caption(
-    f"Welcome split: {welcome_pending_count:,} pending · "
-    f"{welcome_followup_count:,} follow-up · "
-    f"Total pending sales: {len(queue_df):,}."
+st.markdown(card_html, unsafe_allow_html=True)
+
+st.markdown(
+    """
+    <div class="sparta-legend">
+        <span class="sparta-pill green">🟢 Completed / moved forward</span>
+        <span class="sparta-pill yellow">🟡 Pending / active</span>
+        <span class="sparta-pill red">🔴 Ended / rejected</span>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 st.info(
     "Workflow is sequential: QA → Welcome → Provisioning → Dispatch → "
-    "Confirmation → Live / Onboarding. Blank downstream statuses are treated "
-    "as Pending once shown in the workflow table."
+    "Confirmation → Onboarding. Blank downstream statuses are treated as "
+    "Pending once the sale has reached that stage."
 )
-
 
 # ============================================================
 # FILTERS
 # ============================================================
 
-st.subheader(
-    "🔎 Filters"
-)
-
-st.caption(
-    "Filter the pending queues without changing the "
-    "underlying CRM data."
+st.markdown(
+    """
+    <div class="sparta-section">
+        <div class="sparta-section-title">🔎 Filters</div>
+        <div class="sparta-section-caption">
+            Narrow the operational queue by sale date, advisor, search text, or pending workflow stage.
+        </div>
+    </div>
+    <div class="sparta-filter-box">
+    """,
+    unsafe_allow_html=True,
 )
 
 filter_cols = st.columns(
@@ -1784,6 +2021,8 @@ stage_filter = st.multiselect(
     placeholder="All pending stages",
 )
 
+
+st.markdown("</div>", unsafe_allow_html=True)
 
 # ============================================================
 # FILTER DATA
@@ -1899,10 +2138,16 @@ st.caption(
 # DATE-OF-SALE BREAKDOWN
 # ============================================================
 
-st.subheader("📅 Pending by Sale Date")
-st.caption(
-    "Quick daily view of pending sales and the stages contributing to each date. "
-    "This follows the filters above."
+st.markdown(
+    """
+    <div class="sparta-section">
+        <div class="sparta-section-title">📅 Pending by Sale Date</div>
+        <div class="sparta-section-caption">
+            Daily view of pending sales and the stages contributing to each sale date. This follows the filters above.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 date_breakdown = build_date_breakdown(filtered_df)
@@ -1910,57 +2155,75 @@ date_breakdown = build_date_breakdown(filtered_df)
 if date_breakdown.empty:
     st.info("No date-wise pending records match the current filters.")
 else:
+    date_display = date_breakdown.copy()
+    date_numeric_cols = [
+        "Pending Sales",
+        "Quality",
+        "Welcome",
+        "Provisioning",
+        "Dispatch",
+        "Confirmation",
+        "Live / Onboarding",
+        "Potential Opportunity",
+    ]
+
+    for col in date_numeric_cols:
+        if col in date_display.columns:
+            date_display[col] = date_display[col].apply(
+                lambda value: "-" if int(value) == 0 else f"{int(value):,}"
+            )
+
     st.dataframe(
-        date_breakdown,
+        date_display,
         use_container_width=True,
         hide_index=True,
-        height=min(
-            420,
-            max(180, 92 + len(date_breakdown) * 34),
-        ),
+        height=min(430, max(190, 92 + len(date_display) * 34)),
         column_config={
             "Sale Date": st.column_config.TextColumn(
                 "SALE DATE", width="small"
             ),
-            "Pending Sales": st.column_config.NumberColumn(
-                "PENDING SALES", format="%d", width="small"
+            "Pending Sales": st.column_config.TextColumn(
+                "PENDING SALES", width="small"
             ),
-            "Quality": st.column_config.NumberColumn(
-                "QUALITY", format="%d", width="small"
+            "Quality": st.column_config.TextColumn(
+                "QUALITY", width="small"
             ),
-            "Welcome": st.column_config.NumberColumn(
-                "WELCOME", format="%d", width="small"
+            "Welcome": st.column_config.TextColumn(
+                "WELCOME", width="small"
             ),
-            "Provisioning": st.column_config.NumberColumn(
-                "PROVISIONING", format="%d", width="small"
+            "Provisioning": st.column_config.TextColumn(
+                "PROVISIONING", width="small"
             ),
-            "Dispatch": st.column_config.NumberColumn(
-                "DISPATCH", format="%d", width="small"
+            "Dispatch": st.column_config.TextColumn(
+                "DISPATCH", width="small"
             ),
-            "Confirmation": st.column_config.NumberColumn(
-                "CONFIRMATION", format="%d", width="small"
+            "Confirmation": st.column_config.TextColumn(
+                "CONFIRMATION", width="small"
             ),
-            "Live / Onboarding": st.column_config.NumberColumn(
-                "LIVE / ONBOARDING", format="%d", width="small"
+            "Live / Onboarding": st.column_config.TextColumn(
+                "ONBOARDING", width="small"
             ),
-            "Potential Opportunity": st.column_config.NumberColumn(
-                "POTENTIAL", format="%d", width="small"
+            "Potential Opportunity": st.column_config.TextColumn(
+                "POTENTIAL", width="small"
             ),
         },
     )
-
 
 # ============================================================
 # ALL PENDING
 # ============================================================
 
-st.subheader("📋 All Pending")
-st.caption(
-    "One row per pending sale. Every workflow stage is shown so you can scan "
-    "the full path at a glance. Blank downstream statuses are displayed as "
-    "Pending."
+st.markdown(
+    """
+    <div class="sparta-section">
+        <div class="sparta-section-title">📋 All Pending</div>
+        <div class="sparta-section-caption">
+            One row per pending sale. Scan the entire workflow path in a single view; downstream blanks are shown as Pending.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
-st.caption("🟢 Completed / moved forward   ·   🟡 Pending / active   ·   🔴 Ended / rejected")
 
 all_display = build_all_pending_display(filtered_df)
 
@@ -2017,10 +2280,20 @@ else:
 # RAW STATUS SNAPSHOT
 # ============================================================
 
-st.divider()
+st.markdown(
+    """
+    <div class="sparta-section">
+        <div class="sparta-section-title">🔍 Current CRM Status</div>
+        <div class="sparta-section-caption">
+            Optional raw status snapshot for the records currently matching your filters.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 with st.expander(
-    "🔍 View current CRM status fields",
+    "Open raw CRM status snapshot",
     expanded=False,
 ):
 
@@ -2102,20 +2375,16 @@ with st.expander(
 # FOOTER
 # ============================================================
 
-st.divider()
-
-footer_left, footer_right = st.columns(2)
+footer_left, footer_right = st.columns([3, 1])
 
 with footer_left:
-
-    st.caption(
-        "Sparta Pending Operations · "
-        "Live Google Sheet queue"
+    st.markdown(
+        '<div style="color:#64748b;font-size:.74rem;font-weight:700;">Sparta Pending Operations · Live Google Sheet queue</div>', 
+        unsafe_allow_html=True,
     )
 
 with footer_right:
-
-    st.caption(
-        f"Last Google Sheet fetch: "
-        f"{fetched_at}"
+    st.markdown(
+        f'<div style="color:#94a3b8;font-size:.72rem;text-align:right;">Last fetch · {fetched_at}</div>', 
+        unsafe_allow_html=True,
     )
