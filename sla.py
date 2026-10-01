@@ -964,13 +964,17 @@ def remarks_display(row, stage):
 # TABLE DISPLAY / COLOUR HELPERS
 # ============================================================
 
+# These are the column names used inside queue_df / the All Pending table.
+# Some CRM source headers differ from the queue display names (notably
+# Dispatch and Live / Onboarding), so the display layer must use these
+# queue columns rather than the raw API header names.
 SEQUENTIAL_STAGE_FIELDS = {
-    "Quality": API_COLUMNS["quality"],
-    "Welcome": API_COLUMNS["welcome"],
-    "Provisioning": API_COLUMNS["provisioning"],
-    "Dispatch": API_COLUMNS["dispatch"],
-    "Confirmation": API_COLUMNS["confirmation"],
-    "Live / Onboarding": API_COLUMNS["live"],
+    "Quality": "Quality Status",
+    "Welcome": "Welcome Call Status",
+    "Provisioning": "Provisioning Status",
+    "Dispatch": "Dispatch Status",
+    "Confirmation": "Confirmation Status",
+    "Live / Onboarding": "Live / Onboarding Status",
 }
 
 SEQUENTIAL_STAGE_DISPLAY_COLUMNS = [
