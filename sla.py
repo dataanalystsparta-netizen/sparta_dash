@@ -1673,7 +1673,7 @@ with header_right:
         f"""
         <div class="sparta-hero" style="height:100%;">
             <div class="sparta-refresh">
-                Last Google Sheet refresh
+                Last CRM refresh time
                 <strong>{fetched_at}</strong>
             </div>
         </div>
