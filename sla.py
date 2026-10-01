@@ -230,23 +230,25 @@ st.markdown(
     [data-testid="stMetric"] {
         background: #ffffff;
         border: 1px solid #e2e8f0;
-        border-radius: 14px;
-        padding: 14px 16px 12px;
-        min-height: 108px;
-        box-shadow: 0 4px 14px rgba(15,23,42,.045);
+        border-radius: 12px;
+        padding: 9px 10px 8px;
+        min-height: 82px;
+        box-shadow: 0 3px 10px rgba(15,23,42,.04);
     }
 
     [data-testid="stMetricLabel"] {
-        font-size: .66rem !important;
+        font-size: .60rem !important;
         font-weight: 850 !important;
         text-transform: uppercase !important;
-        letter-spacing: .45px !important;
+        letter-spacing: .35px !important;
+        line-height: 1.15 !important;
     }
 
     [data-testid="stMetricValue"] {
         color: #0f172a !important;
-        font-size: 1.85rem !important;
+        font-size: 1.50rem !important;
         font-weight: 900 !important;
+        line-height: 1.05 !important;
     }
 
     [data-testid="stDataFrame"] {
@@ -739,6 +741,228 @@ def remarks_display(row, stage):
             mapping.get(stage, ""),
             "",
         )
+    )
+
+
+# ============================================================
+# TABLE DISPLAY / COLOUR HELPERS
+# ============================================================
+
+SEQUENTIAL_STAGE_FIELDS = {
+    "Quality": API_COLUMNS["quality"],
+    "Welcome": API_COLUMNS["welcome"],
+    "Provisioning": API_COLUMNS["provisioning"],
+    "Dispatch": API_COLUMNS["dispatch"],
+    "Confirmation": API_COLUMNS["confirmation"],
+    "Live / Onboarding": API_COLUMNS["live"],
+}
+
+SEQUENTIAL_STAGE_DISPLAY_COLUMNS = [
+    "Quality",
+    "Welcome",
+    "Provisioning",
+    "Dispatch",
+    "Confirmation",
+    "Live / Onboarding",
+]
+
+RED_STATUS_TERMS = (
+    "cancel",
+    "reject",
+    "rejection",
+    "qa reject",
+    "declined",
+    "decline",
+    "failed",
+    "failure",
+)
+
+YELLOW_STATUS_TERMS = (
+    "pending",
+    "followup",
+    "follow up",
+    "rework",
+    "delay",
+    "chasing",
+    "ringing",
+    "in progress",
+    "processing",
+    "other work",
+    "other-work",
+    "potential opportunity",
+)
+
+GREEN_STATUS_TERMS = (
+    "approved",
+    "completed",
+    "complete",
+    "confirmed",
+    "dispatched",
+    "provisioned",
+    "processed",
+    "live",
+    "committed",
+    "accepted",
+    "order provisioned",
+)
+
+
+def all_pending_display_status(row, stage) -> str:
+    """Show every sequential workflow stage; blanks become Pending."""
+    if stage == "Potential Opportunity":
+        return (
+            "Potential Opportunity"
+            if safe_text(row.get("_PotentialReason", ""))
+            else "—"
+        )
+
+    field = SEQUENTIAL_STAGE_FIELDS.get(stage)
+    value = clean_display_text(row.get(field, "")) if field else ""
+    return value if value else "Pending"
+
+
+def status_cell_style(value) -> str:
+    """Traffic-light styling for workflow states."""
+    text = normalize_status(value)
+
+    if text in {"", "—", "na", "n/a"}:
+        return ""
+
+    if any(term in text for term in RED_STATUS_TERMS):
+        return (
+            "background-color:#fee2e2; color:#991b1b; "
+            "font-weight:800; border-left:4px solid #dc2626;"
+        )
+
+    if any(term in text for term in GREEN_STATUS_TERMS):
+        return (
+            "background-color:#dcfce7; color:#166534; "
+            "font-weight:800; border-left:4px solid #16a34a;"
+        )
+
+    # Anything explicitly pending / in-progress, including blanks converted
+    # to Pending, is shown as the active yellow workflow state.
+    if any(term in text for term in YELLOW_STATUS_TERMS):
+        return (
+            "background-color:#fef3c7; color:#92400e; "
+            "font-weight:800; border-left:4px solid #f59e0b;"
+        )
+
+    # Unknown non-empty states are treated as active work rather than hidden.
+    return (
+        "background-color:#fef3c7; color:#92400e; "
+        "font-weight:800; border-left:4px solid #f59e0b;"
+    )
+
+
+def build_all_pending_display(dataframe) -> pd.DataFrame:
+    """Create the workflow-style table used by the main All Pending view."""
+    columns = [
+        "Sale Date",
+        "Advisor",
+        "Customer Name",
+        "Phone Number",
+        *SEQUENTIAL_STAGE_DISPLAY_COLUMNS,
+        "Potential Opportunity",
+    ]
+
+    if dataframe.empty:
+        return pd.DataFrame(columns=columns)
+
+    display_rows = []
+
+    for _, row in dataframe.iterrows():
+        display_rows.append(
+            {
+                "Sale Date": row.get("Sale Date"),
+                "Advisor": clean_display_text(row.get("Advisor", "")),
+                "Customer Name": clean_display_text(row.get("Customer Name", "")),
+                "Phone Number": clean_phone(row.get("Phone Number", "")),
+                **{
+                    stage: all_pending_display_status(row, stage)
+                    for stage in SEQUENTIAL_STAGE_DISPLAY_COLUMNS
+                },
+                "Potential Opportunity": all_pending_display_status(
+                    row, "Potential Opportunity"
+                ),
+            }
+        )
+
+    result = pd.DataFrame(display_rows, columns=columns)
+    result["Sale Date"] = pd.to_datetime(
+        result["Sale Date"], errors="coerce"
+    ).dt.strftime("%d/%m/%Y")
+    result["Sale Date"] = result["Sale Date"].fillna("")
+    return result
+
+
+def build_date_breakdown(dataframe) -> pd.DataFrame:
+    """Daily sale-date view of distinct pending sales and pending stages."""
+    columns = [
+        "Sale Date",
+        "Pending Sales",
+        "Quality",
+        "Welcome",
+        "Provisioning",
+        "Dispatch",
+        "Confirmation",
+        "Live / Onboarding",
+        "Potential Opportunity",
+    ]
+
+    if dataframe.empty:
+        return pd.DataFrame(columns=columns)
+
+    work = dataframe.copy()
+    work["_BreakdownDate"] = pd.to_datetime(
+        work["Sale Date"], errors="coerce"
+    ).dt.normalize()
+    work = work[work["_BreakdownDate"].notna()].copy()
+
+    if work.empty:
+        return pd.DataFrame(columns=columns)
+
+    records = []
+    reason_columns = {
+        "Quality": "_QualityReason",
+        "Welcome": "_WelcomeReason",
+        "Provisioning": "_ProvisioningReason",
+        "Dispatch": "_DispatchReason",
+        "Confirmation": "_ConfirmationReason",
+        "Live / Onboarding": "_LiveReason",
+        "Potential Opportunity": "_PotentialReason",
+    }
+
+    for day, day_df in work.groupby("_BreakdownDate", sort=False):
+        record = {
+            "Sale Date": day.strftime("%d/%m/%Y"),
+            "Pending Sales": int(day_df["Record Key"].nunique()),
+        }
+        for stage, reason_col in reason_columns.items():
+            record[stage] = int(
+                day_df[reason_col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+                .ne("")
+                .sum()
+            )
+        records.append(record)
+
+    result = pd.DataFrame(records, columns=columns)
+    return result.sort_values(
+        "Sale Date",
+        key=lambda s: pd.to_datetime(s, format="%d/%m/%Y", errors="coerce"),
+        ascending=False,
+    ).reset_index(drop=True)
+
+
+def style_workflow_table(dataframe):
+    """Apply traffic-light styling only to workflow status columns."""
+    return dataframe.style.map(
+        status_cell_style,
+        subset=[c for c in SEQUENTIAL_STAGE_DISPLAY_COLUMNS + ["Potential Opportunity"]
+                if c in dataframe.columns],
     )
 
 
@@ -1237,6 +1461,9 @@ with st.sidebar:
                     "_LiveReason",
                     "_PotentialReason",
                     "Record Key",
+                    "Pending Stage(s)",
+                    "Pending Detail",
+                    "Pending Count",
                 ],
                 errors="ignore",
             )
@@ -1403,90 +1630,40 @@ stage_counts = {
 # KPI SECTION
 # ============================================================
 
-st.subheader(
-    "📊 Pending Breakdown"
+st.subheader("📊 Pending Breakdown")
+st.caption(
+    "Counts are distinct pending sales by workflow stage. A sale can appear in "
+    "more than one stage when multiple stages are still open in the CRM."
 )
+
+welcome_total_count = welcome_followup_count + welcome_pending_count
+
+kpi_items = [
+    ("🧪 QA", quality_pending_count),
+    ("📞 Welcome", welcome_total_count),
+    ("⚙️ Provisioning", provisioning_pending_count),
+    ("✉️ Dispatch", dispatch_pending_count),
+    ("✅ Confirmation", confirmation_pending_count),
+    ("📡 Live", live_pending_count),
+    ("🎯 Potential", potential_count),
+    ("📋 Pending Sales", len(queue_df)),
+]
+
+kpi_cols = st.columns(8, gap="small")
+for col, (label, value) in zip(kpi_cols, kpi_items):
+    with col:
+        st.metric(label, f"{value:,}")
 
 st.caption(
-    "A blank downstream status becomes Pending only after "
-    "the sale has reached that stage. Blank is not shown "
-    "as a separate category."
+    f"Welcome split: {welcome_pending_count:,} pending · "
+    f"{welcome_followup_count:,} follow-up · "
+    f"Total pending sales: {len(queue_df):,}."
 )
-
-
-row1 = st.columns(
-    5,
-    gap="small",
-)
-
-with row1[0]:
-    st.metric(
-        "🧪 QA-Pending",
-        quality_pending_count,
-    )
-
-with row1[1]:
-    st.metric(
-        "📞 Welcome Followup",
-        welcome_followup_count,
-    )
-
-with row1[2]:
-    st.metric(
-        "📞 Welcome Pending",
-        welcome_pending_count,
-    )
-
-with row1[3]:
-    st.metric(
-        "⚙️ Provisioning Pending",
-        provisioning_pending_count,
-    )
-
-with row1[4]:
-    st.metric(
-        "✉️ Dispatch Pending",
-        dispatch_pending_count,
-    )
-
-
-row2 = st.columns(
-    4,
-    gap="small",
-)
-
-with row2[0]:
-    st.metric(
-        "✅ Confirmation Pending",
-        confirmation_pending_count,
-    )
-
-with row2[1]:
-    st.metric(
-        "📡 Live / Onboarding",
-        live_pending_count,
-    )
-
-with row2[2]:
-    st.metric(
-        "🎯 Potential Opportunity",
-        potential_count,
-    )
-
-with row2[3]:
-    st.metric(
-        "📋 Total Pending Sales",
-        len(queue_df),
-    )
-
 
 st.info(
-    "Queue logic is sequential: "
-    "QA-Pending stays in Quality; only QA-Approved records "
-    "enter Welcome; only Welcome Approved records enter "
-    "Provisioning; only dispatch-ready provisioning records "
-    "enter Dispatch; and only Dispatch Approved records "
-    "enter Confirmation."
+    "Workflow is sequential: QA → Welcome → Provisioning → Dispatch → "
+    "Confirmation → Live / Onboarding. Blank downstream statuses are treated "
+    "as Pending once shown in the workflow table."
 )
 
 
@@ -1719,387 +1896,121 @@ st.caption(
 
 
 # ============================================================
-# ALL PENDING
+# DATE-OF-SALE BREAKDOWN
 # ============================================================
 
-st.subheader(
-    "📋 All Pending"
-)
-
+st.subheader("📅 Pending by Sale Date")
 st.caption(
-    "One row per sale. Pending Stage(s) shows only stages "
-    "where the sale is genuinely pending."
+    "Quick daily view of pending sales and the stages contributing to each date. "
+    "This follows the filters above."
 )
 
-all_display = (
-    filtered_df
-    .drop(
-        columns=[
-            "Record Key",
-            "_QualityReason",
-            "_WelcomeReason",
-            "_ProvisioningReason",
-            "_DispatchReason",
-            "_ConfirmationReason",
-            "_LiveReason",
-            "_PotentialReason",
-        ],
-        errors="ignore",
-    )
-    .copy()
-)
+date_breakdown = build_date_breakdown(filtered_df)
 
-if not all_display.empty:
-
-    all_display[
-        "Sale Date"
-    ] = (
-        pd.to_datetime(
-            all_display[
-                "Sale Date"
-            ],
-            errors="coerce",
-        )
-        .dt.strftime(
-            "%d/%m/%Y"
-        )
-    )
-
+if date_breakdown.empty:
+    st.info("No date-wise pending records match the current filters.")
+else:
     st.dataframe(
-        all_display,
+        date_breakdown,
         use_container_width=True,
         hide_index=True,
         height=min(
-            610,
-            max(
-                200,
-                120
-                + len(all_display) * 35,
-            ),
+            420,
+            max(180, 92 + len(date_breakdown) * 34),
         ),
         column_config={
-
-            "Sale Date":
-                st.column_config.TextColumn(
-                    "SALE DATE",
-                    width="small",
-                ),
-
-            "Advisor":
-                st.column_config.TextColumn(
-                    "ADVISOR",
-                    width="medium",
-                ),
-
-            "Customer Name":
-                st.column_config.TextColumn(
-                    "CUSTOMER NAME",
-                    width="medium",
-                ),
-
-            "Phone Number":
-                st.column_config.TextColumn(
-                    "PHONE NUMBER",
-                    width="medium",
-                ),
-
-            "Pending Stage(s)":
-                st.column_config.TextColumn(
-                    "PENDING STAGE(S)",
-                    width="large",
-                ),
-
-            "Pending Detail":
-                st.column_config.TextColumn(
-                    "PENDING DETAIL",
-                    width="large",
-                ),
-
-            "Pending Count":
-                st.column_config.NumberColumn(
-                    "OPEN STAGES",
-                    format="%d",
-                    width="small",
-                ),
+            "Sale Date": st.column_config.TextColumn(
+                "SALE DATE", width="small"
+            ),
+            "Pending Sales": st.column_config.NumberColumn(
+                "PENDING SALES", format="%d", width="small"
+            ),
+            "Quality": st.column_config.NumberColumn(
+                "QUALITY", format="%d", width="small"
+            ),
+            "Welcome": st.column_config.NumberColumn(
+                "WELCOME", format="%d", width="small"
+            ),
+            "Provisioning": st.column_config.NumberColumn(
+                "PROVISIONING", format="%d", width="small"
+            ),
+            "Dispatch": st.column_config.NumberColumn(
+                "DISPATCH", format="%d", width="small"
+            ),
+            "Confirmation": st.column_config.NumberColumn(
+                "CONFIRMATION", format="%d", width="small"
+            ),
+            "Live / Onboarding": st.column_config.NumberColumn(
+                "LIVE / ONBOARDING", format="%d", width="small"
+            ),
+            "Potential Opportunity": st.column_config.NumberColumn(
+                "POTENTIAL", format="%d", width="small"
+            ),
         },
     )
 
-else:
-
-    st.info(
-        "No pending records match the current filters."
-    )
-
 
 # ============================================================
-# STAGE QUEUES
+# ALL PENDING
 # ============================================================
 
-st.divider()
-
-st.subheader(
-    "🗂️ Stage Queues"
-)
-
+st.subheader("📋 All Pending")
 st.caption(
-    "Each tab contains only sales that have actually reached "
-    "that workflow stage and are still pending there."
+    "One row per pending sale. Every workflow stage is shown so you can scan "
+    "the full path at a glance. Blank downstream statuses are displayed as "
+    "Pending."
 )
+st.caption("🟢 Completed / moved forward   ·   🟡 Pending / active   ·   🔴 Ended / rejected")
 
+all_display = build_all_pending_display(filtered_df)
 
-queue_tabs = st.tabs(
-    [
-        f"{STAGE_ICONS[stage]} "
-        f"{stage} "
-        f"({stage_counts[stage]:,})"
-        for stage in STAGES
-    ]
-)
-
-
-stage_reason_columns = {
-    "Quality": "_QualityReason",
-    "Welcome": "_WelcomeReason",
-    "Provisioning": "_ProvisioningReason",
-    "Dispatch": "_DispatchReason",
-    "Confirmation": "_ConfirmationReason",
-    "Live / Onboarding": "_LiveReason",
-    "Potential Opportunity": "_PotentialReason",
-}
-
-
-for tab, stage in zip(
-    queue_tabs,
-    STAGES,
-):
-
-    with tab:
-
-        reason_column = (
-            stage_reason_columns[
-                stage
-            ]
-        )
-
-        if filtered_df.empty:
-
-            stage_df = pd.DataFrame()
-
-        else:
-
-            stage_df = (
-                filtered_df[
-                    filtered_df[
-                        reason_column
-                    ]
-                    .fillna("")
-                    .astype(str)
-                    .str.strip()
-                    .ne("")
-                ]
-                .copy()
-            )
-
-        if stage_df.empty:
-
-            st.success(
-                f"No {stage} records are pending "
-                "for the current filters."
-            )
-
-            continue
-
-        display_rows = []
-
-        for _, row in stage_df.iterrows():
-
-            reason = safe_text(
-                row.get(
-                    reason_column,
-                    "",
-                )
-            )
-
-            source_rows = sheet_df[
-                sheet_df.apply(
-                    lambda source_row:
-                        make_record_key(
-                            source_row.get(
-                                API_COLUMNS[
-                                    "sale_date"
-                                ]
-                            ),
-                            source_row.get(
-                                API_COLUMNS[
-                                    "phone"
-                                ]
-                            ),
-                        )
-                        == safe_text(
-                            row.get(
-                                "Record Key",
-                                "",
-                            )
-                        ),
-                    axis=1,
-                )
-            ]
-
-            source_row = (
-                source_rows.iloc[-1]
-                if not source_rows.empty
-                else None
-            )
-
-            display_rows.append(
-                {
-                    "Sale Date":
-                        row.get(
-                            "Sale Date"
-                        ),
-
-                    "Advisor":
-                        row.get(
-                            "Advisor",
-                            "",
-                        ),
-
-                    "Customer Name":
-                        row.get(
-                            "Customer Name",
-                            "",
-                        ),
-
-                    "Phone Number":
-                        row.get(
-                            "Phone Number",
-                            "",
-                        ),
-
-                    "Pending Stage":
-                        stage,
-
-                    "Pending Type":
-                        reason,
-
-                    "Current Status":
-                        (
-                            status_display(
-                                source_row,
-                                stage,
-                            )
-                            if source_row
-                            is not None
-                            else ""
-                        ),
-
-                    "Remarks / Latest Note":
-                        (
-                            remarks_display(
-                                source_row,
-                                stage,
-                            )
-                            if source_row
-                            is not None
-                            else ""
-                        ),
-
-                    "Other Open Stages":
-                        row.get(
-                            "Pending Stage(s)",
-                            "",
-                        ),
-                }
-            )
-
-        stage_display = pd.DataFrame(
-            display_rows
-        )
-
-        stage_display[
-            "Sale Date"
-        ] = (
-            pd.to_datetime(
-                stage_display[
-                    "Sale Date"
-                ],
-                errors="coerce",
-            )
-            .dt.strftime(
-                "%d/%m/%Y"
-            )
-        )
-
-        st.dataframe(
-            stage_display,
-            use_container_width=True,
-            hide_index=True,
-            height=min(
-                620,
-                max(
-                    220,
-                    120
-                    + len(stage_display)
-                    * 36,
-                ),
+if all_display.empty:
+    st.info("No pending records match the current filters.")
+else:
+    st.dataframe(
+        style_workflow_table(all_display),
+        use_container_width=True,
+        hide_index=True,
+        height=min(
+            660,
+            max(240, 120 + len(all_display) * 35),
+        ),
+        column_config={
+            "Sale Date": st.column_config.TextColumn(
+                "SALE DATE", width="small"
             ),
-            column_config={
-
-                "Sale Date":
-                    st.column_config.TextColumn(
-                        "SALE DATE",
-                        width="small",
-                    ),
-
-                "Advisor":
-                    st.column_config.TextColumn(
-                        "ADVISOR",
-                        width="medium",
-                    ),
-
-                "Customer Name":
-                    st.column_config.TextColumn(
-                        "CUSTOMER NAME",
-                        width="medium",
-                    ),
-
-                "Phone Number":
-                    st.column_config.TextColumn(
-                        "PHONE NUMBER",
-                        width="medium",
-                    ),
-
-                "Pending Stage":
-                    st.column_config.TextColumn(
-                        "STAGE",
-                        width="medium",
-                    ),
-
-                "Pending Type":
-                    st.column_config.TextColumn(
-                        "PENDING TYPE",
-                        width="medium",
-                    ),
-
-                "Current Status":
-                    st.column_config.TextColumn(
-                        "CURRENT STATUS",
-                        width="large",
-                    ),
-
-                "Remarks / Latest Note":
-                    st.column_config.TextColumn(
-                        "REMARKS / LATEST NOTE",
-                        width="large",
-                    ),
-
-                "Other Open Stages":
-                    st.column_config.TextColumn(
-                        "OTHER OPEN STAGES",
-                        width="large",
-                    ),
-            },
-        )
+            "Advisor": st.column_config.TextColumn(
+                "ADVISOR", width="medium"
+            ),
+            "Customer Name": st.column_config.TextColumn(
+                "CUSTOMER NAME", width="medium"
+            ),
+            "Phone Number": st.column_config.TextColumn(
+                "PHONE NUMBER", width="medium"
+            ),
+            "Quality": st.column_config.TextColumn(
+                "QUALITY", width="medium"
+            ),
+            "Welcome": st.column_config.TextColumn(
+                "WELCOME", width="medium"
+            ),
+            "Provisioning": st.column_config.TextColumn(
+                "PROVISIONING", width="medium"
+            ),
+            "Dispatch": st.column_config.TextColumn(
+                "DISPATCH", width="medium"
+            ),
+            "Confirmation": st.column_config.TextColumn(
+                "CONFIRMATION", width="medium"
+            ),
+            "Live / Onboarding": st.column_config.TextColumn(
+                "LIVE / ONBOARDING", width="medium"
+            ),
+            "Potential Opportunity": st.column_config.TextColumn(
+                "POTENTIAL", width="medium"
+            ),
+        },
+    )
 
 
 # ============================================================
