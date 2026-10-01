@@ -722,6 +722,77 @@ def confirmation_completed(value) -> bool:
 # waiting there.
 
 
+def potential_opportunity_reason(row) -> str:
+    """Return the Potential Opportunity subtype for a CRM row.
+
+    Rework in Quality is treated as Potential Opportunity. Explicit
+    Potential Opportunity Followup is kept as a separate subtype.
+    """
+
+    quality_status = normalize_status(
+        row.get(API_COLUMNS["quality"], "")
+    )
+
+    # Every Quality = Rework record belongs to Potential Opportunity.
+    if quality_status == "rework":
+        # An explicit follow-up marker elsewhere still takes precedence.
+        pass
+
+    potential_fields = [
+        API_COLUMNS["potential_cancel"],
+        API_COLUMNS["quality_cancel"],
+        API_COLUMNS["welcome_cancel"],
+        API_COLUMNS["provisioning_cancel"],
+        API_COLUMNS["dispatch_cancel"],
+        API_COLUMNS["confirmation_cancel"],
+        API_COLUMNS["onboarding_cancel"],
+        API_COLUMNS["provisioning"],
+        API_COLUMNS["welcome"],
+        API_COLUMNS["quality"],
+    ]
+
+    found_potential = False
+    found_followup = False
+
+    for field in potential_fields:
+        if field not in row.index:
+            continue
+
+        status = normalize_status(row[field])
+        if not status:
+            continue
+
+        # Exact/embedded Potential Opportunity Followup is a separate subtype.
+        if (
+            "potential opportunity followup" in status
+            or "potential opportunity follow up" in status
+        ):
+            found_potential = True
+            found_followup = True
+            continue
+
+        # Some CRM exports may store only "Followup" in the dedicated
+        # Potential Opportunity reason field.
+        if (
+            field == API_COLUMNS["potential_cancel"]
+            and status in {"followup", "follow up"}
+        ):
+            found_potential = True
+            found_followup = True
+            continue
+
+        if "potential opportunity" in status:
+            found_potential = True
+
+    if found_followup:
+        return "Followup"
+
+    if found_potential or quality_status == "rework":
+        return "Pending"
+
+    return ""
+
+
 def classify_pending_stages(row) -> dict:
 
     result = {}
@@ -772,8 +843,13 @@ def classify_pending_stages(row) -> dict:
     # 1. QUALITY
     # ========================================================
 
-    if normalize_status(quality) == "qa pending":
+    quality_status = normalize_status(quality)
+
+    if quality_status == "qa pending":
         result["Quality"] = "QA-Pending"
+
+    # Rework is no longer treated as a Quality queue item.
+    # It is routed into Potential Opportunity below.
 
     # ========================================================
     # 2. WELCOME
@@ -885,31 +961,10 @@ def classify_pending_stages(row) -> dict:
     # 7. POTENTIAL OPPORTUNITY
     # ========================================================
 
-    fields = [
-        API_COLUMNS["provisioning"],
-        API_COLUMNS["welcome"],
-        API_COLUMNS["quality_cancel"],
-        API_COLUMNS["welcome_cancel"],
-        API_COLUMNS["provisioning_cancel"],
-        API_COLUMNS["potential_cancel"],
-    ]
+    potential_reason = potential_opportunity_reason(row)
 
-    for field in fields:
-
-        if field not in row.index:
-            continue
-
-        if (
-            "potential opportunity"
-            in normalize_status(
-                row[field]
-            )
-        ):
-            result[
-                "Potential Opportunity"
-            ] = "Potential Opportunity"
-
-            break
+    if potential_reason:
+        result["Potential Opportunity"] = potential_reason
 
     return result
 
@@ -1030,11 +1085,12 @@ GREEN_STATUS_TERMS = (
 def all_pending_display_status(row, stage) -> str:
     """Show every sequential workflow stage; blanks become Pending."""
     if stage == "Potential Opportunity":
-        return (
-            "Potential Opportunity"
-            if safe_text(row.get("_PotentialReason", ""))
-            else "—"
-        )
+        reason = safe_text(row.get("_PotentialReason", ""))
+        if reason == "Followup":
+            return "Followup"
+        if reason == "Pending":
+            return "Potential Opportunity"
+        return "—"
 
     field = SEQUENTIAL_STAGE_FIELDS.get(stage)
     value = clean_display_text(row.get(field, "")) if field else ""
@@ -1617,7 +1673,7 @@ with header_right:
         f"""
         <div class="sparta-hero" style="height:100%;">
             <div class="sparta-refresh">
-                Last CRM refresh
+                Last Google Sheet refresh
                 <strong>{fetched_at}</strong>
             </div>
         </div>
@@ -1804,19 +1860,18 @@ live_pending_count = (
 
 
 # Potential Opportunity
+potential_pending_count = count_reason(
+    "_PotentialReason",
+    "Pending",
+)
+
+potential_followup_count = count_reason(
+    "_PotentialReason",
+    "Followup",
+)
+
 potential_count = (
-    int(
-        queue_df[
-            "_PotentialReason"
-        ]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-        .ne("")
-        .sum()
-    )
-    if not queue_df.empty
-    else 0
+    potential_pending_count + potential_followup_count
 )
 
 
@@ -1870,7 +1925,7 @@ kpi_items = [
     ("✉️", "Dispatch", dispatch_pending_count, "Pending"),
     ("✅", "Confirmation", confirmation_pending_count, "Pending"),
     ("📡", "Onboarding", live_pending_count, "Pending"),
-    ("🎯", "Potential", potential_count, "Potential Opportunity"),
+    ("🎯", "Potential", potential_count, f"{potential_pending_count:,} pending · {potential_followup_count:,} follow-up"),
     ("📋", "Pending Sales", len(queue_df), "Distinct sales"),
 ]
 
@@ -2017,15 +2072,6 @@ with filter_cols[3]:
     )
 
 
-stage_filter = st.multiselect(
-    "Pending Stage",
-    options=STAGES,
-    format_func=lambda x:
-        f"{STAGE_ICONS[x]} {x}",
-    placeholder="All pending stages",
-)
-
-
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ============================================================
@@ -2097,25 +2143,6 @@ if not filtered_df.empty:
                 needle,
                 case=False,
                 regex=False,
-                na=False,
-            )
-        ]
-
-    if stage_filter:
-
-        stage_regex = "|".join(
-            re.escape(stage)
-            for stage in stage_filter
-        )
-
-        filtered_df = filtered_df[
-            filtered_df[
-                "Pending Stage(s)"
-            ]
-            .fillna("")
-            .str.contains(
-                stage_regex,
-                regex=True,
                 na=False,
             )
         ]
@@ -2214,6 +2241,75 @@ else:
     )
 
 # ============================================================
+# ALL PENDING STAGE RADIO FILTER
+# ============================================================
+
+st.markdown(
+    """
+    <div class="sparta-section">
+        <div class="sparta-section-title">🎯 Quick Pending View</div>
+        <div class="sparta-section-caption">
+            Select one pending stage to focus the All Pending table.
+            “All Pending” is selected by default.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+radio_options = ["All Pending"] + STAGES
+
+radio_reason_columns = {
+    "Quality": "_QualityReason",
+    "Welcome": "_WelcomeReason",
+    "Provisioning": "_ProvisioningReason",
+    "Dispatch": "_DispatchReason",
+    "Confirmation": "_ConfirmationReason",
+    "Live / Onboarding": "_LiveReason",
+    "Potential Opportunity": "_PotentialReason",
+}
+
+radio_counts = {"All Pending": len(filtered_df)}
+for _stage, _reason_col in radio_reason_columns.items():
+    radio_counts[_stage] = int(
+        filtered_df[_reason_col]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .ne("")
+        .sum()
+    ) if not filtered_df.empty else 0
+
+selected_pending_stage = st.radio(
+    "Pending stage",
+    options=radio_options,
+    index=0,
+    horizontal=True,
+    label_visibility="collapsed",
+    format_func=lambda stage: (
+        f"All Pending · {radio_counts[stage]:,}"
+        if stage == "All Pending"
+        else f"{STAGE_ICONS[stage]} {stage} · {radio_counts[stage]:,}"
+    ),
+)
+
+all_pending_df = filtered_df.copy()
+
+if (
+    selected_pending_stage != "All Pending"
+    and not all_pending_df.empty
+):
+    selected_reason_column = radio_reason_columns[selected_pending_stage]
+    all_pending_df = all_pending_df[
+        all_pending_df[selected_reason_column]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .ne("")
+    ].copy()
+
+
+# ============================================================
 # ALL PENDING
 # ============================================================
 
@@ -2229,7 +2325,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-all_display = build_all_pending_display(filtered_df)
+all_display = build_all_pending_display(all_pending_df)
 
 if all_display.empty:
     st.info("No pending records match the current filters.")
