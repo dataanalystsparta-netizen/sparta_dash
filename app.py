@@ -251,7 +251,8 @@ def categorize_crm_quality_status_series(s: pd.Series) -> pd.Series:
     """Map CRM Quality Status values to the executive dashboard taxonomy."""
     s_norm = s.fillna("").astype(str).str.strip().str.lower()
 
-    pending_mask = s_norm.isin(["", "(blank)", "nan", "none"])
+    # CRM-specific: QA-Pending must remain in QA Pending, not QA Cancelled.
+    pending_mask = s_norm.str.contains(r"^qa[- ]?pending$|^pending$", na=False)
     approved_mask = s_norm.str.contains(r"qa[- ]?approved|approved", na=False)
     rework_mask = s_norm.str.contains(r"rework", na=False)
     cancelled_mask = s_norm.str.contains(
@@ -270,15 +271,17 @@ def categorize_crm_quality_status_series(s: pd.Series) -> pd.Series:
 
 
 def categorize_crm_welcome_status_series(s: pd.Series) -> pd.Series:
-    """Map CRM Welcome Call Status values to Done / Cancelled / Pending."""
+    """Map CRM Welcome Call Status values to Done / Cancelled / Pending.
+
+    CRM blanks are intentionally left uncategorized: a blank Welcome status is
+    NOT counted as Welcome Pending.
+    """
     s_norm = s.fillna("").astype(str).str.strip().str.lower()
 
-    pending_mask = (
-        s_norm.isin(["", "(blank)", "nan", "none"])
-        | s_norm.str.contains(
-            r"pending|follow[- ]?up|paperwork|wrong|ring|chasing|think",
-            na=False,
-        )
+    blank_mask = s_norm.isin(["", "(blank)", "nan", "none"])
+    pending_mask = (~blank_mask) & s_norm.str.contains(
+        r"pending|follow[- ]?up|paperwork|wrong|ring|chasing|think",
+        na=False,
     )
     done_mask = s_norm.str.contains(r"approved|done|complete", na=False)
     cancelled_mask = s_norm.str.contains(
@@ -288,9 +291,9 @@ def categorize_crm_welcome_status_series(s: pd.Series) -> pd.Series:
 
     return pd.Series(
         np.select(
-            [pending_mask, done_mask, cancelled_mask],
-            ["Pending", "Done", "Cancelled"],
-            default="Pending",
+            [blank_mask, pending_mask, done_mask, cancelled_mask],
+            ["", "Pending", "Done", "Cancelled"],
+            default="",
         ),
         index=s.index,
     )
@@ -324,6 +327,17 @@ def derive_crm_portal_status(row: pd.Series) -> str:
         row.get("Cancellation/Rejection Reason - Onboarding", "")
     ).lower()
 
+    # CRM-specific confirmation semantics:
+    # - Confirmation Approved / Followup / Pending -> Committed
+    # - Confirmation To Be Cancelled -> Live Cancelled
+    confirmation_is_cancelled = bool(
+        re.search(
+            r"to\s*be\s*cancelled|\bcancelled\b|\bcancel\b|reject(?:ed)?|rejection",
+            confirmation,
+            re.IGNORECASE,
+        )
+    )
+
     # Explicit cancellation/rejection wins over all other downstream signals.
     cancelled_text = " | ".join(
         [
@@ -337,7 +351,7 @@ def derive_crm_portal_status(row: pd.Series) -> str:
             onboarding_cancel_reason,
         ]
     )
-    if re.search(
+    if confirmation_is_cancelled or re.search(
         r"order\s*cancelled|to\s*be\s*cancelled|cancelled|cancellation|reject(?:ed)?|rejection",
         cancelled_text,
         re.IGNORECASE,
@@ -345,7 +359,7 @@ def derive_crm_portal_status(row: pd.Series) -> str:
         return "Cancelled"
 
     # CRM Onboarding Pending / Approved corresponds to the executive
-    # dashboard's Live bucket (the legacy dashboard labels this Live/Pend.).
+    # dashboard's Live bucket.
     if re.search(
         r"onboarding\s+(?:approved|pending)|\blive\b|\bactive\b|\bcompleted\b",
         onboarding,
@@ -353,11 +367,20 @@ def derive_crm_portal_status(row: pd.Series) -> str:
     ):
         return "Live"
 
-    # Any genuine downstream order/provisioning signal that is not cancelled
-    # and not yet onboarding-live remains in the Committed pipeline.
+    # CRM confirmation is a direct Committed-pipeline signal. These three
+    # statuses must all be counted under COMMITTED REM.
+    if re.search(
+        r"confirmation\s+(?:approved|follow[- ]?up|pending)",
+        confirmation,
+        re.IGNORECASE,
+    ):
+        return "Committed"
+
+    # Other genuine downstream order/provisioning signals that are not
+    # cancelled and not yet onboarding-live remain in the Committed pipeline.
     committed_text = " | ".join([provisioning, dispatch, confirmation, onboarding])
     if re.search(
-        r"connectivity:\s*committed|\bcommitted\b|processed|re[ -]?processed|in\s+progress|send\s+for\s+rework|dispatch\s+approved|confirmation\s+(?:approved|pending)",
+        r"connectivity:\s*committed|\bcommitted\b|processed|re[ -]?processed|in\s+progress|send\s+for\s+rework|dispatch\s+approved",
         committed_text,
         re.IGNORECASE,
     ):
@@ -378,9 +401,11 @@ def build_crm_portal_frame(api: pd.DataFrame) -> pd.DataFrame:
     portal["Sale Date Clean"] = api["Sale Date Clean"]
     portal["Telephone No."] = api["Telephone No."]
     portal["Live Date"] = ""
-    portal["Portal Status"] = api[
+    # CRM-specific display column: preserve the exact Onboarding Status value.
+    portal["Final Status"] = api[
         "Committed (Live) Status (Onboarding Status)"
     ].fillna("").astype(str).str.strip()
+    portal["Portal Status"] = portal["Final Status"]
     portal["Letter Status"] = api[
         "LetterStatus (Dispatch Status)"
     ].fillna("").astype(str).str.strip()
@@ -746,6 +771,10 @@ def normalize_crm_records(crm_df: pd.DataFrame):
     app["Package"] = ""
     app["Dashboard Month"] = api["Sale Date Clean"].dt.strftime("%B %Y")
     app["Standardized Date"] = app["Sale Date"]
+    # CRM-only source field: exact onboarding/final status from CRM.
+    app["Final Status"] = api[
+        "Committed (Live) Status (Onboarding Status)"
+    ].fillna("").astype(str).str.strip()
 
     # CRM terminology is normalized explicitly here.
     app["Quality Status Clean"] = categorize_crm_quality_status_series(
