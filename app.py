@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -62,6 +63,43 @@ APPLICATION_SHEET: str = st.secrets.get("APPLICATION_SHEET", "Sparta")
 LIVE_SHEET: str = st.secrets.get("LIVE_SHEET", "Sparta2")
 SCOPES: List[str] = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
+# ==========================================================
+# HYBRID DATA SOURCE CONFIGURATION
+# ==========================================================
+# Historical / legacy (Excel-backed) data is authoritative through
+# 17-Sep-2026 inclusive. CRM is authoritative from 18-Sep-2026 onward.
+SOURCE_CUTOFF_DATE = pd.Timestamp("2026-09-17")
+CRM_START_DATE = pd.Timestamp("2026-09-18")
+
+CRM_MIRROR_WORKSHEET_GID = int(
+    st.secrets.get("CRM_MIRROR_WORKSHEET_GID", "1647226826")
+)
+DATA_CACHE_TTL = int(st.secrets.get("DATA_CACHE_TTL_SECONDS", 300))
+
+API_REQUIRED_COLUMNS = [
+    "Sale Date",
+    "Advisor (Created Username)",
+    "Customer Name",
+    "Phone Number",
+    "Quality Status",
+    "Quality Remarks (Quality Comments)",
+    "Welcome Call Status",
+    "Welcome Call Remarks (Welcome Comments)",
+    "Provisioning Status",
+    "Provisioning Remarks (Provisioning Comments)",
+    "Committed (Live) Status (Onboarding Status)",
+    "LetterStatus (Dispatch Status)",
+    "Confirmation Status",
+    "Confirmation Comment",
+    "Cancellation Reason - quality",
+    "Cancellation Reason - welcome",
+    "Cancellation/Rejection Reason - Provisioning",
+    "Cancellation/Rejection Reason - Dispatch",
+    "Cancellation/Rejection Reason - Confirmation",
+    "Cancellation/Rejection Reason - Onboarding",
+    "Cancellation/Rejection Reason - Potential Opportunity",
+]
+
 NEW_ADVISORS = ["Aryan", "Shivam"]
 CUSTOMER_SERVICE_ADVISORS = ["Aman", "Ravi Inbound", "Santosh Joshi", "Vijender", "Laxmi Narayan","Alex"]
 LEFT_ADVISORS = [
@@ -86,6 +124,21 @@ def get_google_service():
     service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
     logger.info("Google Sheets client created")
     return service
+
+
+@st.cache_resource
+def get_crm_gspread_client():
+    """Cached gspread client for the dedicated CRM mirror worksheet."""
+    if "gcp_service_account" not in st.secrets:
+        raise RuntimeError("Missing gcp_service_account in Streamlit secrets.")
+    credentials = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ],
+    )
+    return gspread.authorize(credentials)
 
 def load_sheet(sheet_name: str, max_retries: int = 3, backoff: float = 1.0) -> pd.DataFrame:
     service = get_google_service()
@@ -204,106 +257,407 @@ def format_raw_breakdown(df: pd.DataFrame, raw_col: str, clean_col: str, target_
     total = sum(count for _, count in breakdown)
     return "Raw Status Breakdown\n" + "\n".join(lines) + f"\nTotal: {total}"
 
+
 # ==========================================================
 # DATA LOADING
 # ==========================================================
-@st.cache_data(ttl=300, show_spinner=False)
-def load_sparta() -> pd.DataFrame:
-    df = load_sheet_cached(APPLICATION_SHEET)
-    if df.empty:
-        return df
-    rename_map = {
-        "Advisor": "Advisor",
-        "Quality Officer": "Quality Officer",
-        "Welcome Call By": "Welcome Call By",
-        "Sale Date": "Sale Date",
-        "Customer Name": "Customer Name",
-        "CLI": "Telephone No.",
-        "Quality Date": "Quality Date",
-        "Quality Status": "Quality Status",
-        "Quality Remarks": "Quality Remarks",
-        "Welcome call Remarks": "Welcome Remarks",
-        "Status": "Welcome Status",
-        "Cancellation Sub-text": "Welcome Cancellation",
-        "WCD date": "Welcome Date",
-        "Provisioning": "Provisioning Status",
-        "Prov Date": "Provisioning Date",
-        "Current Provider": "Current Provider",
-        "Packageoffered": "Package",
-        "Dashboard_Month": "Dashboard Month",
-        "Standardized_Date": "Standardized Date",
-    }
-    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
-    keep_columns = [c for c in rename_map.values() if c in df.columns]
-    df = df[keep_columns].copy()
-    if "Telephone No." in df.columns:
-        df["Telephone No."] = clean_phone(df["Telephone No."])
-    if "Sale Date" in df.columns:
-        df["Sale Date Clean"] = parse_date_series(df["Sale Date"])
-        df["Sale Date"] = format_date_ddmmyyyy(df["Sale Date"])
-    for col in ["Quality Date", "Welcome Date", "Provisioning Date", "Standardized Date"]:
-        if col in df.columns:
-            df[col] = format_date_ddmmyyyy(df[col])
-    if "Quality Status" in df.columns:
-        df["Quality Status Clean"] = categorize_quality_status_series(df["Quality Status"])
-    if "Welcome Status" in df.columns:
-        df["Welcome Status Clean"] = categorize_welcome_status_series(df["Welcome Status"])
-    return df
 
-@st.cache_data(ttl=300, show_spinner=False)
-def load_sparta2() -> pd.DataFrame:
-    df = load_sheet_cached(LIVE_SHEET)
-    if df.empty:
-        return df
-    rename_map = {
-        "Sale Date": "Sale Date",
-        "Telephone No.": "Telephone No.",
-        "Committed Date": "Live Date",
-        "Status": "Portal Status",
-        "LetterStatus": "Letter Status",
-        "CallStatus": "Call Status",
-        "Comments": "Comments",
-        "Voice of Customer": "Voice of Customer",
-        "Cancellation Reason": "Portal Cancellation",
-        "Dashboard_Month": "Dashboard Month",
-        "Standardized_Date": "Standardized Date",
-    }
-    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
-    keep_columns = [c for c in rename_map.values() if c in df.columns]
-    df = df[keep_columns].copy()
-    if "Telephone No." in df.columns:
-        df["Telephone No."] = clean_phone(df["Telephone No."])
-    if "Sale Date" in df.columns:
-        df["Sale Date Clean"] = parse_date_series(df["Sale Date"])
-        df["Sale Date"] = format_date_ddmmyyyy(df["Sale Date"])
-    for date_col in ["Live Date", "Standardized Date"]:
-        if date_col in df.columns:
-            df[date_col] = format_date_ddmmyyyy(df[date_col])
-    if "Portal Status" in df.columns:
-        df["Portal Status Clean"] = categorize_portal_status_series(df["Portal Status"])
-    return df
+def clean_reason_text(value) -> str:
+    if pd.isna(value):
+        return ""
+    value = str(value).replace("<br>", " | ").replace("<br/>", " | ")
+    value = re.sub(r"\s+", " ", value).strip()
+    if value.lower() in {"nan", "none", "null", "nat"}:
+        return ""
+    return value
 
-with st.spinner("Loading Google Sheets..."):
+
+def normalized_phone_value(value) -> str:
+    """Normalize CRM phone values consistently within the CRM source."""
+    if pd.isna(value):
+        return ""
+    value = str(value).strip()
+    if not value or value.lower() in {"nan", "none", "null", "nat"}:
+        return ""
+    value = re.sub(r"\.0+$", "", value)
+    digits = re.sub(r"\D", "", value)
+    if not digits:
+        return ""
+    if digits.startswith("44") and len(digits) in {11, 12}:
+        digits = "0" + digits[2:]
+    return digits
+
+
+def canonicalize_crm_advisor(raw_name) -> str:
+    """Map CRM usernames to dashboard advisor names where there is a safe match."""
+    raw = str(raw_name).strip()
+    if not raw or raw.lower() in {"nan", "none", "null", "nat"}:
+        return ""
+
+    aliases = {
+        "subhodeeproy": "Subhodeep",
+        "priyanshurathee": "Priyanshu",
+        "kunalupreti": "Kunal",
+    }
+
+    compact = re.sub(r"[^a-z0-9]", "", raw.lower())
+    if compact in aliases:
+        return aliases[compact]
+
+    known_names = list(dict.fromkeys(
+        NEW_ADVISORS + CUSTOMER_SERVICE_ADVISORS + LEFT_ADVISORS
+    ))
+
+    for name in known_names:
+        if compact == re.sub(r"[^a-z0-9]", "", name.lower()):
+            return name
+
+    prefix_matches = []
+    for name in known_names:
+        name_compact = re.sub(r"[^a-z0-9]", "", name.lower())
+        if len(name_compact) >= 5 and len(compact) >= len(name_compact):
+            if compact.startswith(name_compact):
+                prefix_matches.append(name)
+
+    if len(prefix_matches) == 1:
+        return prefix_matches[0]
+
+    return raw.title()
+
+
+def get_first_existing_column(df: pd.DataFrame, candidates: List[str]) -> str:
+    for candidate in candidates:
+        if candidate in df.columns:
+            return candidate
+    return ""
+
+
+def combine_crm_cancellation_reasons(row: pd.Series) -> str:
+    fields = [
+        ("Quality", "Cancellation Reason - quality"),
+        ("Welcome", "Cancellation Reason - welcome"),
+        ("Provisioning", "Cancellation/Rejection Reason - Provisioning"),
+        ("Dispatch", "Cancellation/Rejection Reason - Dispatch"),
+        ("Confirmation", "Cancellation/Rejection Reason - Confirmation"),
+        ("Onboarding", "Cancellation/Rejection Reason - Onboarding"),
+        ("Potential Opportunity", "Cancellation/Rejection Reason - Potential Opportunity"),
+    ]
+    parts = []
+    for label, column in fields:
+        if column in row.index:
+            value = clean_reason_text(row[column])
+            if value:
+                parts.append(f"{label}: {value}")
+    return " | ".join(parts)
+
+
+def make_source_record_key(date_value, phone_value) -> str:
+    parsed = parse_mixed_dates_value(date_value)
+    phone = normalized_phone_value(phone_value)
+    if pd.isna(parsed) or not phone:
+        return ""
+    return f"{pd.Timestamp(parsed).strftime('%Y-%m-%d')}|{phone}"
+
+
+def fetch_crm_mirror():
+    """Read the CRM Excel mirror from the dedicated Google worksheet."""
     try:
-        sparta_df = load_sparta()
-        sparta2_df = load_sparta2()
+        client = get_crm_gspread_client()
+        crm_ws = client.open_by_key(SPREADSHEET_ID).get_worksheet_by_id(
+            CRM_MIRROR_WORKSHEET_GID
+        )
+        values = crm_ws.get_all_records()
+        crm_df = pd.DataFrame(values)
+        fetched_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        if crm_df.empty:
+            return crm_df, fetched_at, "CRM mirror sheet is empty"
+
+        crm_df.columns = [
+            str(c).replace("\ufeff", "").strip()
+            for c in crm_df.columns
+        ]
+
+        missing = [c for c in API_REQUIRED_COLUMNS if c not in crm_df.columns]
+        if missing:
+            return (
+                pd.DataFrame(),
+                fetched_at,
+                "CRM mirror is missing required columns: " + ", ".join(missing),
+            )
+
+        return crm_df, fetched_at, ""
+    except Exception as exc:
+        logger.exception("CRM mirror load failed: %s", exc)
+        return pd.DataFrame(), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), str(exc)
+
+
+def normalize_crm_records(crm_df: pd.DataFrame):
+    """
+    Convert CRM mirror rows into the executive dashboard's application and
+    portal shapes. CRM becomes authoritative only from 18-Sep-2026 onward.
+    """
+    if crm_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    api = crm_df.copy()
+
+    for col in API_REQUIRED_COLUMNS:
+        if col not in api.columns:
+            api[col] = ""
+
+    api["Sale Date Clean"] = api["Sale Date"].apply(parse_mixed_dates_value)
+    api = api[api["Sale Date Clean"] >= CRM_START_DATE].copy()
+
+    if api.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    api["Advisor"] = api["Advisor (Created Username)"].apply(canonicalize_crm_advisor)
+    api["Customer Name"] = api["Customer Name"].fillna("").astype(str).str.strip()
+    api["Telephone No."] = api["Phone Number"].apply(normalized_phone_value)
+    api["_RecordKey"] = [
+        make_source_record_key(d, p)
+        for d, p in zip(api["Sale Date Clean"], api["Telephone No."])
+    ]
+
+    api = api[api["_RecordKey"] != ""].copy()
+    api = api.drop_duplicates(subset=["_RecordKey"], keep="last").reset_index(drop=True)
+
+    quality_owner_col = get_first_existing_column(
+        api,
+        [
+            "Quality Officer",
+            "Quality Officer (Username)",
+            "Quality Officer (Created Username)",
+            "Quality Officer Username",
+        ],
+    )
+    welcome_owner_col = get_first_existing_column(
+        api,
+        [
+            "Welcome Call By",
+            "Welcome Call By (Username)",
+            "Welcome Caller",
+            "Welcome Call Username",
+        ],
+    )
+
+    if quality_owner_col:
+        quality_owner = api[quality_owner_col].fillna("").astype(str).str.strip()
+    else:
+        quality_owner = pd.Series([""] * len(api), index=api.index)
+
+    if welcome_owner_col:
+        welcome_owner = api[welcome_owner_col].fillna("").astype(str).str.strip()
+    else:
+        welcome_owner = pd.Series([""] * len(api), index=api.index)
+
+    app = pd.DataFrame(index=api.index)
+    app["Advisor"] = api["Advisor"]
+    app["Quality Officer"] = quality_owner
+    app["Welcome Call By"] = welcome_owner
+    app["Sale Date"] = api["Sale Date Clean"].dt.strftime("%d/%m/%Y")
+    app["Sale Date Clean"] = api["Sale Date Clean"]
+    app["Customer Name"] = api["Customer Name"]
+    app["Telephone No."] = api["Telephone No."]
+    app["Quality Status"] = api["Quality Status"].fillna("").astype(str).str.strip()
+    app["Quality Remarks"] = api["Quality Remarks (Quality Comments)"].apply(clean_reason_text)
+    app["Welcome Status"] = api["Welcome Call Status"].fillna("").astype(str).str.strip()
+    app["Welcome Remarks"] = api["Welcome Call Remarks (Welcome Comments)"].apply(clean_reason_text)
+    app["Welcome Cancellation"] = ""
+    app["Provisioning Status"] = api["Provisioning Status"].fillna("").astype(str).str.strip()
+    app["Provisioning Date"] = ""
+    app["Quality Date"] = ""
+    app["Welcome Date"] = ""
+    app["Current Provider"] = ""
+    app["Package"] = ""
+    app["Dashboard Month"] = api["Sale Date Clean"].dt.strftime("%B %Y")
+    app["Standardized Date"] = app["Sale Date"]
+    app["Quality Status Clean"] = categorize_quality_status_series(app["Quality Status"])
+    app["Welcome Status Clean"] = categorize_welcome_status_series(app["Welcome Status"])
+    app["Source"] = "CRM"
+    app["_RecordKey"] = api["_RecordKey"]
+
+    portal = pd.DataFrame(index=api.index)
+    portal["Sale Date"] = api["Sale Date Clean"].dt.strftime("%d/%m/%Y")
+    portal["Sale Date Clean"] = api["Sale Date Clean"]
+    portal["Telephone No."] = api["Telephone No."]
+    portal["Live Date"] = ""
+    portal["Portal Status"] = api[
+        "Committed (Live) Status (Onboarding Status)"
+    ].fillna("").astype(str).str.strip()
+    portal["Letter Status"] = api[
+        "LetterStatus (Dispatch Status)"
+    ].fillna("").astype(str).str.strip()
+    portal["Call Status"] = api[
+        "Confirmation Status"
+    ].fillna("").astype(str).str.strip()
+    portal["Comments"] = api["Confirmation Comment"].apply(clean_reason_text)
+    portal["Voice of Customer"] = ""
+    portal["Portal Cancellation"] = api.apply(
+        combine_crm_cancellation_reasons, axis=1
+    )
+    portal["Provisioning Status"] = api[
+        "Provisioning Status"
+    ].fillna("").astype(str).str.strip()
+    portal["Provisioning Remarks"] = api[
+        "Provisioning Remarks (Provisioning Comments)"
+    ].apply(clean_reason_text)
+    portal["Dashboard Month"] = api["Sale Date Clean"].dt.strftime("%B %Y")
+    portal["Standardized Date"] = portal["Sale Date"]
+    portal["Portal Status Clean"] = categorize_portal_status_series(
+        portal["Portal Status"]
+    )
+    portal["Advisor"] = api["Advisor"]
+    portal["Source"] = "CRM"
+    portal["_RecordKey"] = api["_RecordKey"]
+
+    return app.reset_index(drop=True), portal.reset_index(drop=True)
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def load_hybrid_data():
+    """
+    Load the two sources independently and enforce the explicit date boundary.
+
+    Legacy / Excel-backed source: Sale Date <= 17-Sep-2026
+    CRM source: Sale Date >= 18-Sep-2026
+    """
+    # ------------------------- LEGACY / EXCEL -------------------------
+    legacy_app = load_sparta()
+    legacy_portal = load_sparta2()
+
+    if "Sale Date Clean" in legacy_app.columns:
+        legacy_app = legacy_app[
+            legacy_app["Sale Date Clean"].notna()
+            & (legacy_app["Sale Date Clean"] <= SOURCE_CUTOFF_DATE)
+        ].copy()
+    else:
+        legacy_app = legacy_app.iloc[0:0].copy()
+
+    if "Sale Date Clean" in legacy_portal.columns:
+        legacy_portal = legacy_portal[
+            legacy_portal["Sale Date Clean"].notna()
+            & (legacy_portal["Sale Date Clean"] <= SOURCE_CUTOFF_DATE)
+        ].copy()
+    else:
+        legacy_portal = legacy_portal.iloc[0:0].copy()
+
+    legacy_app["Source"] = "Excel / Legacy"
+    legacy_portal["Source"] = "Excel / Legacy"
+
+    # ------------------------------- CRM -------------------------------
+    crm_raw, crm_fetched_at, crm_error = fetch_crm_mirror()
+    crm_app, crm_portal = normalize_crm_records(crm_raw)
+
+    app_df = pd.concat([legacy_app, crm_app], ignore_index=True, sort=False)
+    portal_df = pd.concat([legacy_portal, crm_portal], ignore_index=True, sort=False)
+
+    if "Sale Date Clean" in app_df.columns:
+        app_df["Sale Date Clean"] = pd.to_datetime(
+            app_df["Sale Date Clean"], errors="coerce"
+        )
+    if "Sale Date Clean" in portal_df.columns:
+        portal_df["Sale Date Clean"] = pd.to_datetime(
+            portal_df["Sale Date Clean"], errors="coerce"
+        )
+
+    if "Telephone No." in app_df.columns:
+        app_df["Telephone No."] = (
+            app_df["Telephone No."].fillna("").astype(str).str.strip()
+        )
+    if "Telephone No." in portal_df.columns:
+        portal_df["Telephone No."] = (
+            portal_df["Telephone No."].fillna("").astype(str).str.strip()
+        )
+
+    source_status = {
+        "cutoff": "17 Sep 2026",
+        "crm_start": "18 Sep 2026",
+        "legacy_app_rows": int(len(legacy_app)),
+        "legacy_portal_rows": int(len(legacy_portal)),
+        "crm_app_rows": int(len(crm_app)),
+        "crm_portal_rows": int(len(crm_portal)),
+        "crm_mirror_rows": int(len(crm_raw)),
+        "crm_fetched_at": crm_fetched_at,
+        "crm_error": crm_error,
+    }
+
+    return app_df.reset_index(drop=True), portal_df.reset_index(drop=True), source_status
+
+
+with st.spinner("Loading historical + CRM data..."):
+    try:
+        sparta_df, sparta2_df, source_status = load_hybrid_data()
     except Exception as e:
-        st.error("Failed to load Google Sheets data. See logs for details.")
-        logger.exception("Failed to load sheets: %s", e)
+        st.error("Failed to load the dashboard data. See logs for details.")
+        logger.exception("Failed to load hybrid dashboard data: %s", e)
         st.stop()
 
-@st.cache_data(ttl=300, show_spinner=False)
+
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
 def build_master_dataframe(app_df: pd.DataFrame, portal_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Merge application and portal records on Sale Date + Telephone No.
+
+    This prevents a later sale using the same phone number from receiving the
+    downstream portal status of an earlier sale.
+    """
     apps = app_df.copy()
     portal = portal_df.copy()
-    if "Telephone No." in portal.columns:
-        portal = portal[portal["Telephone No."] != ""].copy()
-        portal = portal.drop_duplicates(subset="Telephone No.", keep="last")
-    if "Telephone No." in apps.columns and "Telephone No." in portal.columns:
-        merged = apps.merge(portal, on="Telephone No.", how="left", suffixes=("", "_portal"))
+
+    if "_RecordKey" not in apps.columns:
+        apps["_RecordKey"] = [
+            make_source_record_key(d, p)
+            for d, p in zip(
+                apps.get(
+                    "Sale Date Clean",
+                    pd.Series(index=apps.index, dtype="datetime64[ns]"),
+                ),
+                apps.get(
+                    "Telephone No.",
+                    pd.Series([""] * len(apps), index=apps.index),
+                ),
+            )
+        ]
+
+    if "_RecordKey" not in portal.columns:
+        portal["_RecordKey"] = [
+            make_source_record_key(d, p)
+            for d, p in zip(
+                portal.get(
+                    "Sale Date Clean",
+                    pd.Series(index=portal.index, dtype="datetime64[ns]"),
+                ),
+                portal.get(
+                    "Telephone No.",
+                    pd.Series([""] * len(portal), index=portal.index),
+                ),
+            )
+        ]
+
+    portal_valid = portal[
+        portal["_RecordKey"].fillna("").astype(str).str.strip() != ""
+    ].copy()
+
+    if not portal_valid.empty:
+        portal_valid = (
+            portal_valid.sort_values("Sale Date Clean")
+            .drop_duplicates(subset="_RecordKey", keep="last")
+        )
+
+    if not portal_valid.empty:
+        merged = apps.merge(
+            portal_valid,
+            on="_RecordKey",
+            how="left",
+            suffixes=("", "_portal"),
+        )
     else:
         merged = apps.copy()
+
     return merged
+
 
 master_raw_df = build_master_dataframe(sparta_df, sparta2_df)
 
@@ -318,6 +672,19 @@ def assign_periods(df: pd.DataFrame, date_col: str = "Sale Date Clean", default_
 
 master_raw_df = assign_periods(master_raw_df)
 sparta2_df = assign_periods(sparta2_df)
+
+source_status_text = (
+    f"Source boundary: Excel / legacy through 17 Sep 2026 · "
+    f"{source_status['legacy_app_rows']:,} application rows | "
+    f"CRM from 18 Sep 2026 · {source_status['crm_app_rows']:,} application rows"
+)
+st.caption(source_status_text)
+if source_status["crm_error"]:
+    st.warning(
+        "CRM source warning: "
+        + str(source_status["crm_error"])
+        + " Historical Excel / legacy data is still available."
+    )
 
 # ==========================================================
 # FILTERS SECTION
