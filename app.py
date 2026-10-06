@@ -239,6 +239,178 @@ def categorize_portal_status_series(s: pd.Series) -> pd.Series:
         index=s.index,
     )
 
+
+# ---------------------------------------------------------------------------
+# CRM-SPECIFIC STATUS SEMANTICS
+# ---------------------------------------------------------------------------
+# The CRM mirror uses different terminology from the legacy Excel / Sparta
+# sheets. The legacy categorisers above are intentionally left untouched.
+
+
+def categorize_crm_quality_status_series(s: pd.Series) -> pd.Series:
+    """Map CRM Quality Status values to the executive dashboard taxonomy."""
+    s_norm = s.fillna("").astype(str).str.strip().str.lower()
+
+    pending_mask = s_norm.isin(["", "(blank)", "nan", "none"])
+    approved_mask = s_norm.str.contains(r"qa[- ]?approved|approved", na=False)
+    rework_mask = s_norm.str.contains(r"rework", na=False)
+    cancelled_mask = s_norm.str.contains(
+        r"qa[- ]?reject|reject|cancel|hold|duplicate|inbound|n/a|rec in accessible",
+        na=False,
+    )
+
+    return pd.Series(
+        np.select(
+            [pending_mask, approved_mask, rework_mask, cancelled_mask],
+            ["Pending", "Approved", "Rework", "Cancelled"],
+            default="Cancelled",
+        ),
+        index=s.index,
+    )
+
+
+def categorize_crm_welcome_status_series(s: pd.Series) -> pd.Series:
+    """Map CRM Welcome Call Status values to Done / Cancelled / Pending."""
+    s_norm = s.fillna("").astype(str).str.strip().str.lower()
+
+    pending_mask = (
+        s_norm.isin(["", "(blank)", "nan", "none"])
+        | s_norm.str.contains(
+            r"pending|follow[- ]?up|paperwork|wrong|ring|chasing|think",
+            na=False,
+        )
+    )
+    done_mask = s_norm.str.contains(r"approved|done|complete", na=False)
+    cancelled_mask = s_norm.str.contains(
+        r"reject|cancel|declin|change of mind|hold",
+        na=False,
+    )
+
+    return pd.Series(
+        np.select(
+            [pending_mask, done_mask, cancelled_mask],
+            ["Pending", "Done", "Cancelled"],
+            default="Pending",
+        ),
+        index=s.index,
+    )
+
+
+def derive_crm_portal_status(row: pd.Series) -> str:
+    """
+    Derive the executive dashboard Live / Committed / Cancelled taxonomy from
+    CRM's downstream provisioning, onboarding, dispatch and confirmation data.
+
+    A blank downstream section is NOT automatically "Committed" in CRM because
+    the CRM sheet contains the complete application population, unlike Sparta2.
+    """
+    onboarding = clean_reason_text(
+        row.get("Committed (Live) Status (Onboarding Status)", "")
+    ).lower()
+    provisioning = clean_reason_text(row.get("Provisioning Status", "")).lower()
+    dispatch = clean_reason_text(row.get("LetterStatus (Dispatch Status)", "")).lower()
+    confirmation = clean_reason_text(row.get("Confirmation Status", "")).lower()
+
+    prov_cancel_reason = clean_reason_text(
+        row.get("Cancellation/Rejection Reason - Provisioning", "")
+    ).lower()
+    dispatch_cancel_reason = clean_reason_text(
+        row.get("Cancellation/Rejection Reason - Dispatch", "")
+    ).lower()
+    confirmation_cancel_reason = clean_reason_text(
+        row.get("Cancellation/Rejection Reason - Confirmation", "")
+    ).lower()
+    onboarding_cancel_reason = clean_reason_text(
+        row.get("Cancellation/Rejection Reason - Onboarding", "")
+    ).lower()
+
+    # Explicit cancellation/rejection wins over all other downstream signals.
+    cancelled_text = " | ".join(
+        [
+            provisioning,
+            dispatch,
+            confirmation,
+            onboarding,
+            prov_cancel_reason,
+            dispatch_cancel_reason,
+            confirmation_cancel_reason,
+            onboarding_cancel_reason,
+        ]
+    )
+    if re.search(
+        r"order\s*cancelled|to\s*be\s*cancelled|cancelled|cancellation|reject(?:ed)?|rejection",
+        cancelled_text,
+        re.IGNORECASE,
+    ):
+        return "Cancelled"
+
+    # CRM Onboarding Pending / Approved corresponds to the executive
+    # dashboard's Live bucket (the legacy dashboard labels this Live/Pend.).
+    if re.search(
+        r"onboarding\s+(?:approved|pending)|\blive\b|\bactive\b|\bcompleted\b",
+        onboarding,
+        re.IGNORECASE,
+    ):
+        return "Live"
+
+    # Any genuine downstream order/provisioning signal that is not cancelled
+    # and not yet onboarding-live remains in the Committed pipeline.
+    committed_text = " | ".join([provisioning, dispatch, confirmation, onboarding])
+    if re.search(
+        r"connectivity:\s*committed|\bcommitted\b|processed|re[ -]?processed|in\s+progress|send\s+for\s+rework|dispatch\s+approved|confirmation\s+(?:approved|pending)",
+        committed_text,
+        re.IGNORECASE,
+    ):
+        return "Committed"
+
+    # No downstream pipeline state yet (for example a potential opportunity
+    # or a welcome-only record): do not include it in Live/Committed KPIs.
+    return ""
+
+
+def build_crm_portal_frame(api: pd.DataFrame) -> pd.DataFrame:
+    """Build the CRM equivalent of the legacy Sparta2 frame."""
+    if api.empty:
+        return pd.DataFrame()
+
+    portal = pd.DataFrame(index=api.index)
+    portal["Sale Date"] = api["Sale Date Clean"].dt.strftime("%d/%m/%Y")
+    portal["Sale Date Clean"] = api["Sale Date Clean"]
+    portal["Telephone No."] = api["Telephone No."]
+    portal["Live Date"] = ""
+    portal["Portal Status"] = api[
+        "Committed (Live) Status (Onboarding Status)"
+    ].fillna("").astype(str).str.strip()
+    portal["Letter Status"] = api[
+        "LetterStatus (Dispatch Status)"
+    ].fillna("").astype(str).str.strip()
+    portal["Call Status"] = api[
+        "Confirmation Status"
+    ].fillna("").astype(str).str.strip()
+    portal["Comments"] = api["Confirmation Comment"].apply(clean_reason_text)
+    portal["Voice of Customer"] = ""
+    portal["Portal Cancellation"] = api.apply(
+        combine_crm_cancellation_reasons, axis=1
+    )
+    portal["Provisioning Status"] = api[
+        "Provisioning Status"
+    ].fillna("").astype(str).str.strip()
+    portal["Provisioning Remarks"] = api[
+        "Provisioning Remarks (Provisioning Comments)"
+    ].apply(clean_reason_text)
+    portal["Dashboard Month"] = api["Sale Date Clean"].dt.strftime("%B %Y")
+    portal["Standardized Date"] = portal["Sale Date"]
+    portal["Portal Status Clean"] = api.apply(derive_crm_portal_status, axis=1)
+    portal["Advisor"] = api["Advisor"]
+    portal["Source"] = "CRM"
+    portal["_RecordKey"] = api["_RecordKey"]
+
+    # Unlike Sparta2, CRM contains the entire application population. Only
+    # rows with an actual downstream pipeline state become portal rows.
+    portal = portal[portal["Portal Status Clean"] != ""].copy()
+    return portal.reset_index(drop=True)
+
+
 def get_raw_breakdown(df: pd.DataFrame, raw_col: str, clean_col: str, target_val: str):
     if raw_col not in df.columns or clean_col not in df.columns:
         return []
@@ -488,10 +660,7 @@ def fetch_crm_mirror():
 
 
 def normalize_crm_records(crm_df: pd.DataFrame):
-    """
-    Convert CRM mirror rows into the executive dashboard's application and
-    portal shapes. CRM becomes authoritative only from 18-Sep-2026 onward.
-    """
+    """Convert CRM mirror rows into the executive dashboard's two frames."""
     if crm_df.empty:
         return pd.DataFrame(), pd.DataFrame()
 
@@ -501,6 +670,7 @@ def normalize_crm_records(crm_df: pd.DataFrame):
         if col not in api.columns:
             api[col] = ""
 
+    # CRM source becomes authoritative from 18-Sep-2026 onward.
     api["Sale Date Clean"] = api["Sale Date"].apply(parse_mixed_dates_value)
     api = api[api["Sale Date Clean"] >= CRM_START_DATE].copy()
 
@@ -515,6 +685,7 @@ def normalize_crm_records(crm_df: pd.DataFrame):
         for d, p in zip(api["Sale Date Clean"], api["Telephone No."])
     ]
 
+    # Stable Sale Date + Phone key is required for downstream reconciliation.
     api = api[api["_RecordKey"] != ""].copy()
     api = api.drop_duplicates(subset=["_RecordKey"], keep="last").reset_index(drop=True)
 
@@ -547,6 +718,7 @@ def normalize_crm_records(crm_df: pd.DataFrame):
     else:
         welcome_owner = pd.Series([""] * len(api), index=api.index)
 
+    # --------------------------- APPLICATION FRAME -------------------------
     app = pd.DataFrame(index=api.index)
     app["Advisor"] = api["Advisor"]
     app["Quality Officer"] = quality_owner
@@ -556,11 +728,17 @@ def normalize_crm_records(crm_df: pd.DataFrame):
     app["Customer Name"] = api["Customer Name"]
     app["Telephone No."] = api["Telephone No."]
     app["Quality Status"] = api["Quality Status"].fillna("").astype(str).str.strip()
-    app["Quality Remarks"] = api["Quality Remarks (Quality Comments)"].apply(clean_reason_text)
+    app["Quality Remarks"] = api[
+        "Quality Remarks (Quality Comments)"
+    ].apply(clean_reason_text)
     app["Welcome Status"] = api["Welcome Call Status"].fillna("").astype(str).str.strip()
-    app["Welcome Remarks"] = api["Welcome Call Remarks (Welcome Comments)"].apply(clean_reason_text)
+    app["Welcome Remarks"] = api[
+        "Welcome Call Remarks (Welcome Comments)"
+    ].apply(clean_reason_text)
     app["Welcome Cancellation"] = ""
-    app["Provisioning Status"] = api["Provisioning Status"].fillna("").astype(str).str.strip()
+    app["Provisioning Status"] = api[
+        "Provisioning Status"
+    ].fillna("").astype(str).str.strip()
     app["Provisioning Date"] = ""
     app["Quality Date"] = ""
     app["Welcome Date"] = ""
@@ -568,44 +746,19 @@ def normalize_crm_records(crm_df: pd.DataFrame):
     app["Package"] = ""
     app["Dashboard Month"] = api["Sale Date Clean"].dt.strftime("%B %Y")
     app["Standardized Date"] = app["Sale Date"]
-    app["Quality Status Clean"] = categorize_quality_status_series(app["Quality Status"])
-    app["Welcome Status Clean"] = categorize_welcome_status_series(app["Welcome Status"])
+
+    # CRM terminology is normalized explicitly here.
+    app["Quality Status Clean"] = categorize_crm_quality_status_series(
+        app["Quality Status"]
+    )
+    app["Welcome Status Clean"] = categorize_crm_welcome_status_series(
+        app["Welcome Status"]
+    )
     app["Source"] = "CRM"
     app["_RecordKey"] = api["_RecordKey"]
 
-    portal = pd.DataFrame(index=api.index)
-    portal["Sale Date"] = api["Sale Date Clean"].dt.strftime("%d/%m/%Y")
-    portal["Sale Date Clean"] = api["Sale Date Clean"]
-    portal["Telephone No."] = api["Telephone No."]
-    portal["Live Date"] = ""
-    portal["Portal Status"] = api[
-        "Committed (Live) Status (Onboarding Status)"
-    ].fillna("").astype(str).str.strip()
-    portal["Letter Status"] = api[
-        "LetterStatus (Dispatch Status)"
-    ].fillna("").astype(str).str.strip()
-    portal["Call Status"] = api[
-        "Confirmation Status"
-    ].fillna("").astype(str).str.strip()
-    portal["Comments"] = api["Confirmation Comment"].apply(clean_reason_text)
-    portal["Voice of Customer"] = ""
-    portal["Portal Cancellation"] = api.apply(
-        combine_crm_cancellation_reasons, axis=1
-    )
-    portal["Provisioning Status"] = api[
-        "Provisioning Status"
-    ].fillna("").astype(str).str.strip()
-    portal["Provisioning Remarks"] = api[
-        "Provisioning Remarks (Provisioning Comments)"
-    ].apply(clean_reason_text)
-    portal["Dashboard Month"] = api["Sale Date Clean"].dt.strftime("%B %Y")
-    portal["Standardized Date"] = portal["Sale Date"]
-    portal["Portal Status Clean"] = categorize_portal_status_series(
-        portal["Portal Status"]
-    )
-    portal["Advisor"] = api["Advisor"]
-    portal["Source"] = "CRM"
-    portal["_RecordKey"] = api["_RecordKey"]
+    # ----------------------------- PORTAL FRAME ----------------------------
+    portal = build_crm_portal_frame(api)
 
     return app.reset_index(drop=True), portal.reset_index(drop=True)
 
