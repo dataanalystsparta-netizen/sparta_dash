@@ -262,6 +262,101 @@ def format_raw_breakdown(df: pd.DataFrame, raw_col: str, clean_col: str, target_
 # DATA LOADING
 # ==========================================================
 
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def load_sparta() -> pd.DataFrame:
+    """Load the legacy / Excel-backed application history from Sparta."""
+    df = load_sheet_cached(APPLICATION_SHEET)
+    if df.empty:
+        return df
+
+    rename_map = {
+        "Advisor": "Advisor",
+        "Quality Officer": "Quality Officer",
+        "Welcome Call By": "Welcome Call By",
+        "Sale Date": "Sale Date",
+        "Customer Name": "Customer Name",
+        "CLI": "Telephone No.",
+        "Quality Date": "Quality Date",
+        "Quality Status": "Quality Status",
+        "Quality Remarks": "Quality Remarks",
+        "Welcome call Remarks": "Welcome Remarks",
+        "Status": "Welcome Status",
+        "Cancellation Sub-text": "Welcome Cancellation",
+        "WCD date": "Welcome Date",
+        "Provisioning": "Provisioning Status",
+        "Prov Date": "Provisioning Date",
+        "Current Provider": "Current Provider",
+        "Packageoffered": "Package",
+        "Dashboard_Month": "Dashboard Month",
+        "Standardized_Date": "Standardized Date",
+    }
+
+    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
+    keep_columns = [c for c in rename_map.values() if c in df.columns]
+    df = df[keep_columns].copy()
+
+    if "Telephone No." in df.columns:
+        df["Telephone No."] = clean_phone(df["Telephone No."])
+
+    if "Sale Date" in df.columns:
+        df["Sale Date Clean"] = parse_date_series(df["Sale Date"])
+        df["Sale Date"] = format_date_ddmmyyyy(df["Sale Date"])
+
+    for col in ["Quality Date", "Welcome Date", "Provisioning Date", "Standardized Date"]:
+        if col in df.columns:
+            df[col] = format_date_ddmmyyyy(df[col])
+
+    if "Quality Status" in df.columns:
+        df["Quality Status Clean"] = categorize_quality_status_series(df["Quality Status"])
+
+    if "Welcome Status" in df.columns:
+        df["Welcome Status Clean"] = categorize_welcome_status_series(df["Welcome Status"])
+
+    return df
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def load_sparta2() -> pd.DataFrame:
+    """Load the legacy / Excel-backed portal history from Sparta2."""
+    df = load_sheet_cached(LIVE_SHEET)
+    if df.empty:
+        return df
+
+    rename_map = {
+        "Sale Date": "Sale Date",
+        "Telephone No.": "Telephone No.",
+        "Committed Date": "Live Date",
+        "Status": "Portal Status",
+        "LetterStatus": "Letter Status",
+        "CallStatus": "Call Status",
+        "Comments": "Comments",
+        "Voice of Customer": "Voice of Customer",
+        "Cancellation Reason": "Portal Cancellation",
+        "Dashboard_Month": "Dashboard Month",
+        "Standardized_Date": "Standardized Date",
+    }
+
+    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
+    keep_columns = [c for c in rename_map.values() if c in df.columns]
+    df = df[keep_columns].copy()
+
+    if "Telephone No." in df.columns:
+        df["Telephone No."] = clean_phone(df["Telephone No."])
+
+    if "Sale Date" in df.columns:
+        df["Sale Date Clean"] = parse_date_series(df["Sale Date"])
+        df["Sale Date"] = format_date_ddmmyyyy(df["Sale Date"])
+
+    for date_col in ["Live Date", "Standardized Date"]:
+        if date_col in df.columns:
+            df[date_col] = format_date_ddmmyyyy(df[date_col])
+
+    if "Portal Status" in df.columns:
+        df["Portal Status Clean"] = categorize_portal_status_series(df["Portal Status"])
+
+    return df
+
+
 def clean_reason_text(value) -> str:
     if pd.isna(value):
         return ""
