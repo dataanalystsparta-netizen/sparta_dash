@@ -412,6 +412,10 @@ def build_crm_portal_frame(api: pd.DataFrame) -> pd.DataFrame:
     portal["Call Status"] = api[
         "Confirmation Status"
     ].fillna("").astype(str).str.strip()
+    # CRM-specific source field used by the Monthly KPI Breakdown.
+    portal["Confirmation Status"] = api[
+        "Confirmation Status"
+    ].fillna("").astype(str).str.strip()
     portal["Comments"] = api["Confirmation Comment"].apply(clean_reason_text)
     portal["Voice of Customer"] = ""
     portal["Portal Cancellation"] = api.apply(
@@ -1171,7 +1175,51 @@ else:
         m_wc_pending = count_status(m_app, "Welcome Status Clean", "Pending")
 
         m_p_live = count_status(m_portal, "Portal Status Clean", "Live")
-        m_p_committed = count_status(m_portal, "Portal Status Clean", "Committed")
+
+        # CRM-only committed semantics for the Monthly KPI Breakdown:
+        # use Confirmation Status and ignore blanks. Legacy/Excel rows retain
+        # their original Sparta2 Portal Status semantics.
+        source_series = m_portal.get(
+            "Source",
+            pd.Series(index=m_portal.index, dtype=object),
+        ).fillna("").astype(str).str.strip()
+        legacy_portal = m_portal[source_series != "CRM"].copy()
+        crm_portal = m_portal[source_series == "CRM"].copy()
+
+        m_p_committed_legacy = count_status(
+            legacy_portal, "Portal Status Clean", "Committed"
+        )
+
+        crm_confirmation_norm = pd.Series(index=crm_portal.index, dtype="string")
+        if "Confirmation Status" in crm_portal.columns:
+            crm_confirmation = (
+                crm_portal["Confirmation Status"]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+            crm_confirmation_norm = (
+                crm_confirmation.str.lower()
+                .str.replace(r"\s+", " ", regex=True)
+                .str.strip()
+            )
+            m_p_committed_crm = int(
+                crm_confirmation_norm.isin({
+                    "confirmation approved",
+                    "confirmation followup",
+                    "confirmation follow-up",
+                    "confirmation pending",
+                }).sum()
+            )
+            m_p_committed_cancelled = int(
+                (crm_confirmation_norm == "to be cancelled").sum()
+            )
+        else:
+            m_p_committed_crm = 0
+            m_p_committed_cancelled = 0
+
+        m_p_committed = m_p_committed_legacy + m_p_committed_crm
+        # Existing Live Cancelled remains based on the dashboard portal taxonomy.
         m_p_cancelled = count_status(m_portal, "Portal Status Clean", "Cancelled")
 
         qa_approved_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Approved")
@@ -1183,7 +1231,48 @@ else:
         welcome_cancelled_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Cancelled")
         welcome_pending_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Pending")
 
-        committed_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Committed")
+        legacy_committed_raw = format_raw_breakdown(
+            legacy_portal, "Portal Status", "Portal Status Clean", "Committed"
+        )
+        crm_committed_raw = ""
+        crm_committed_cancelled_raw = ""
+
+        if "Confirmation Status" in crm_portal.columns:
+            crm_conf_display = (
+                crm_portal["Confirmation Status"]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+            committed_mask = crm_confirmation_norm.isin({
+                "confirmation approved",
+                "confirmation followup",
+                "confirmation follow-up",
+                "confirmation pending",
+            })
+            committed_counts = crm_conf_display[committed_mask].value_counts()
+            if not committed_counts.empty:
+                lines = [f"{raw}: {count}" for raw, count in committed_counts.items()]
+                crm_committed_raw = (
+                    "CRM Confirmation Status Breakdown\n"
+                    + "\n".join(lines)
+                    + f"\nTotal: {int(committed_counts.sum())}"
+                )
+
+            cancelled_counts = crm_conf_display[
+                crm_confirmation_norm == "to be cancelled"
+            ].value_counts()
+            if not cancelled_counts.empty:
+                lines = [f"{raw}: {count}" for raw, count in cancelled_counts.items()]
+                crm_committed_cancelled_raw = (
+                    "CRM Confirmation Status Breakdown\n"
+                    + "\n".join(lines)
+                    + f"\nTotal: {int(cancelled_counts.sum())}"
+                )
+
+        raw_parts = [x for x in [legacy_committed_raw, crm_committed_raw] if x]
+        committed_raw = "\n\n".join(raw_parts)
+
         live_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Live")
         live_cancelled_raw = format_raw_breakdown(m_portal, "Portal Status", "Portal Status Clean", "Cancelled")
 
@@ -1224,6 +1313,8 @@ else:
             "WELCOME PENDING RAW": welcome_pending_raw,
             "COMMITTED REM.": m_p_committed,
             "COMMITTED RAW": committed_raw,
+            "COMMITTED CANCELLED": m_p_committed_cancelled,
+            "COMMITTED CANCELLED RAW": crm_committed_cancelled_raw,
             "LIVE": m_p_live,
             "LIVE RAW": live_raw,
             "Live Conversion % Val": (m_p_live / m_total_apps * 100) if m_total_apps > 0 else 0.0,
@@ -1316,7 +1407,9 @@ else:
             "WELCOME PENDING": monthly_summary_df["WELCOME PENDING"].sum(),
             "WELCOME PENDING RAW": format_raw_breakdown(monthly_app_df, "Welcome Status", "Welcome Status Clean", "Pending"),
             "COMMITTED REM.": monthly_summary_df["COMMITTED REM."].sum(),
-            "COMMITTED RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Committed"),
+            "COMMITTED RAW": "Aggregate committed breakdown shown in the monthly rows",
+            "COMMITTED CANCELLED": monthly_summary_df["COMMITTED CANCELLED"].sum(),
+            "COMMITTED CANCELLED RAW": "CRM Confirmation Status = To Be Cancelled",
             "LIVE": monthly_summary_df["LIVE"].sum(),
             "LIVE RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Live"),
             "Live Conversion % Val": (monthly_summary_df["LIVE"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
@@ -1363,7 +1456,7 @@ else:
         "MONTH", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
         "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
         "Welcome Done %", "WELCOME CANCELLED", "WELCOME PENDING",
-        "COMMITTED REM.", "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED",
+        "COMMITTED REM.", "COMMITTED CANCELLED", "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED",
     ]
 
     m_header_styles = {
@@ -1379,6 +1472,7 @@ else:
         "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
         "WELCOME PENDING": "background-color: #fefce8; color: #a16207;",
         "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
+        "COMMITTED CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
         "LIVE": "background-color: #f0fdfa; color: #0f766e;",
         "Live Conversion %": "background-color: #f0fdfa; color: #0f766e;",
         "PROJECTED LIVE": "background-color: #eef2ff; color: #3730a3;",
@@ -1395,6 +1489,7 @@ else:
         "WELCOME CANCELLED": "WELCOME CANCELLED RAW",
         "WELCOME PENDING": "WELCOME PENDING RAW",
         "COMMITTED REM.": "COMMITTED RAW",
+        "COMMITTED CANCELLED": "COMMITTED CANCELLED RAW",
         "LIVE": "LIVE RAW",
         "LIVE CANCELLED": "LIVE CANCELLED RAW",
         "PROJECTED LIVE": "PROJECTED LIVE RAW",
