@@ -1014,8 +1014,13 @@ def load_attendance_data():
             .rename(columns={
                 "Attendance_Value": "Attendance Value",
                 "Month_Period": "Month Period",
+                "Working_Days": "Working Days",
             })
         )
+
+        # Keep the exact attendance schema expected by the SPD helpers.
+        if "Working Days" not in attendance.columns:
+            attendance["Working Days"] = np.nan
 
         return attendance.reset_index(drop=True)
 
@@ -1030,9 +1035,14 @@ def get_month_working_days(attendance_df: pd.DataFrame, period) -> int:
     month_df = attendance_df[attendance_df["Month Period"] == period].copy()
     if month_df.empty:
         return 0
-    wd = month_df["Working Days"].dropna()
-    if not wd.empty:
-        return int(round(float(wd.max())))
+    working_col = "Working Days" if "Working Days" in month_df.columns else (
+        "Working_Days" if "Working_Days" in month_df.columns else ""
+    )
+    if working_col:
+        wd = pd.to_numeric(month_df[working_col], errors="coerce").dropna()
+        if not wd.empty:
+            return int(round(float(wd.max())))
+    # Robust fallback: count distinct attendance dates for the month.
     return int(month_df["Date Clean"].dt.normalize().nunique())
 
 
