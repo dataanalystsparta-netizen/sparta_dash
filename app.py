@@ -74,6 +74,12 @@ CRM_START_DATE = pd.Timestamp("2026-09-18")
 CRM_MIRROR_WORKSHEET_GID = int(
     st.secrets.get("CRM_MIRROR_WORKSHEET_GID", "1647226826")
 )
+
+# Daily attendance source used for SPD calculations.
+ATTENDANCE_WORKSHEET_GID = int(
+    st.secrets.get("ATTENDANCE_WORKSHEET_GID", "1036958145")
+)
+
 DATA_CACHE_TTL = int(st.secrets.get("DATA_CACHE_TTL_SECONDS", 300))
 
 API_REQUIRED_COLUMNS = [
@@ -867,6 +873,285 @@ def load_hybrid_data():
     return app_df.reset_index(drop=True), portal_df.reset_index(drop=True), source_status
 
 
+
+# ==========================================================
+# ATTENDANCE / SPD DATA
+# ==========================================================
+
+def normalize_person_key(value) -> str:
+    if pd.isna(value):
+        return ""
+    return re.sub(r"[^a-z0-9]", "", str(value).strip().lower())
+
+
+def normalize_attendance_value(value) -> float:
+    """Map 0, 0.5, 1 and UL into FTE-days; UL is treated as 0."""
+    if pd.isna(value):
+        return 0.0
+    text = str(value).strip().lower()
+    if text in {"", "nan", "none", "null", "nat", "ul", "unauthorised leave"}:
+        return 0.0
+    try:
+        numeric = float(text)
+    except Exception:
+        return 0.0
+    if numeric <= 0:
+        return 0.0
+    if numeric >= 1:
+        return 1.0
+    return 0.5
+
+
+def build_attendance_agent_mapping(attendance_names, dashboard_agents):
+    """Match attendance names to dashboard Advisor names."""
+    attendance_names = [
+        str(x).strip() for x in attendance_names
+        if str(x).strip() and str(x).strip().lower() not in {"nan", "none"}
+    ]
+    dashboard_agents = [
+        str(x).strip() for x in dashboard_agents
+        if str(x).strip() and str(x).strip().lower() not in {"nan", "none", "unassigned"}
+    ]
+
+    explicit_aliases = {
+        "frogh": "Frogh Hassani",
+        "krrish": "Krrish Sadana",
+        "animesh": "Animesh Mishra",
+    }
+
+    att_by_key = {normalize_person_key(x): x for x in attendance_names if normalize_person_key(x)}
+    mapping = {}
+
+    for advisor in dashboard_agents:
+        adv_key = normalize_person_key(advisor)
+        if not adv_key:
+            continue
+
+        alias_target = explicit_aliases.get(adv_key)
+        if alias_target:
+            alias_key = normalize_person_key(alias_target)
+            if alias_key in att_by_key:
+                mapping[advisor] = att_by_key[alias_key]
+                continue
+
+        if adv_key in att_by_key:
+            mapping[advisor] = att_by_key[adv_key]
+            continue
+
+        candidates = []
+        for attendance_name in attendance_names:
+            att_key = normalize_person_key(attendance_name)
+            if att_key and (att_key.startswith(adv_key) or adv_key.startswith(att_key)):
+                candidates.append(attendance_name)
+
+        if len(candidates) == 1:
+            mapping[advisor] = candidates[0]
+
+    return mapping
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def load_attendance_data():
+    """
+    Load attendance from worksheet GID 1036958145.
+
+    Attendance values:
+        0   = absent
+        0.5 = half-day
+        1   = present
+        UL  = 0 for SPD calculations
+    """
+    try:
+        client = get_crm_gspread_client()
+        worksheet = client.open_by_key(SPREADSHEET_ID).get_worksheet_by_id(
+            ATTENDANCE_WORKSHEET_GID
+        )
+        values = worksheet.get_all_records()
+        attendance = pd.DataFrame(values)
+
+        if attendance.empty:
+            return pd.DataFrame()
+
+        attendance.columns = [
+            str(c).replace("\ufeff", "").strip()
+            for c in attendance.columns
+        ]
+
+        required = {"Name", "Date", "Attendance"}
+        missing = sorted(required.difference(attendance.columns))
+        if missing:
+            logger.warning(
+                "Attendance sheet is missing required columns: %s",
+                ", ".join(missing),
+            )
+            return pd.DataFrame()
+
+        if "Working Days" not in attendance.columns:
+            attendance["Working Days"] = np.nan
+
+        attendance["Date Clean"] = attendance["Date"].apply(parse_mixed_dates_value)
+        attendance["Attendance Value"] = attendance["Attendance"].apply(
+            normalize_attendance_value
+        )
+        attendance["Name"] = attendance["Name"].fillna("").astype(str).str.strip()
+        attendance["Agent Key"] = attendance["Name"].apply(normalize_person_key)
+        attendance["Month Period"] = attendance["Date Clean"].dt.to_period("M")
+        attendance["Working Days"] = pd.to_numeric(
+            attendance["Working Days"], errors="coerce"
+        )
+        attendance = attendance.dropna(subset=["Date Clean"]).copy()
+
+        # Prevent duplicate rows for the same agent/date from inflating SPD.
+        attendance = (
+            attendance.sort_values(["Agent Key", "Date Clean"])
+            .groupby(["Agent Key", "Date Clean"], as_index=False)
+            .agg(
+                Name=("Name", "last"),
+                Attendance_Value=("Attendance Value", "max"),
+                Month_Period=("Month Period", "last"),
+                Working_Days=("Working Days", "max"),
+            )
+            .rename(columns={
+                "Attendance_Value": "Attendance Value",
+                "Month_Period": "Month Period",
+            })
+        )
+
+        return attendance.reset_index(drop=True)
+
+    except Exception as exc:
+        logger.exception("Attendance sheet load failed: %s", exc)
+        return pd.DataFrame()
+
+
+def get_month_working_days(attendance_df: pd.DataFrame, period) -> int:
+    if attendance_df.empty or period is None:
+        return 0
+    month_df = attendance_df[attendance_df["Month Period"] == period].copy()
+    if month_df.empty:
+        return 0
+    wd = month_df["Working Days"].dropna()
+    if not wd.empty:
+        return int(round(float(wd.max())))
+    return int(month_df["Date Clean"].dt.normalize().nunique())
+
+
+def attach_attendance_advisors(attendance_df: pd.DataFrame, master_df: pd.DataFrame):
+    if attendance_df.empty or master_df.empty or "Advisor" not in master_df.columns:
+        return attendance_df.copy(), {}
+
+    dashboard_agents = (
+        master_df["Advisor"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .replace("", np.nan)
+        .dropna()
+        .unique()
+        .tolist()
+    )
+
+    advisor_to_attendance = build_attendance_agent_mapping(
+        attendance_df["Name"].dropna().unique().tolist(),
+        dashboard_agents,
+    )
+
+    reverse_mapping = {
+        normalize_person_key(attendance_name): advisor
+        for advisor, attendance_name in advisor_to_attendance.items()
+    }
+
+    out = attendance_df.copy()
+    out["Dashboard Advisor"] = out["Agent Key"].map(reverse_mapping).fillna("")
+    return out, advisor_to_attendance
+
+
+def get_team_month_spd(
+    attendance_df: pd.DataFrame,
+    period,
+    applications: int,
+    selected_agent: str = "All Agents",
+):
+    """
+    All Agents:
+        applications / (total matched agents * working days)
+
+    Selected agent:
+        applications / that agent's present FTE-days
+    """
+    if applications <= 0 or attendance_df.empty or period is None:
+        return 0.0, 0.0
+
+    month_att = attendance_df[attendance_df["Month Period"] == period].copy()
+    if month_att.empty:
+        return 0.0, 0.0
+
+    if selected_agent != "All Agents":
+        selected_key = normalize_person_key(selected_agent)
+        matched = month_att[
+            month_att["Dashboard Advisor"].apply(normalize_person_key) == selected_key
+        ]
+        denominator = float(matched["Attendance Value"].sum())
+        return (
+            applications / denominator if denominator > 0 else 0.0,
+            denominator,
+        )
+
+    eligible = month_att[
+        month_att["Dashboard Advisor"].fillna("").astype(str).str.strip() != ""
+    ]
+    total_agents = int(eligible["Dashboard Advisor"].nunique())
+    working_days = get_month_working_days(month_att, period)
+    denominator = float(total_agents * working_days)
+
+    return (
+        applications / denominator if denominator > 0 else 0.0,
+        denominator,
+    )
+
+
+def get_daily_spd(
+    attendance_df: pd.DataFrame,
+    day,
+    applications: int,
+    selected_agent: str = "All Agents",
+):
+    """
+    All Agents:
+        applications / total present FTE-days for the day
+
+    Selected agent:
+        applications / that agent's attendance value for the day
+    """
+    if applications <= 0 or attendance_df.empty or pd.isna(day):
+        return 0.0, 0.0
+
+    day_ts = pd.Timestamp(day).normalize()
+    day_att = attendance_df[
+        attendance_df["Date Clean"].dt.normalize() == day_ts
+    ].copy()
+
+    if day_att.empty:
+        return 0.0, 0.0
+
+    if selected_agent != "All Agents":
+        selected_key = normalize_person_key(selected_agent)
+        matched = day_att[
+            day_att["Dashboard Advisor"].apply(normalize_person_key) == selected_key
+        ]
+        denominator = float(matched["Attendance Value"].sum())
+    else:
+        eligible = day_att[
+            day_att["Dashboard Advisor"].fillna("").astype(str).str.strip() != ""
+        ]
+        denominator = float(eligible["Attendance Value"].sum())
+
+    return (
+        applications / denominator if denominator > 0 else 0.0,
+        denominator,
+    )
+
+
 with st.spinner("Loading historical + CRM data..."):
     try:
         sparta_df, sparta2_df, source_status = load_hybrid_data()
@@ -942,6 +1227,16 @@ def build_master_dataframe(app_df: pd.DataFrame, portal_df: pd.DataFrame) -> pd.
 
 master_raw_df = build_master_dataframe(sparta_df, sparta2_df)
 
+with st.spinner("Loading attendance data..."):
+    attendance_df = load_attendance_data()
+
+if not attendance_df.empty:
+    attendance_df, attendance_agent_mapping = attach_attendance_advisors(
+        attendance_df, master_raw_df
+    )
+else:
+    attendance_agent_mapping = {}
+
 def assign_periods(df: pd.DataFrame, date_col: str = "Sale Date Clean", default_period: str = "2026-01"):
     if date_col in df.columns and not df[date_col].dropna().empty:
         df["Month_Year"] = df[date_col].dt.strftime("%B %Y")
@@ -960,6 +1255,18 @@ source_status_text = (
     f"CRM from 18 Sep 2026 · {source_status['crm_app_rows']:,} application rows"
 )
 st.caption(source_status_text)
+
+if attendance_df.empty:
+    st.warning(
+        "Attendance source unavailable. SPD will display '-' until the attendance sheet is available."
+    )
+else:
+    st.caption(
+        f"Attendance source connected · {attendance_df['Name'].nunique():,} people · "
+        f"{attendance_df['Date Clean'].min().strftime('%d %b %Y')} to "
+        f"{attendance_df['Date Clean'].max().strftime('%d %b %Y')}"
+    )
+
 if source_status["crm_error"]:
     st.warning(
         "CRM source warning: "
@@ -1165,6 +1472,32 @@ else:
     def build_kpi_row(display_label, m_app, m_portal, period_key, is_daily=False):
         """Build one monthly/daily KPI row using the same KPI definitions as the original table."""
         m_total_apps = len(m_app)
+
+        if is_daily:
+            if "Sale Date Clean" in m_app.columns and not m_app["Sale Date Clean"].dropna().empty:
+                spd_day = m_app["Sale Date Clean"].dropna().iloc[0]
+            else:
+                spd_day = pd.to_datetime(display_label, errors="coerce", dayfirst=True)
+
+            m_spd, m_spd_denominator = get_daily_spd(
+                attendance_df,
+                spd_day,
+                m_total_apps,
+                selected_agent=selected_agent,
+            )
+        else:
+            try:
+                period_for_spd = pd.Period(str(period_key)[:6], freq="M")
+            except Exception:
+                period_for_spd = None
+
+            m_spd, m_spd_denominator = get_team_month_spd(
+                attendance_df,
+                period_for_spd,
+                m_total_apps,
+                selected_agent=selected_agent,
+            )
+
         m_qa_approved = count_status(m_app, "Quality Status Clean", "Approved")
         m_qa_rework = count_status(m_app, "Quality Status Clean", "Rework")
         m_qa_cancelled = count_status(m_app, "Quality Status Clean", "Cancelled")
@@ -1295,6 +1628,8 @@ else:
             "MONTH": display_label,
             "PERIOD_KEY": period_key,
             "APPLICATIONS": m_total_apps,
+            "SPD": m_spd,
+            "_SPD_DENOMINATOR": m_spd_denominator,
             "QA APPROVED": m_qa_approved,
             "QA APPROVED RAW": qa_approved_raw,
             "QA Pass Rate % Val": (m_qa_approved / m_total_apps * 100) if m_total_apps > 0 else 0.0,
@@ -1390,6 +1725,12 @@ else:
             "MONTH": "Total",
             "PERIOD_KEY": 999999,
             "APPLICATIONS": tot_apps,
+            "SPD": (
+                tot_apps / monthly_summary_df["_SPD_DENOMINATOR"].sum()
+                if monthly_summary_df["_SPD_DENOMINATOR"].sum() > 0
+                else 0.0
+            ),
+            "_SPD_DENOMINATOR": monthly_summary_df["_SPD_DENOMINATOR"].sum(),
             "QA APPROVED": monthly_summary_df["QA APPROVED"].sum(),
             "QA APPROVED RAW": format_raw_breakdown(monthly_app_df, "Quality Status", "Quality Status Clean", "Approved"),
             "QA Pass Rate % Val": (monthly_summary_df["QA APPROVED"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
@@ -1453,7 +1794,7 @@ else:
         )
 
     display_columns = [
-        "MONTH", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
+        "MONTH", "APPLICATIONS", "SPD", "QA APPROVED", "QA Pass Rate %",
         "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
         "Welcome Done %", "WELCOME CANCELLED", "WELCOME PENDING",
         "COMMITTED REM.", "COMMITTED CANCELLED", "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED",
@@ -1462,6 +1803,7 @@ else:
     m_header_styles = {
         "MONTH": "background-color: #f1f5f9; color: #334155;",
         "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
+        "SPD": "background-color: #e0f2fe; color: #0369a1;",
         "QA APPROVED": "background-color: #f0fdf4; color: #15803d;",
         "QA Pass Rate %": "background-color: #f0fdf4; color: #15803d;",
         "QA REWORK": "background-color: #fefce8; color: #a16207;",
@@ -1504,6 +1846,11 @@ else:
             period_key = int(row.get("PERIOD_KEY", 0)) if pd.notna(row.get("PERIOD_KEY", None)) else 0
             cell_text = escape(str(row["MONTH"]))
             return f'<td data-sort="{period_key}">{cell_text}</td>'
+
+        if col_name == "SPD":
+            val = float(row.get("SPD", 0.0) or 0.0)
+            formatted = "-" if val <= 0 else f"{val:.2f}"
+            return f'<td data-sort="{val:.6f}">{formatted}</td>'
 
         if col_name == "QA Pass Rate %":
             val = float(row["QA Pass Rate % Val"])
@@ -1889,6 +2236,39 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
     if advisor_summary.empty:
         st.info("No sales records match the selected tag filters.")
     else:
+        if not attendance_df.empty:
+            perf_att = attendance_df[
+                (attendance_df["Date Clean"].dt.date >= start_date)
+                & (attendance_df["Date Clean"].dt.date <= end_date)
+            ].copy()
+
+            if selected_month != "All Months":
+                perf_att = perf_att[
+                    perf_att["Date Clean"].dt.strftime("%B %Y") == selected_month
+                ]
+
+            present_days_by_agent = (
+                perf_att[
+                    perf_att["Dashboard Advisor"].fillna("").astype(str).str.strip() != ""
+                ]
+                .groupby("Dashboard Advisor")["Attendance Value"]
+                .sum()
+            )
+
+            advisor_summary["PRESENT DAYS"] = (
+                advisor_summary["Advisor"]
+                .map(present_days_by_agent)
+                .fillna(0.0)
+            )
+        else:
+            advisor_summary["PRESENT DAYS"] = 0.0
+
+        advisor_summary["SPD"] = np.where(
+            advisor_summary["PRESENT DAYS"] > 0,
+            advisor_summary["Applications"] / advisor_summary["PRESENT DAYS"],
+            0.0,
+        )
+
         advisor_summary["QA Pass Rate % Val"] = ((advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
         advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
         advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
@@ -1961,12 +2341,12 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         master_df.drop(columns=["_advisor_norm"], inplace=True, errors=True)
 
         numeric_cols = {
-            "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
+            "APPLICATIONS", "SPD", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
             "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE"
         }
 
         base_col_order = [
-            "SALES EXECUTIVE", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
+            "SALES EXECUTIVE", "APPLICATIONS", "SPD", "QA APPROVED", "QA Pass Rate %",
             "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
             "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
             "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED"
@@ -2014,6 +2394,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         header_styles = {
             "SALES EXECUTIVE": "background-color:#f1f5f9;color:#334155;",
             "APPLICATIONS": "background-color:#eff6ff;color:#1e40af;",
+            "SPD": "background-color:#e0f2fe;color:#0369a1;",
             "QA APPROVED": "background-color:#f0fdf4;color:#15803d;",
             "QA Pass Rate %": "background-color:#f0fdf4;color:#15803d;",
             "QA REWORK": "background-color:#fefce8;color:#a16207;",
@@ -2034,6 +2415,16 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         # Compute totals across visible advisors for numeric columns
         totals_series = advisor_summary[[c for c in advisor_summary.columns if c in numeric_cols]].sum(numeric_only=True)
         total_apps = int(totals_series.get("APPLICATIONS", 0))
+        total_present_days = float(
+            advisor_summary["PRESENT DAYS"].sum()
+            if "PRESENT DAYS" in advisor_summary.columns
+            else 0.0
+        )
+        total_spd = (
+            total_apps / total_present_days
+            if total_present_days > 0
+            else 0.0
+        )
         total_qa_approved = int(totals_series.get("QA APPROVED", 0))
         total_welcome_done = int(totals_series.get("WELCOME DONE", 0))
         total_live = int(totals_series.get("LIVE", 0))
@@ -2124,6 +2515,10 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
                     if lname in LEFT_ADVISORS_SET:
                         tags_html += '<span class="tag left">Left</span>'
                     adv_html += f"<td data-sort=\"{escape(name)}\">{name}{tags_html}</td>"
+                elif c == "SPD":
+                    val = float(r.get("SPD", 0.0) or 0.0)
+                    formatted = "-" if val <= 0 else f"{val:.2f}"
+                    adv_html += f'<td data-sort="{val:.6f}">{formatted}</td>'
                 elif c == "QA Pass Rate %":
                     val = float(r["QA Pass Rate % Val"])
                     raw_text = adv_tooltips_local.get("QA APPROVED", "")
@@ -2189,6 +2584,9 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         for c in visible_cols:
             if c == "SALES EXECUTIVE":
                 adv_html += "<td data-sort='Total'>Total</td>"
+            elif c == "SPD":
+                formatted = "-" if total_spd <= 0 else f"{total_spd:.2f}"
+                adv_html += f'<td data-sort="{total_spd:.6f}">{formatted}</td>'
             elif c == "QA Pass Rate %":
                 adv_html += f'<td data-sort="{total_qa_pass_pct:.6f}">' + f'{render_qa_pill(total_qa_pass_pct)}</td>'
             elif c == "Welcome Done %":
