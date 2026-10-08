@@ -1082,42 +1082,35 @@ def get_team_month_spd(
     applications: int,
     selected_agent: str = "All Agents",
 ):
-    """Return (SPD, working-days capacity, present-days) for one month.
-
-    Team view:
-        SPD = Applications / total present FTE-days in the month.
-        Working Days = matched agents * calendar working days.
-
-    Selected-agent view:
-        SPD = Applications / that agent's present FTE-days.
-        Working Days = calendar working days in the month.
     """
-    if attendance_df.empty or period is None:
-        return 0.0, 0.0, 0.0
+    Monthly SPD uses only the summed Attendance Value as the denominator.
+
+    All Agents:
+        applications / sum of Attendance Value for the month
+
+    Selected agent:
+        applications / sum of Attendance Value for that agent in the month
+    """
+    if applications <= 0 or attendance_df.empty or period is None:
+        return 0.0, 0.0
 
     month_att = attendance_df[attendance_df["Month Period"] == period].copy()
     if month_att.empty:
-        return 0.0, 0.0, 0.0
-
-    eligible = month_att[
-        month_att["Dashboard Advisor"].fillna("").astype(str).str.strip() != ""
-    ].copy()
-    working_days_calendar = float(get_month_working_days(month_att, period))
+        return 0.0, 0.0
 
     if selected_agent != "All Agents":
         selected_key = normalize_person_key(selected_agent)
-        matched = eligible[
-            eligible["Dashboard Advisor"].apply(normalize_person_key) == selected_key
-        ]
-        present_days = float(matched["Attendance Value"].sum())
-        working_days_capacity = working_days_calendar if not matched.empty else 0.0
-    else:
-        present_days = float(eligible["Attendance Value"].sum())
-        total_agents = int(eligible["Dashboard Advisor"].nunique())
-        working_days_capacity = float(total_agents * working_days_calendar)
+        month_att = month_att[
+            month_att["Dashboard Advisor"].apply(normalize_person_key) == selected_key
+        ].copy()
 
-    spd = applications / present_days if applications > 0 and present_days > 0 else 0.0
-    return spd, working_days_capacity, present_days
+    # The attendance column itself is the denominator.
+    denominator = float(month_att["Attendance Value"].sum())
+
+    return (
+        applications / denominator if denominator > 0 else 0.0,
+        denominator,
+    )
 
 
 def get_daily_spd(
@@ -1126,43 +1119,38 @@ def get_daily_spd(
     applications: int,
     selected_agent: str = "All Agents",
 ):
-    """Return (SPD, working-days capacity, present-days) for one date.
-
-    Team view:
-        Working Days = number of mapped agents scheduled on that date.
-        Present Days = sum of 0 / 0.5 / 1 attendance values.
-
-    Selected-agent view:
-        Working Days = 1 when the date is a scheduled attendance date.
-        Present Days = that agent's attendance value.
     """
-    if attendance_df.empty or pd.isna(day):
-        return 0.0, 0.0, 0.0
+    Daily SPD uses the summed Attendance Value as the denominator.
+
+    All Agents:
+        applications / sum of attendance values for the day
+
+    Selected agent:
+        applications / that agent's attendance value for the day
+    """
+    if applications <= 0 or attendance_df.empty or pd.isna(day):
+        return 0.0, 0.0
 
     day_ts = pd.Timestamp(day).normalize()
     day_att = attendance_df[
         attendance_df["Date Clean"].dt.normalize() == day_ts
     ].copy()
-    if day_att.empty:
-        return 0.0, 0.0, 0.0
 
-    eligible = day_att[
-        day_att["Dashboard Advisor"].fillna("").astype(str).str.strip() != ""
-    ].copy()
+    if day_att.empty:
+        return 0.0, 0.0
 
     if selected_agent != "All Agents":
         selected_key = normalize_person_key(selected_agent)
-        matched = eligible[
-            eligible["Dashboard Advisor"].apply(normalize_person_key) == selected_key
-        ]
-        working_days_capacity = 1.0 if not matched.empty else 0.0
-        present_days = float(matched["Attendance Value"].sum())
-    else:
-        working_days_capacity = float(eligible["Dashboard Advisor"].nunique())
-        present_days = float(eligible["Attendance Value"].sum())
+        day_att = day_att[
+            day_att["Dashboard Advisor"].apply(normalize_person_key) == selected_key
+        ].copy()
 
-    spd = applications / present_days if applications > 0 and present_days > 0 else 0.0
-    return spd, working_days_capacity, present_days
+    denominator = float(day_att["Attendance Value"].sum())
+
+    return (
+        applications / denominator if denominator > 0 else 0.0,
+        denominator,
+    )
 
 
 with st.spinner("Loading historical + CRM data..."):
@@ -1492,7 +1480,7 @@ else:
             else:
                 spd_day = pd.to_datetime(display_label, errors="coerce", dayfirst=True)
 
-            m_spd, m_working_days, m_present_days = get_daily_spd(
+            m_spd, m_spd_denominator = get_daily_spd(
                 attendance_df,
                 spd_day,
                 m_total_apps,
@@ -1504,7 +1492,7 @@ else:
             except Exception:
                 period_for_spd = None
 
-            m_spd, m_working_days, m_present_days = get_team_month_spd(
+            m_spd, m_spd_denominator = get_team_month_spd(
                 attendance_df,
                 period_for_spd,
                 m_total_apps,
@@ -1641,10 +1629,9 @@ else:
             "MONTH": display_label,
             "PERIOD_KEY": period_key,
             "APPLICATIONS": m_total_apps,
-            "WORKING DAYS": m_working_days,
-            "PRESENT DAYS": m_present_days,
+            "TOTAL PRESENT": m_spd_denominator,
             "SPD": m_spd,
-            "_SPD_DENOMINATOR": m_present_days,
+            "_SPD_DENOMINATOR": m_spd_denominator,
             "QA APPROVED": m_qa_approved,
             "QA APPROVED RAW": qa_approved_raw,
             "QA Pass Rate % Val": (m_qa_approved / m_total_apps * 100) if m_total_apps > 0 else 0.0,
@@ -1740,14 +1727,13 @@ else:
             "MONTH": "Total",
             "PERIOD_KEY": 999999,
             "APPLICATIONS": tot_apps,
-            "WORKING DAYS": monthly_summary_df["WORKING DAYS"].sum(),
-            "PRESENT DAYS": monthly_summary_df["PRESENT DAYS"].sum(),
+            "TOTAL PRESENT": float(monthly_summary_df["_SPD_DENOMINATOR"].sum()),
             "SPD": (
-                tot_apps / monthly_summary_df["PRESENT DAYS"].sum()
-                if monthly_summary_df["PRESENT DAYS"].sum() > 0
+                tot_apps / monthly_summary_df["_SPD_DENOMINATOR"].sum()
+                if monthly_summary_df["_SPD_DENOMINATOR"].sum() > 0
                 else 0.0
             ),
-            "_SPD_DENOMINATOR": monthly_summary_df["PRESENT DAYS"].sum(),
+            "_SPD_DENOMINATOR": monthly_summary_df["_SPD_DENOMINATOR"].sum(),
             "QA APPROVED": monthly_summary_df["QA APPROVED"].sum(),
             "QA APPROVED RAW": format_raw_breakdown(monthly_app_df, "Quality Status", "Quality Status Clean", "Approved"),
             "QA Pass Rate % Val": (monthly_summary_df["QA APPROVED"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
@@ -1811,7 +1797,7 @@ else:
         )
 
     display_columns = [
-        "MONTH", "APPLICATIONS", "WORKING DAYS", "PRESENT DAYS", "SPD", "QA APPROVED", "QA Pass Rate %",
+        "MONTH", "APPLICATIONS", "TOTAL PRESENT", "SPD", "QA APPROVED", "QA Pass Rate %",
         "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
         "Welcome Done %", "WELCOME CANCELLED", "WELCOME PENDING",
         "COMMITTED REM.", "COMMITTED CANCELLED", "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED",
@@ -1820,8 +1806,7 @@ else:
     m_header_styles = {
         "MONTH": "background-color: #f1f5f9; color: #334155;",
         "APPLICATIONS": "background-color: #eff6ff; color: #1e40af;",
-        "WORKING DAYS": "background-color: #f8fafc; color: #475569;",
-        "PRESENT DAYS": "background-color: #f0fdfa; color: #0f766e;",
+        "TOTAL PRESENT": "background-color: #ecfeff; color: #0e7490;",
         "SPD": "background-color: #e0f2fe; color: #0369a1;",
         "QA APPROVED": "background-color: #f0fdf4; color: #15803d;",
         "QA Pass Rate %": "background-color: #f0fdf4; color: #15803d;",
@@ -1866,9 +1851,14 @@ else:
             cell_text = escape(str(row["MONTH"]))
             return f'<td data-sort="{period_key}">{cell_text}</td>'
 
-        if col_name in {"WORKING DAYS", "PRESENT DAYS"}:
-            val = float(row.get(col_name, 0.0) or 0.0)
-            formatted = "-" if val <= 0 else (f"{val:.1f}" if abs(val - round(val)) > 1e-9 else f"{int(round(val)):,}")
+        if col_name == "TOTAL PRESENT":
+            val = float(row.get("TOTAL PRESENT", 0.0) or 0.0)
+            if val <= 0:
+                formatted = "-"
+            elif abs(val - round(val)) < 1e-9:
+                formatted = f"{int(round(val)):,}"
+            else:
+                formatted = f"{val:.1f}"
             return f'<td data-sort="{val:.6f}">{formatted}</td>'
 
         if col_name == "SPD":
@@ -2271,29 +2261,25 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
                     perf_att["Date Clean"].dt.strftime("%B %Y") == selected_month
                 ]
 
-            mapped_att = perf_att[
-                perf_att["Dashboard Advisor"].fillna("").astype(str).str.strip() != ""
-            ].copy()
-
-            working_days_count = int(mapped_att["Date Clean"].dt.normalize().nunique()) if not mapped_att.empty else 0
-            present_days_by_agent = (
-                mapped_att.groupby("Dashboard Advisor")["Attendance Value"].sum()
-                if not mapped_att.empty else pd.Series(dtype=float)
+            total_present_by_agent = (
+                perf_att[
+                    perf_att["Dashboard Advisor"].fillna("").astype(str).str.strip() != ""
+                ]
+                .groupby("Dashboard Advisor")["Attendance Value"]
+                .sum()
             )
 
-            advisor_summary["WORKING DAYS"] = float(working_days_count)
-            advisor_summary["PRESENT DAYS"] = (
+            advisor_summary["TOTAL PRESENT"] = (
                 advisor_summary["Advisor"]
-                .map(present_days_by_agent)
+                .map(total_present_by_agent)
                 .fillna(0.0)
             )
         else:
-            advisor_summary["WORKING DAYS"] = 0.0
-            advisor_summary["PRESENT DAYS"] = 0.0
+            advisor_summary["TOTAL PRESENT"] = 0.0
 
         advisor_summary["SPD"] = np.where(
-            advisor_summary["PRESENT DAYS"] > 0,
-            advisor_summary["Applications"] / advisor_summary["PRESENT DAYS"],
+            advisor_summary["TOTAL PRESENT"] > 0,
+            advisor_summary["Applications"] / advisor_summary["TOTAL PRESENT"],
             0.0,
         )
 
@@ -2369,12 +2355,12 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         master_df.drop(columns=["_advisor_norm"], inplace=True, errors=True)
 
         numeric_cols = {
-            "APPLICATIONS", "WORKING DAYS", "PRESENT DAYS", "SPD", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
+            "APPLICATIONS", "TOTAL PRESENT", "SPD", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
             "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE"
         }
 
         base_col_order = [
-            "SALES EXECUTIVE", "APPLICATIONS", "WORKING DAYS", "PRESENT DAYS", "SPD", "QA APPROVED", "QA Pass Rate %",
+            "SALES EXECUTIVE", "APPLICATIONS", "TOTAL PRESENT", "SPD", "QA APPROVED", "QA Pass Rate %",
             "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
             "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
             "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED"
@@ -2422,8 +2408,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         header_styles = {
             "SALES EXECUTIVE": "background-color:#f1f5f9;color:#334155;",
             "APPLICATIONS": "background-color:#eff6ff;color:#1e40af;",
-            "WORKING DAYS": "background-color:#f8fafc;color:#475569;",
-            "PRESENT DAYS": "background-color:#f0fdfa;color:#0f766e;",
+            "TOTAL PRESENT": "background-color:#ecfeff;color:#0e7490;",
             "SPD": "background-color:#e0f2fe;color:#0369a1;",
             "QA APPROVED": "background-color:#f0fdf4;color:#15803d;",
             "QA Pass Rate %": "background-color:#f0fdf4;color:#15803d;",
@@ -2445,19 +2430,14 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         # Compute totals across visible advisors for numeric columns
         totals_series = advisor_summary[[c for c in advisor_summary.columns if c in numeric_cols]].sum(numeric_only=True)
         total_apps = int(totals_series.get("APPLICATIONS", 0))
-        total_working_days = float(
-            advisor_summary["WORKING DAYS"].sum()
-            if "WORKING DAYS" in advisor_summary.columns
-            else 0.0
-        )
-        total_present_days = float(
-            advisor_summary["PRESENT DAYS"].sum()
-            if "PRESENT DAYS" in advisor_summary.columns
+        total_present = float(
+            advisor_summary["TOTAL PRESENT"].sum()
+            if "TOTAL PRESENT" in advisor_summary.columns
             else 0.0
         )
         total_spd = (
-            total_apps / total_present_days
-            if total_present_days > 0
+            total_apps / total_present
+            if total_present > 0
             else 0.0
         )
         total_qa_approved = int(totals_series.get("QA APPROVED", 0))
@@ -2550,9 +2530,14 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
                     if lname in LEFT_ADVISORS_SET:
                         tags_html += '<span class="tag left">Left</span>'
                     adv_html += f"<td data-sort=\"{escape(name)}\">{name}{tags_html}</td>"
-                elif c in {"WORKING DAYS", "PRESENT DAYS"}:
-                    val = float(r.get(c, 0.0) or 0.0)
-                    formatted = "-" if val <= 0 else (f"{val:.1f}" if abs(val - round(val)) > 1e-9 else f"{int(round(val)):,}")
+                elif c == "TOTAL PRESENT":
+                    val = float(r.get("TOTAL PRESENT", 0.0) or 0.0)
+                    if val <= 0:
+                        formatted = "-"
+                    elif abs(val - round(val)) < 1e-9:
+                        formatted = f"{int(round(val)):,}"
+                    else:
+                        formatted = f"{val:.1f}"
                     adv_html += f'<td data-sort="{val:.6f}">{formatted}</td>'
                 elif c == "SPD":
                     val = float(r.get("SPD", 0.0) or 0.0)
@@ -2623,12 +2608,14 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         for c in visible_cols:
             if c == "SALES EXECUTIVE":
                 adv_html += "<td data-sort='Total'>Total</td>"
-            elif c == "WORKING DAYS":
-                formatted = "-" if total_working_days <= 0 else (f"{total_working_days:.1f}" if abs(total_working_days - round(total_working_days)) > 1e-9 else f"{int(round(total_working_days)):,}")
-                adv_html += f'<td data-sort="{total_working_days:.6f}">{formatted}</td>'
-            elif c == "PRESENT DAYS":
-                formatted = "-" if total_present_days <= 0 else (f"{total_present_days:.1f}" if abs(total_present_days - round(total_present_days)) > 1e-9 else f"{int(round(total_present_days)):,}")
-                adv_html += f'<td data-sort="{total_present_days:.6f}">{formatted}</td>'
+            elif c == "TOTAL PRESENT":
+                if total_present <= 0:
+                    formatted = "-"
+                elif abs(total_present - round(total_present)) < 1e-9:
+                    formatted = f"{int(round(total_present)):,}"
+                else:
+                    formatted = f"{total_present:.1f}"
+                adv_html += f'<td data-sort="{total_present:.6f}">{formatted}</td>'
             elif c == "SPD":
                 formatted = "-" if total_spd <= 0 else f"{total_spd:.2f}"
                 adv_html += f'<td data-sort="{total_spd:.6f}">{formatted}</td>'
