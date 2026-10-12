@@ -688,11 +688,17 @@ def derive_crm_portal_status(row: pd.Series) -> str:
     dispatch = norm(dispatch)
     confirmation = norm(confirmation)
 
+    # Keep the CRM confirmation-cancellation bucket separate from Live Cancelled.
+    # These applications can also have "Connectivity: Order Cancelled"; treating
+    # that as Live Cancelled would count the same application in both KPIs.
+    if confirmation in {"to be cancelled", "to be canceled"}:
+        return "Committed Cancelled"
+
     # Only current status fields drive cancellation classification. Do not use
     # free-text cancellation-reason columns here, as those can be historical.
     status_text = " | ".join([provisioning, dispatch, confirmation, onboarding])
     if re.search(
-        r"\bto\s*be\s*cancelled\b|\border\s*cancelled\b|\bcancelled\b|\bcanceled\b|\brejected\b|\breject\b|\brejection\b",
+        r"\border\s*cancelled\b|\border\s*canceled\b|\bcancelled\b|\bcanceled\b|\brejected\b|\breject\b|\brejection\b",
         status_text,
         re.IGNORECASE,
     ):
@@ -1921,14 +1927,26 @@ else:
                 .str.replace(r"\s+", " ", regex=True)
                 .str.strip()
             )
-            m_p_committed_crm = int(
-                crm_confirmation_norm.isin({
-                    "confirmation approved",
-                    "confirmation followup",
-                    "confirmation follow-up",
-                    "confirmation pending",
-                }).sum()
+            # Make CRM KPI buckets mutually exclusive. Confirmation Approved can
+            # coexist with Port-Pending / Onboarding Approved; those records are
+            # Live and must not also be counted as Committed Rem. Likewise, any
+            # row already classified as cancelled is excluded from Committed Rem.
+            crm_committed_candidate = crm_confirmation_norm.isin({
+                "confirmation approved",
+                "confirmation followup",
+                "confirmation follow-up",
+                "confirmation pending",
+            })
+            crm_portal_status_norm = (
+                crm_portal.get(
+                    "Portal Status Clean",
+                    pd.Series(index=crm_portal.index, dtype=object),
+                ).fillna("").astype(str).str.strip().str.lower()
             )
+            crm_committed_rem_mask = crm_committed_candidate & ~crm_portal_status_norm.isin({
+                "live", "cancelled", "committed cancelled"
+            })
+            m_p_committed_crm = int(crm_committed_rem_mask.sum())
             m_p_committed_cancelled = int(
                 (crm_confirmation_norm == "to be cancelled").sum()
             )
@@ -1962,12 +1980,7 @@ else:
                 .astype(str)
                 .str.strip()
             )
-            committed_mask = crm_confirmation_norm.isin({
-                "confirmation approved",
-                "confirmation followup",
-                "confirmation follow-up",
-                "confirmation pending",
-            })
+            committed_mask = crm_committed_rem_mask
             committed_counts = crm_conf_display[committed_mask].value_counts()
             if not committed_counts.empty:
                 lines = [f"{raw}: {count}" for raw, count in committed_counts.items()]
@@ -2143,7 +2156,7 @@ else:
             "COMMITTED REM.": monthly_summary_df["COMMITTED REM."].sum(),
             "COMMITTED RAW": "Aggregate committed breakdown shown in the monthly rows",
             "COMMITTED CANCELLED": monthly_summary_df["COMMITTED CANCELLED"].sum(),
-            "COMMITTED CANCELLED RAW": "CRM Confirmation Status = To Be Cancelled",
+            "COMMITTED CANCELLED RAW": "CRM Confirmation Status = To Be Cancelled (excluded from Live Cancelled)",
             "LIVE": monthly_summary_df["LIVE"].sum(),
             "LIVE RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Live"),
             "Live Conversion % Val": (monthly_summary_df["LIVE"].sum() / total_conversion_rate_denominator * 100) if total_conversion_rate_denominator > 0 else 0.0,
