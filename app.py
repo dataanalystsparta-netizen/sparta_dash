@@ -529,6 +529,13 @@ def load_sparta2() -> pd.DataFrame:
     if df.empty:
         return df
 
+    # Preserve the advisor identifier if the source worksheet exposes Agent or Advisor.
+    # Prefer an existing Advisor column if both are present to avoid duplicate columns.
+    if "Agent" in df.columns and "Advisor" not in df.columns:
+        df = df.rename(columns={"Agent": "Advisor"})
+    elif "Agent" in df.columns and "Advisor" in df.columns:
+        df = df.drop(columns=["Agent"])
+
     rename_map = {
         "Sale Date": "Sale Date",
         "Telephone No.": "Telephone No.",
@@ -541,6 +548,7 @@ def load_sparta2() -> pd.DataFrame:
         "Cancellation Reason": "Portal Cancellation",
         "Dashboard_Month": "Dashboard Month",
         "Standardized_Date": "Standardized Date",
+        "Advisor": "Advisor",
     }
 
     df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
@@ -1365,6 +1373,18 @@ def count_status(df: pd.DataFrame, column: str, target_val: str) -> int:
 def get_pct(part: int, total: int) -> str:
     return "0.0%" if total == 0 else f"{(part / total * 100):.1f}%"
 
+
+def count_non_pending_applications(df: pd.DataFrame, status_columns: List[str]) -> int:
+    """Count rows excluding applications currently pending at any supplied stage."""
+    if df is None or df.empty:
+        return 0
+    eligible = pd.Series(True, index=df.index, dtype=bool)
+    for column in status_columns:
+        if column in df.columns:
+            normalized = df[column].fillna("").astype(str).str.strip().str.lower()
+            eligible &= normalized.ne("pending")
+    return int(eligible.sum())
+
 total_applications = len(master_df)
 portal_total = len(filtered_portal_df)
 
@@ -1508,6 +1528,16 @@ else:
         m_wc_cancelled = count_status(m_app, "Welcome Status Clean", "Cancelled")
         m_wc_pending = count_status(m_app, "Welcome Status Clean", "Pending")
 
+        # Stage conversion rates exclude applications still Pending.
+        # QA pass rate excludes QA-Pending only; welcome/live rates exclude rows
+        # pending either at QA or Welcome, counting each application only once.
+        qa_rate_denominator = count_non_pending_applications(
+            m_app, ["Quality Status Clean"]
+        )
+        conversion_rate_denominator = count_non_pending_applications(
+            m_app, ["Quality Status Clean", "Welcome Status Clean"]
+        )
+
         m_p_live = count_status(m_portal, "Portal Status Clean", "Live")
 
         # CRM-only committed semantics for the Monthly KPI Breakdown:
@@ -1634,7 +1664,7 @@ else:
             "_SPD_DENOMINATOR": m_spd_denominator,
             "QA APPROVED": m_qa_approved,
             "QA APPROVED RAW": qa_approved_raw,
-            "QA Pass Rate % Val": (m_qa_approved / m_total_apps * 100) if m_total_apps > 0 else 0.0,
+            "QA Pass Rate % Val": (m_qa_approved / qa_rate_denominator * 100) if qa_rate_denominator > 0 else 0.0,
             "QA REWORK": m_qa_rework,
             "QA REWORK RAW": qa_rework_raw,
             "QA CANCELLED": m_qa_cancelled,
@@ -1643,7 +1673,7 @@ else:
             "QA PENDING RAW": qa_pending_raw,
             "WELCOME DONE": m_wc_done,
             "WELCOME DONE RAW": welcome_done_raw,
-            "Welcome Done % Val": (m_wc_done / m_total_apps * 100) if m_total_apps > 0 else 0.0,
+            "Welcome Done % Val": (m_wc_done / conversion_rate_denominator * 100) if conversion_rate_denominator > 0 else 0.0,
             "WELCOME CANCELLED": m_wc_cancelled,
             "WELCOME CANCELLED RAW": welcome_cancelled_raw,
             "WELCOME PENDING": m_wc_pending,
@@ -1654,7 +1684,7 @@ else:
             "COMMITTED CANCELLED RAW": crm_committed_cancelled_raw,
             "LIVE": m_p_live,
             "LIVE RAW": live_raw,
-            "Live Conversion % Val": (m_p_live / m_total_apps * 100) if m_total_apps > 0 else 0.0,
+            "Live Conversion % Val": (m_p_live / conversion_rate_denominator * 100) if conversion_rate_denominator > 0 else 0.0,
             "LIVE CANCELLED": m_p_cancelled,
             "LIVE CANCELLED RAW": live_cancelled_raw,
             "PROJECTED LIVE": int(round(m_projected)),
@@ -1723,6 +1753,12 @@ else:
     # ----------------------------------------------------------
     if not monthly_summary_df.empty:
         tot_apps = monthly_summary_df["APPLICATIONS"].sum()
+        total_qa_rate_denominator = count_non_pending_applications(
+            monthly_app_df, ["Quality Status Clean"]
+        )
+        total_conversion_rate_denominator = count_non_pending_applications(
+            monthly_app_df, ["Quality Status Clean", "Welcome Status Clean"]
+        )
         totals_row = {
             "MONTH": "Total",
             "PERIOD_KEY": 999999,
@@ -1736,7 +1772,7 @@ else:
             "_SPD_DENOMINATOR": monthly_summary_df["_SPD_DENOMINATOR"].sum(),
             "QA APPROVED": monthly_summary_df["QA APPROVED"].sum(),
             "QA APPROVED RAW": format_raw_breakdown(monthly_app_df, "Quality Status", "Quality Status Clean", "Approved"),
-            "QA Pass Rate % Val": (monthly_summary_df["QA APPROVED"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
+            "QA Pass Rate % Val": (monthly_summary_df["QA APPROVED"].sum() / total_qa_rate_denominator * 100) if total_qa_rate_denominator > 0 else 0.0,
             "QA REWORK": monthly_summary_df["QA REWORK"].sum(),
             "QA REWORK RAW": format_raw_breakdown(monthly_app_df, "Quality Status", "Quality Status Clean", "Rework"),
             "QA CANCELLED": monthly_summary_df["QA CANCELLED"].sum(),
@@ -1745,7 +1781,7 @@ else:
             "QA PENDING RAW": format_raw_breakdown(monthly_app_df, "Quality Status", "Quality Status Clean", "Pending"),
             "WELCOME DONE": monthly_summary_df["WELCOME DONE"].sum(),
             "WELCOME DONE RAW": format_raw_breakdown(monthly_app_df, "Welcome Status", "Welcome Status Clean", "Done"),
-            "Welcome Done % Val": (monthly_summary_df["WELCOME DONE"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
+            "Welcome Done % Val": (monthly_summary_df["WELCOME DONE"].sum() / total_conversion_rate_denominator * 100) if total_conversion_rate_denominator > 0 else 0.0,
             "WELCOME CANCELLED": monthly_summary_df["WELCOME CANCELLED"].sum(),
             "WELCOME CANCELLED RAW": format_raw_breakdown(monthly_app_df, "Welcome Status", "Welcome Status Clean", "Cancelled"),
             "WELCOME PENDING": monthly_summary_df["WELCOME PENDING"].sum(),
@@ -1756,7 +1792,7 @@ else:
             "COMMITTED CANCELLED RAW": "CRM Confirmation Status = To Be Cancelled",
             "LIVE": monthly_summary_df["LIVE"].sum(),
             "LIVE RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Live"),
-            "Live Conversion % Val": (monthly_summary_df["LIVE"].sum() / tot_apps * 100) if tot_apps > 0 else 0.0,
+            "Live Conversion % Val": (monthly_summary_df["LIVE"].sum() / total_conversion_rate_denominator * 100) if total_conversion_rate_denominator > 0 else 0.0,
             "LIVE CANCELLED": monthly_summary_df["LIVE CANCELLED"].sum(),
             "LIVE CANCELLED RAW": format_raw_breakdown(monthly_portal_df, "Portal Status", "Portal Status Clean", "Cancelled"),
             "PROJECTED LIVE": int(round(
@@ -2202,6 +2238,22 @@ selected_performance_table = st.radio(
     horizontal=True,
 )
 
+# Rate denominators are based on individual application rows so overlapping
+# pending states are never subtracted twice.
+performance_source_df = master_df.copy()
+_qa_status_normalized = (
+    performance_source_df.get("Quality Status Clean", pd.Series("", index=performance_source_df.index))
+    .fillna("").astype(str).str.strip().str.lower()
+)
+_welcome_status_normalized = (
+    performance_source_df.get("Welcome Status Clean", pd.Series("", index=performance_source_df.index))
+    .fillna("").astype(str).str.strip().str.lower()
+)
+performance_source_df["_QA_Rate_Denominator"] = _qa_status_normalized.ne("pending").astype(int)
+performance_source_df["_Conversion_Rate_Denominator"] = (
+    _qa_status_normalized.ne("pending") & _welcome_status_normalized.ne("pending")
+).astype(int)
+
 # ==========================================================
 # ADVISOR PERFORMANCE MATRIX (with per-advisor tooltips, totals row, sticky header & sorting)
 # Add PROJECTED LIVE and Projected Live % to advisor summary
@@ -2210,24 +2262,118 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown":
     st.divider()
     st.subheader("👥 Sales Executive Performance Breakdown")
 
-if selected_performance_table == "👥 Sales Executive Performance Breakdown" and "Advisor" in master_df.columns and not master_df.empty:
-    advisor_summary = (
-        master_df.groupby("Advisor", dropna=False)
-            .agg(
-                Applications=("Advisor", "count"),
-                QA_Approved=("Quality Status Clean", lambda x: (x == "Approved").sum()),
-                QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
-                QA_Cancelled=("Quality Status Clean", lambda x: (x == "Cancelled").sum()),
-                QA_Pending=("Quality Status Clean", lambda x: (x == "Pending").sum()),
-                Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
-                Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
-                Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
-                Committed=("Portal Status Clean", lambda x: (x == "Committed").sum()),
-                Live=("Portal Status Clean", lambda x: (x == "Live").sum()),
-                Live_Cancelled=("Portal Status Clean", lambda x: (x == "Cancelled").sum()),
+if selected_performance_table == "👥 Sales Executive Performance Breakdown" and (
+    not master_df.empty or not filtered_portal_df.empty
+):
+    # -------------------------- APPLICATION METRICS --------------------------
+    app_perf_df = performance_source_df.copy()
+    app_perf_df["_AdvisorDisplay"] = app_perf_df["Advisor"].fillna("").astype(str).str.strip()
+    app_perf_df.loc[app_perf_df["_AdvisorDisplay"] == "", "_AdvisorDisplay"] = "Unassigned"
+    app_perf_df["_AdvisorKey"] = app_perf_df["_AdvisorDisplay"].apply(normalize_person_key)
+
+    if app_perf_df.empty:
+        advisor_summary = pd.DataFrame(columns=[
+            "_AdvisorKey", "Advisor", "Applications", "QA_Approved", "QA_Rework",
+            "QA_Cancelled", "QA_Pending", "Welcome_Done", "Welcome_Cancelled",
+            "Welcome_Pending", "QA_Rate_Denominator", "Conversion_Rate_Denominator",
+        ])
+    else:
+        advisor_summary = (
+            app_perf_df.groupby("_AdvisorKey", dropna=False)
+                .agg(
+                    Advisor=("_AdvisorDisplay", "first"),
+                    Applications=("_AdvisorKey", "size"),
+                    QA_Approved=("Quality Status Clean", lambda x: (x == "Approved").sum()),
+                    QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
+                    QA_Cancelled=("Quality Status Clean", lambda x: (x == "Cancelled").sum()),
+                    QA_Pending=("Quality Status Clean", lambda x: (x == "Pending").sum()),
+                    Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
+                    Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
+                    Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
+                    QA_Rate_Denominator=("_QA_Rate_Denominator", "sum"),
+                    Conversion_Rate_Denominator=("_Conversion_Rate_Denominator", "sum"),
+                )
+                .reset_index()
+        )
+
+    # ----------------------------- PORTAL METRICS ----------------------------
+    # Count portal/Sparta2 rows independently from applications; this is the
+    # crucial fix for statuses that were lost by the application-left join.
+    portal_perf_df = filtered_portal_df.copy()
+    if "Advisor" not in portal_perf_df.columns:
+        portal_perf_df["Advisor"] = ""
+    if "Portal Status Clean" not in portal_perf_df.columns:
+        portal_perf_df["Portal Status Clean"] = ""
+    if "_RecordKey" not in portal_perf_df.columns:
+        portal_perf_df["_RecordKey"] = [
+            make_source_record_key(d, p)
+            for d, p in zip(
+                portal_perf_df.get("Sale Date Clean", pd.Series(index=portal_perf_df.index, dtype="datetime64[ns]")),
+                portal_perf_df.get("Telephone No.", pd.Series([""] * len(portal_perf_df), index=portal_perf_df.index)),
             )
-            .reset_index()
+        ]
+
+    # When the legacy portal row lacks an Agent/Advisor field, recover it by
+    # matching the same Sale Date + Telephone No. key to the application source.
+    if "_RecordKey" in master_raw_df.columns and "Advisor" in master_raw_df.columns:
+        _advisor_lookup_df = master_raw_df[["_RecordKey", "Advisor"]].copy()
+        _advisor_lookup_df["_RecordKey"] = _advisor_lookup_df["_RecordKey"].fillna("").astype(str)
+        _advisor_lookup_df["Advisor"] = _advisor_lookup_df["Advisor"].fillna("").astype(str).str.strip()
+        _advisor_lookup_df = _advisor_lookup_df[
+            (_advisor_lookup_df["_RecordKey"] != "") & (_advisor_lookup_df["Advisor"] != "")
+        ].drop_duplicates("_RecordKey", keep="last")
+        _advisor_lookup = _advisor_lookup_df.set_index("_RecordKey")["Advisor"].to_dict()
+    else:
+        _advisor_lookup = {}
+
+    portal_perf_df["_RecordKey"] = portal_perf_df["_RecordKey"].fillna("").astype(str)
+    portal_perf_df["Advisor"] = portal_perf_df["Advisor"].fillna("").astype(str).str.strip()
+    _mapped_portal_advisors = portal_perf_df["_RecordKey"].map(_advisor_lookup).fillna("")
+    # For legacy Sparta2 rows, the matched application advisor is the canonical
+    # name (e.g. a short portal label may differ from the application label).
+    _portal_source = portal_perf_df.get(
+        "Source", pd.Series("", index=portal_perf_df.index)
+    ).fillna("").astype(str).str.strip()
+    _legacy_with_match = (_portal_source != "CRM") & (_mapped_portal_advisors != "")
+    portal_perf_df.loc[_legacy_with_match, "Advisor"] = _mapped_portal_advisors[_legacy_with_match]
+    portal_perf_df["Advisor"] = portal_perf_df["Advisor"].where(
+        portal_perf_df["Advisor"] != "", _mapped_portal_advisors
     )
+    portal_perf_df["_AdvisorDisplay"] = portal_perf_df["Advisor"].fillna("").astype(str).str.strip()
+    portal_perf_df.loc[portal_perf_df["_AdvisorDisplay"] == "", "_AdvisorDisplay"] = "Unassigned"
+    portal_perf_df["_AdvisorKey"] = portal_perf_df["_AdvisorDisplay"].apply(normalize_person_key)
+
+    if portal_perf_df.empty:
+        portal_summary = pd.DataFrame(columns=["_AdvisorKey", "Portal_Advisor", "Committed", "Live", "Live_Cancelled"])
+    else:
+        portal_summary = (
+            portal_perf_df.groupby("_AdvisorKey", dropna=False)
+                .agg(
+                    Portal_Advisor=("_AdvisorDisplay", "first"),
+                    Committed=("Portal Status Clean", lambda x: (x == "Committed").sum()),
+                    Live=("Portal Status Clean", lambda x: (x == "Live").sum()),
+                    Live_Cancelled=("Portal Status Clean", lambda x: (x == "Cancelled").sum()),
+                )
+                .reset_index()
+        )
+
+    advisor_summary = advisor_summary.merge(portal_summary, on="_AdvisorKey", how="outer")
+    advisor_summary["Advisor"] = advisor_summary.get("Advisor", pd.Series(index=advisor_summary.index, dtype=object)).fillna("").astype(str).str.strip()
+    advisor_summary["Portal_Advisor"] = advisor_summary.get("Portal_Advisor", pd.Series(index=advisor_summary.index, dtype=object)).fillna("").astype(str).str.strip()
+    advisor_summary["Advisor"] = advisor_summary["Advisor"].where(
+        advisor_summary["Advisor"] != "", advisor_summary["Portal_Advisor"]
+    )
+    advisor_summary.loc[advisor_summary["Advisor"] == "", "Advisor"] = "Unassigned"
+
+    _numeric_zero_cols = [
+        "Applications", "QA_Approved", "QA_Rework", "QA_Cancelled", "QA_Pending",
+        "Welcome_Done", "Welcome_Cancelled", "Welcome_Pending", "Committed", "Live",
+        "Live_Cancelled", "QA_Rate_Denominator", "Conversion_Rate_Denominator",
+    ]
+    for _column in _numeric_zero_cols:
+        if _column not in advisor_summary.columns:
+            advisor_summary[_column] = 0
+        advisor_summary[_column] = pd.to_numeric(advisor_summary[_column], errors="coerce").fillna(0)
 
     def filter_tagged_rows(row):
         name = (str(row["Advisor"]) or "").strip().lower()
@@ -2283,9 +2429,21 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
             0.0,
         )
 
-        advisor_summary["QA Pass Rate % Val"] = ((advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
-        advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
-        advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
+        advisor_summary["QA Pass Rate % Val"] = (
+            advisor_summary["QA_Approved"]
+            / advisor_summary["QA_Rate_Denominator"].replace(0, np.nan)
+            * 100
+        ).fillna(0.0)
+        advisor_summary["Welcome Done % Val"] = (
+            advisor_summary["Welcome_Done"]
+            / advisor_summary["Conversion_Rate_Denominator"].replace(0, np.nan)
+            * 100
+        ).fillna(0.0)
+        advisor_summary["Live Conversion % Val"] = (
+            advisor_summary["Live"]
+            / advisor_summary["Conversion_Rate_Denominator"].replace(0, np.nan)
+            * 100
+        ).fillna(0.0)
 
         advisor_summary["PROJECTED LIVE"] = (
             advisor_summary["Live"]
@@ -2340,7 +2498,15 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
             subset = master_df[master_df["_advisor_norm"] == adv_norm]
             adv_tooltips = {}
             for k, (raw_col, clean_col, target_val) in advisor_tooltip_mapping.items():
-                adv_tooltips[k] = format_raw_breakdown(subset, raw_col, clean_col, target_val)
+                if k in {"COMMITTED REM.", "LIVE", "LIVE CANCELLED"}:
+                    portal_subset = portal_perf_df[
+                        portal_perf_df["_AdvisorKey"] == normalize_person_key(adv_display)
+                    ]
+                    adv_tooltips[k] = format_raw_breakdown(
+                        portal_subset, raw_col, clean_col, target_val
+                    )
+                else:
+                    adv_tooltips[k] = format_raw_breakdown(subset, raw_col, clean_col, target_val)
             # Add projection tooltip for this advisor
             adv_proj_tooltip = (
                 f"Formula: Live + ({committed_pct_input}% × Committed) + "
@@ -2445,9 +2611,20 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         total_live = int(totals_series.get("LIVE", 0))
 
         # totals percentages (overall)
-        total_qa_pass_pct = (total_qa_approved / total_apps * 100) if total_apps > 0 else 0.0
-        total_welcome_pct = (total_welcome_done / total_apps * 100) if total_apps > 0 else 0.0
-        total_live_pct = (total_live / total_apps * 100) if total_apps > 0 else 0.0
+        total_qa_rate_denominator = float(advisor_summary.get("QA_Rate_Denominator", pd.Series(dtype=float)).sum())
+        total_conversion_rate_denominator = float(advisor_summary.get("Conversion_Rate_Denominator", pd.Series(dtype=float)).sum())
+        total_qa_pass_pct = (
+            total_qa_approved / total_qa_rate_denominator * 100
+            if total_qa_rate_denominator > 0 else 0.0
+        )
+        total_welcome_pct = (
+            total_welcome_done / total_conversion_rate_denominator * 100
+            if total_conversion_rate_denominator > 0 else 0.0
+        )
+        total_live_pct = (
+            total_live / total_conversion_rate_denominator * 100
+            if total_conversion_rate_denominator > 0 else 0.0
+        )
 
         # totals tooltips using filtered master_df
         totals_tooltips = {}
@@ -2707,9 +2884,11 @@ if selected_performance_table == "🧪 Quality Officer Performance":
 
 if selected_performance_table == "🧪 Quality Officer Performance" and "Quality Officer" in master_df.columns and not master_df.empty:
     advisor_summary = (
-        master_df.groupby("Quality Officer", dropna=False)
+        performance_source_df.groupby("Quality Officer", dropna=False)
             .agg(
                 Applications=("Quality Officer", "count"),
+                QA_Rate_Denominator=("_QA_Rate_Denominator", "sum"),
+                Conversion_Rate_Denominator=("_Conversion_Rate_Denominator", "sum"),
                 QA_Approved=("Quality Status Clean", lambda x: (x == "Approved").sum()),
                 QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
                 QA_Cancelled=("Quality Status Clean", lambda x: (x == "Cancelled").sum()),
@@ -2727,9 +2906,21 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
     if advisor_summary.empty:
         st.info("No sales records match the selected tag filters.")
     else:
-        advisor_summary["QA Pass Rate % Val"] = ((advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
-        advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
-        advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
+        advisor_summary["QA Pass Rate % Val"] = (
+            advisor_summary["QA_Approved"]
+            / advisor_summary["QA_Rate_Denominator"].replace(0, np.nan)
+            * 100
+        ).fillna(0.0)
+        advisor_summary["Welcome Done % Val"] = (
+            advisor_summary["Welcome_Done"]
+            / advisor_summary["Conversion_Rate_Denominator"].replace(0, np.nan)
+            * 100
+        ).fillna(0.0)
+        advisor_summary["Live Conversion % Val"] = (
+            advisor_summary["Live"]
+            / advisor_summary["Conversion_Rate_Denominator"].replace(0, np.nan)
+            * 100
+        ).fillna(0.0)
 
         advisor_summary["PROJECTED LIVE"] = (
             advisor_summary["Live"]
@@ -2877,9 +3068,20 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
         total_live = int(totals_series.get("LIVE", 0))
 
         # totals percentages (overall)
-        total_qa_pass_pct = (total_qa_approved / total_apps * 100) if total_apps > 0 else 0.0
-        total_welcome_pct = (total_welcome_done / total_apps * 100) if total_apps > 0 else 0.0
-        total_live_pct = (total_live / total_apps * 100) if total_apps > 0 else 0.0
+        total_qa_rate_denominator = float(advisor_summary.get("QA_Rate_Denominator", pd.Series(dtype=float)).sum())
+        total_conversion_rate_denominator = float(advisor_summary.get("Conversion_Rate_Denominator", pd.Series(dtype=float)).sum())
+        total_qa_pass_pct = (
+            total_qa_approved / total_qa_rate_denominator * 100
+            if total_qa_rate_denominator > 0 else 0.0
+        )
+        total_welcome_pct = (
+            total_welcome_done / total_conversion_rate_denominator * 100
+            if total_conversion_rate_denominator > 0 else 0.0
+        )
+        total_live_pct = (
+            total_live / total_conversion_rate_denominator * 100
+            if total_conversion_rate_denominator > 0 else 0.0
+        )
 
         # totals tooltips using filtered master_df
         totals_tooltips = {}
@@ -3109,9 +3311,11 @@ if selected_performance_table == "📞 Welcome Caller Performance":
 
 if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome Call By" in master_df.columns and not master_df.empty:
     advisor_summary = (
-        master_df.groupby("Welcome Call By", dropna=False)
+        performance_source_df.groupby("Welcome Call By", dropna=False)
             .agg(
                 Applications=("Welcome Call By", "count"),
+                QA_Rate_Denominator=("_QA_Rate_Denominator", "sum"),
+                Conversion_Rate_Denominator=("_Conversion_Rate_Denominator", "sum"),
                 QA_Approved=("Quality Status Clean", lambda x: (x == "Approved").sum()),
                 QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
                 QA_Cancelled=("Quality Status Clean", lambda x: (x == "Cancelled").sum()),
@@ -3129,9 +3333,21 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
     if advisor_summary.empty:
         st.info("No sales records match the selected tag filters.")
     else:
-        advisor_summary["QA Pass Rate % Val"] = ((advisor_summary["QA_Approved"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
-        advisor_summary["Welcome Done % Val"] = ((advisor_summary["Welcome_Done"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
-        advisor_summary["Live Conversion % Val"] = ((advisor_summary["Live"] / advisor_summary["Applications"].replace(0, np.nan)) * 100).fillna(0.0)
+        advisor_summary["QA Pass Rate % Val"] = (
+            advisor_summary["QA_Approved"]
+            / advisor_summary["QA_Rate_Denominator"].replace(0, np.nan)
+            * 100
+        ).fillna(0.0)
+        advisor_summary["Welcome Done % Val"] = (
+            advisor_summary["Welcome_Done"]
+            / advisor_summary["Conversion_Rate_Denominator"].replace(0, np.nan)
+            * 100
+        ).fillna(0.0)
+        advisor_summary["Live Conversion % Val"] = (
+            advisor_summary["Live"]
+            / advisor_summary["Conversion_Rate_Denominator"].replace(0, np.nan)
+            * 100
+        ).fillna(0.0)
 
         advisor_summary["PROJECTED LIVE"] = (
             advisor_summary["Live"]
@@ -3279,9 +3495,20 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
         total_live = int(totals_series.get("LIVE", 0))
 
         # totals percentages (overall)
-        total_qa_pass_pct = (total_qa_approved / total_apps * 100) if total_apps > 0 else 0.0
-        total_welcome_pct = (total_welcome_done / total_apps * 100) if total_apps > 0 else 0.0
-        total_live_pct = (total_live / total_apps * 100) if total_apps > 0 else 0.0
+        total_qa_rate_denominator = float(advisor_summary.get("QA_Rate_Denominator", pd.Series(dtype=float)).sum())
+        total_conversion_rate_denominator = float(advisor_summary.get("Conversion_Rate_Denominator", pd.Series(dtype=float)).sum())
+        total_qa_pass_pct = (
+            total_qa_approved / total_qa_rate_denominator * 100
+            if total_qa_rate_denominator > 0 else 0.0
+        )
+        total_welcome_pct = (
+            total_welcome_done / total_conversion_rate_denominator * 100
+            if total_conversion_rate_denominator > 0 else 0.0
+        )
+        total_live_pct = (
+            total_live / total_conversion_rate_denominator * 100
+            if total_conversion_rate_denominator > 0 else 0.0
+        )
 
         # totals tooltips using filtered master_df
         totals_tooltips = {}
