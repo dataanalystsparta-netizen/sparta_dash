@@ -717,14 +717,22 @@ def derive_crm_portal_status(row: pd.Series) -> str:
     ):
         return "Cancelled"
 
-    # CRM Onboarding Pending / Approved corresponds to the executive
-    # dashboard's Live bucket.
+    # CRM-specific onboarding mapping:
+    # - Onboarding Approved -> Live
+    # - Port-Pending -> Live
+    # - Onboarding Pending -> Committed Rem. (not Live)
+    # Keep the broader existing live/active/completed signals for compatible
+    # CRM values, but do not let the word "Pending" alone promote onboarding
+    # records into the Live bucket.
     if re.search(
-        r"onboarding\s+(?:approved|pending)|\blive\b|\bactive\b|\bcompleted\b",
+        r"\bonboarding\s+approved\b|\bport[\s-]*pending\b|\blive\b|\bactive\b|\bcompleted\b",
         onboarding,
         re.IGNORECASE,
     ):
         return "Live"
+
+    if re.search(r"\bonboarding\s+pending\b", onboarding, re.IGNORECASE):
+        return "Committed"
 
     # CRM confirmation is a direct Committed-pipeline signal. These three
     # statuses must all be counted under COMMITTED REM.
