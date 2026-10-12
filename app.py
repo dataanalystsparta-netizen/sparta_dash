@@ -421,8 +421,8 @@ SCOPES: List[str] = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 # ==========================================================
 # Historical / legacy (Excel-backed) data is authoritative through
 # 17-Sep-2026 inclusive. CRM is authoritative from 18-Sep-2026 onward.
-SOURCE_CUTOFF_DATE = pd.Timestamp("2026-09-17")
-CRM_START_DATE = pd.Timestamp("2026-09-18")
+SOURCE_CUTOFF_DATE = pd.Timestamp("2026-09-18")
+CRM_START_DATE = pd.Timestamp("2026-09-19")
 
 CRM_MIRROR_WORKSHEET_GID = int(
     st.secrets.get("CRM_MIRROR_WORKSHEET_GID", "1647226826")
