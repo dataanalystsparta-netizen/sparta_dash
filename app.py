@@ -1,6 +1,6 @@
 """
-Sparta Dashboard - updated with editable Projected Live Sales column
-and an Agent filter for the Monthly KPI Breakdown table.
+Sparta Executive Sales Dashboard — modern visual refresh.
+Preserves editable projection weights, agent/month filters, KPI logic, hybrid sources, attendance/SPD, and all interactive tables.
 
 - New dropdown "Select Agent (Monthly table)" appears in the Monthly KPI section.
 - Default: "All Agents" (entire team). Selecting an agent filters the monthly table
@@ -44,14 +44,277 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Small base CSS
+# ==========================================================
+# GLOBAL DESIGN SYSTEM — modern, responsive, readable
+# Styling only: all existing dashboard logic and components remain intact.
+# ==========================================================
 st.markdown(
     """
 <style>
-[data-testid="stMetric"] { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 4px !important; box-shadow: 0 1px 3px rgba(0,0,0,0.04); text-align: center !important; }
-[data-testid="stMetricLabel"] { font-size: 0.58rem !important; font-weight:700 !important; color:#475569; text-transform:uppercase; }
+:root {
+    --sparta-ink: #142033;
+    --sparta-muted: #64748b;
+    --sparta-line: #dce5f0;
+    --sparta-panel: #ffffff;
+    --sparta-accent: #0f9f91;
+    --sparta-accent-dark: #087f75;
+    --sparta-soft-blue: #eef4ff;
+}
+
+html, body, [class*="css"], [data-testid="stAppViewContainer"] {
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    color: var(--sparta-ink);
+}
+[data-testid="stAppViewContainer"] {
+    background: linear-gradient(180deg, #f8fafd 0%, #f3f6fb 100%);
+}
+[data-testid="stHeader"] { background: transparent; }
+.block-container {
+    max-width: 1760px;
+    padding-top: 1.35rem;
+    padding-bottom: 2.4rem;
+    padding-left: clamp(1rem, 2vw, 2.25rem);
+    padding-right: clamp(1rem, 2vw, 2.25rem);
+}
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #f8fafc 0%, #eef3fa 100%);
+    border-right: 1px solid #dfe7f1;
+}
+[data-testid="stSidebar"] > div:first-child { padding-top: 1.25rem; }
+
+/* Clear section hierarchy */
+[data-testid="stHeading"] h1 {
+    color: #12213a;
+    letter-spacing: -0.035em;
+    font-weight: 820;
+}
+[data-testid="stHeading"] h2,
+[data-testid="stHeading"] h3 {
+    color: #15243b;
+    letter-spacing: -0.02em;
+    font-weight: 780;
+}
+[data-testid="stHeading"] h3 {
+    margin-top: 1.25rem;
+    margin-bottom: 0.75rem;
+    padding: 0.1rem 0 0.55rem 0.8rem;
+    border-left: 4px solid #0f9f91;
+    border-bottom: 1px solid #e3eaf3;
+    line-height: 1.35;
+}
+[data-testid="stMarkdownContainer"] p { color: #43536b; }
+[data-testid="stCaptionContainer"] p { color: #64748b; font-size: 0.78rem; line-height: 1.45; }
+
+/* Filters and form controls */
+[data-testid="stSelectbox"] label,
+[data-testid="stDateInput"] label,
+[data-testid="stNumberInput"] label,
+[data-testid="stCheckbox"] label,
+[data-testid="stRadio"] label,
+[data-testid="stMultiSelect"] label {
+    color: #34445d;
+    font-size: 0.82rem;
+    font-weight: 680;
+}
+[data-baseweb="select"] > div,
+[data-baseweb="input"] > div,
+[data-testid="stDateInput"] input,
+[data-testid="stNumberInput"] input {
+    border-color: #d6e0ed !important;
+    border-radius: 10px !important;
+    background: #ffffff !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.025);
+}
+[data-baseweb="select"] > div:focus-within,
+[data-baseweb="input"] > div:focus-within,
+[data-testid="stDateInput"] input:focus,
+[data-testid="stNumberInput"] input:focus {
+    border-color: #55b9af !important;
+    box-shadow: 0 0 0 3px rgba(15, 159, 145, 0.12) !important;
+}
+[data-testid="stCheckbox"] { padding-top: 0.16rem; padding-bottom: 0.16rem; }
+[data-testid="stCheckbox"] label > span:first-child { border-radius: 5px; }
+.stButton button, [data-testid="stDownloadButton"] button {
+    border-radius: 10px;
+    font-weight: 680;
+    border: 1px solid #d5dfed;
+    transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+.stButton button:hover, [data-testid="stDownloadButton"] button:hover {
+    border-color: #78c9c1;
+    box-shadow: 0 5px 14px rgba(15, 23, 42, 0.08);
+    transform: translateY(-1px);
+}
+
+/* Messages, dividers, built-in metric fallback */
+[data-testid="stAlert"] { border-radius: 12px; border: 1px solid #dce5f0; }
+[data-testid="stDivider"] { margin-top: 1.8rem; margin-bottom: 1.55rem; }
+hr { border-color: #dce5f0 !important; opacity: 0.9; }
+[data-testid="stMetric"] {
+    border: 1px solid #dce5f0;
+    border-radius: 14px;
+    padding: 0.8rem 0.55rem !important;
+    background: #ffffff;
+    box-shadow: 0 5px 18px rgba(15, 23, 42, 0.045);
+    text-align: center !important;
+}
+[data-testid="stMetricLabel"] {
+    font-size: 0.66rem !important;
+    font-weight: 750 !important;
+    color: #5c6b80;
+    text-transform: uppercase;
+    letter-spacing: 0.055em;
+}
+[data-testid="stMetricValue"] { color: #13233c; font-weight: 820; }
+
+/* Responsive spacing on smaller screens */
+@media (max-width: 900px) {
+    .block-container { padding-top: 0.8rem; }
+    [data-testid="stHeading"] h3 { font-size: 1.05rem; }
+}
+
+/* Dashboard hero */
+.sparta-hero {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(219, 234, 254, 0.22);
+    border-radius: 22px;
+    margin: 0 0 1.2rem 0;
+    padding: 1.45rem 1.6rem 1.3rem 1.6rem;
+    color: #f8fafc;
+    background: radial-gradient(circle at 88% 0%, rgba(45, 212, 191, 0.25), transparent 26%),
+                linear-gradient(118deg, #101a2d 0%, #183252 56%, #0d625f 100%);
+    box-shadow: 0 14px 35px rgba(15, 23, 42, 0.12);
+}
+.sparta-hero::after {
+    content: "";
+    position: absolute;
+    width: 260px;
+    height: 260px;
+    right: -115px;
+    bottom: -190px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 50%;
+    box-shadow: 0 0 0 28px rgba(255,255,255,0.025), 0 0 0 58px rgba(255,255,255,0.02);
+    pointer-events: none;
+}
+.sparta-hero-top {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    position: relative;
+    z-index: 1;
+}
+.sparta-brand-mark {
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #eafffb;
+    font-size: 1.24rem;
+    font-weight: 900;
+    border-radius: 14px;
+    border: 1px solid rgba(153, 246, 228, 0.45);
+    background: linear-gradient(135deg, rgba(45,212,191,0.28), rgba(59,130,246,0.22));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.sparta-hero-copy { min-width: 0; }
+.sparta-eyebrow {
+    color: #8ee6db;
+    font-size: 0.67rem;
+    font-weight: 800;
+    letter-spacing: 0.17em;
+    text-transform: uppercase;
+    margin-bottom: 0.22rem;
+}
+.sparta-hero-title {
+    color: #ffffff;
+    font-size: clamp(1.45rem, 2.3vw, 2.05rem);
+    line-height: 1.12;
+    font-weight: 850;
+    letter-spacing: -0.04em;
+}
+.sparta-hero-status {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.72rem;
+    border: 1px solid rgba(167, 243, 208, 0.27);
+    border-radius: 999px;
+    white-space: nowrap;
+    color: #d5fff5;
+    background: rgba(15, 118, 110, 0.26);
+    font-size: 0.68rem;
+    letter-spacing: 0.045em;
+    font-weight: 780;
+}
+.sparta-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+    background: #5eead4;
+    box-shadow: 0 0 0 4px rgba(94,234,212,0.12);
+}
+.sparta-hero-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid rgba(226, 232, 240, 0.14);
+    position: relative;
+    z-index: 1;
+}
+.sparta-hero-description { color: #c5d4e8; font-size: 0.88rem; margin: 0; }
+.sparta-funnel-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.sparta-funnel-chip {
+    color: #e2e8f0;
+    border: 1px solid rgba(226, 232, 240, 0.19);
+    border-radius: 7px;
+    padding: 0.28rem 0.52rem;
+    background: rgba(255,255,255,0.055);
+    font-size: 0.68rem;
+    font-weight: 670;
+}
+@media (max-width: 640px) {
+    .sparta-hero { padding: 1.1rem; border-radius: 16px; }
+    .sparta-hero-status { display: none; }
+    .sparta-hero-bottom { align-items: flex-start; }
+    .sparta-brand-mark { width: 42px; height: 42px; flex-basis: 42px; }
+}
 </style>
 """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    """
+    <div class="sparta-hero">
+      <div class="sparta-hero-top">
+        <div class="sparta-brand-mark">S</div>
+        <div class="sparta-hero-copy">
+          <div class="sparta-eyebrow">Sparta · Performance Intelligence</div>
+          <div class="sparta-hero-title">Executive Sales Dashboard</div>
+        </div>
+        <div class="sparta-hero-status"><span class="sparta-status-dot"></span> HYBRID DATA VIEW</div>
+      </div>
+      <div class="sparta-hero-bottom">
+        <p class="sparta-hero-description">Applications, conversion, pipeline progress and sales productivity in one view.</p>
+        <div class="sparta-funnel-chips">
+          <span class="sparta-funnel-chip">Applications</span>
+          <span class="sparta-funnel-chip">Quality</span>
+          <span class="sparta-funnel-chip">Welcome</span>
+          <span class="sparta-funnel-chip">Committed / Live</span>
+        </div>
+      </div>
+    </div>
+    """,
     unsafe_allow_html=True,
 )
 
@@ -1418,19 +1681,24 @@ all_kpis = [
 visible_kpis = [k for k in all_kpis if k[1] > 0]
 
 if visible_kpis:
-    cols = st.columns(len(visible_kpis))
-    for col, (label, val, delta_sub, border_col, bg_col, delta_col) in zip(cols, visible_kpis):
-        with col:
-            st.markdown(
-                f"""
-                <div style="border:1px solid #e2e8f0;border-top:4px solid {border_col};background-color:{bg_col};border-radius:8px;padding:8px 4px; text-align:center;">
-                    <div style="font-size:0.58rem;font-weight:700;color:#475569;text-transform:uppercase;">{label}</div>
-                    <div style="font-size:1.3rem;font-weight:800;color:#0f172a;margin-top:6px;">{val:,}</div>
-                    <div style="font-size:0.62rem;font-weight:700;color:{delta_col};margin-top:4px;">{delta_sub}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    # Four cards per row keep every existing KPI visible while avoiding tiny cards
+    # on wide screens. This changes presentation only, not any KPI calculation.
+    kpi_cards_per_row = 4
+    for row_start in range(0, len(visible_kpis), kpi_cards_per_row):
+        kpi_row = visible_kpis[row_start:row_start + kpi_cards_per_row]
+        cols = st.columns(kpi_cards_per_row, gap="medium")
+        for col, (label, val, delta_sub, border_col, bg_col, delta_col) in zip(cols, kpi_row):
+            with col:
+                st.markdown(
+                    f"""
+                    <div style="border:1px solid #dfe7f1;border-top:3px solid {border_col};background:linear-gradient(145deg,#ffffff 0%,{bg_col} 100%);border-radius:15px;padding:14px 16px 13px;text-align:left;min-height:112px;box-shadow:0 6px 20px rgba(15,23,42,0.055);margin-bottom:8px;">
+                        <div style="font-size:0.66rem;font-weight:800;color:#51627a;text-transform:uppercase;letter-spacing:0.055em;line-height:1.35;min-height:1.65em;">{escape(str(label))}</div>
+                        <div style="font-size:1.8rem;line-height:1.15;font-weight:850;letter-spacing:-0.04em;color:#14233b;margin-top:6px;">{val:,}</div>
+                        <div style="font-size:0.73rem;font-weight:750;color:{delta_col};margin-top:7px;">{escape(str(delta_sub))}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 else:
     st.info("No active KPIs for the selected filters.")
 
@@ -1967,9 +2235,9 @@ else:
         .monthly-kpi-table-container {{
             width: 100%;
             overflow-x: auto;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            border: 1px solid #dbe5f0;
+            border-radius: 14px;
+            box-shadow: 0 8px 24px rgba(15,23,42,0.055);
             margin-bottom: 20px;
             max-height: {table_height}px;
         }}
@@ -2084,7 +2352,50 @@ else:
             background-color: #f8fafc;
             z-index: 4;
         }}
-    </style>
+    
+        /* Shared table polish: softer surfaces, readable spacing and interaction cues */
+        .monthly-kpi-table-container, .perf-table-container {{
+            border: 1px solid #dbe5f0 !important;
+            border-radius: 14px !important;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.055) !important;
+            scrollbar-color: #cbd5e1 #f8fafc;
+            scrollbar-width: thin;
+        }}
+        .monthly-kpi-table, table.perf-table {{
+            color: #1e293b;
+            font-variant-numeric: tabular-nums;
+        }}
+        .monthly-kpi-table th, table.perf-table th {{
+            padding-top: 12px !important;
+            padding-bottom: 12px !important;
+            letter-spacing: 0.045em;
+            border-bottom: 1px solid #d8e2ee !important;
+            box-shadow: 0 2px 3px rgba(15,23,42,0.025);
+        }}
+        .monthly-kpi-table td, table.perf-table td {{
+            padding-top: 10px;
+            padding-bottom: 10px;
+            border-bottom-color: #edf1f7 !important;
+            transition: background-color 120ms ease;
+        }}
+        .monthly-kpi-table tr.month-row:hover td,
+        .monthly-kpi-table tr.daily-row:hover td,
+        table.perf-table tbody tr:not(.totals-row):hover td {{
+            background-color: #eff6ff;
+        }}
+        .monthly-kpi-table tr.totals-row td,
+        table.perf-table tr.totals-row td {{
+            font-weight: 800;
+            border-top: 2px solid #c8d5e5 !important;
+            box-shadow: 0 -2px 5px rgba(15,23,42,0.025);
+        }}
+        .expand-button {{
+            border-radius: 8px !important;
+            box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+            transition: background-color 120ms ease, transform 120ms ease;
+        }}
+        .expand-button:hover {{ transform: translateY(-1px); }}
+</style>
     <div class="monthly-kpi-table-container">
       <div class="monthly-kpi-inner">
         <table id="{monthly_table_id}" class="monthly-kpi-table">
@@ -2643,9 +2954,9 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         <style>
           .perf-table-container {{
             width:100%;
-            border:1px solid #e2e8f0;
-            border-radius:8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            border:1px solid #dbe5f0;
+            border-radius:14px;
+            box-shadow: 0 8px 24px rgba(15,23,42,0.055);
             margin-bottom:16px;
             max-height:{advisor_table_height}px;
             overflow:auto;
@@ -2681,7 +2992,50 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
           .tag{{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;}}
           .new{{background:#ede9fe;color:#6d28d9;}} .cs{{background:#e0f2fe;color:#0369a1;}} .left{{background:#fee2e2;color:#991b1b;}}
           .totals-row{{font-weight:800;background-color:#f8fafc;}}
-        </style>
+        
+        /* Shared table polish: softer surfaces, readable spacing and interaction cues */
+        .monthly-kpi-table-container, .perf-table-container {{
+            border: 1px solid #dbe5f0 !important;
+            border-radius: 14px !important;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.055) !important;
+            scrollbar-color: #cbd5e1 #f8fafc;
+            scrollbar-width: thin;
+        }}
+        .monthly-kpi-table, table.perf-table {{
+            color: #1e293b;
+            font-variant-numeric: tabular-nums;
+        }}
+        .monthly-kpi-table th, table.perf-table th {{
+            padding-top: 12px !important;
+            padding-bottom: 12px !important;
+            letter-spacing: 0.045em;
+            border-bottom: 1px solid #d8e2ee !important;
+            box-shadow: 0 2px 3px rgba(15,23,42,0.025);
+        }}
+        .monthly-kpi-table td, table.perf-table td {{
+            padding-top: 10px;
+            padding-bottom: 10px;
+            border-bottom-color: #edf1f7 !important;
+            transition: background-color 120ms ease;
+        }}
+        .monthly-kpi-table tr.month-row:hover td,
+        .monthly-kpi-table tr.daily-row:hover td,
+        table.perf-table tbody tr:not(.totals-row):hover td {{
+            background-color: #eff6ff;
+        }}
+        .monthly-kpi-table tr.totals-row td,
+        table.perf-table tr.totals-row td {{
+            font-weight: 800;
+            border-top: 2px solid #c8d5e5 !important;
+            box-shadow: 0 -2px 5px rgba(15,23,42,0.025);
+        }}
+        .expand-button {{
+            border-radius: 8px !important;
+            box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+            transition: background-color 120ms ease, transform 120ms ease;
+        }}
+        .expand-button:hover {{ transform: translateY(-1px); }}
+</style>
         <div class="perf-table-container">
           <table id="{advisor_table_id}" class="perf-table">
             <thead><tr>
@@ -3100,9 +3454,9 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
         <style>
           .perf-table-container {{
             width:100%;
-            border:1px solid #e2e8f0;
-            border-radius:8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            border:1px solid #dbe5f0;
+            border-radius:14px;
+            box-shadow: 0 8px 24px rgba(15,23,42,0.055);
             margin-bottom:16px;
             max-height:{advisor_table_height}px;
             overflow:auto;
@@ -3138,7 +3492,50 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
           .tag{{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;}}
           .new{{background:#ede9fe;color:#6d28d9;}} .cs{{background:#e0f2fe;color:#0369a1;}} .left{{background:#fee2e2;color:#991b1b;}}
           .totals-row{{font-weight:800;background-color:#f8fafc;}}
-        </style>
+        
+        /* Shared table polish: softer surfaces, readable spacing and interaction cues */
+        .monthly-kpi-table-container, .perf-table-container {{
+            border: 1px solid #dbe5f0 !important;
+            border-radius: 14px !important;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.055) !important;
+            scrollbar-color: #cbd5e1 #f8fafc;
+            scrollbar-width: thin;
+        }}
+        .monthly-kpi-table, table.perf-table {{
+            color: #1e293b;
+            font-variant-numeric: tabular-nums;
+        }}
+        .monthly-kpi-table th, table.perf-table th {{
+            padding-top: 12px !important;
+            padding-bottom: 12px !important;
+            letter-spacing: 0.045em;
+            border-bottom: 1px solid #d8e2ee !important;
+            box-shadow: 0 2px 3px rgba(15,23,42,0.025);
+        }}
+        .monthly-kpi-table td, table.perf-table td {{
+            padding-top: 10px;
+            padding-bottom: 10px;
+            border-bottom-color: #edf1f7 !important;
+            transition: background-color 120ms ease;
+        }}
+        .monthly-kpi-table tr.month-row:hover td,
+        .monthly-kpi-table tr.daily-row:hover td,
+        table.perf-table tbody tr:not(.totals-row):hover td {{
+            background-color: #eff6ff;
+        }}
+        .monthly-kpi-table tr.totals-row td,
+        table.perf-table tr.totals-row td {{
+            font-weight: 800;
+            border-top: 2px solid #c8d5e5 !important;
+            box-shadow: 0 -2px 5px rgba(15,23,42,0.025);
+        }}
+        .expand-button {{
+            border-radius: 8px !important;
+            box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+            transition: background-color 120ms ease, transform 120ms ease;
+        }}
+        .expand-button:hover {{ transform: translateY(-1px); }}
+</style>
         <div class="perf-table-container">
           <table id="{advisor_table_id}" class="perf-table">
             <thead><tr>
@@ -3527,9 +3924,9 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
         <style>
           .perf-table-container {{
             width:100%;
-            border:1px solid #e2e8f0;
-            border-radius:8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            border:1px solid #dbe5f0;
+            border-radius:14px;
+            box-shadow: 0 8px 24px rgba(15,23,42,0.055);
             margin-bottom:16px;
             max-height:{advisor_table_height}px;
             overflow:auto;
@@ -3565,7 +3962,50 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
           .tag{{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;}}
           .new{{background:#ede9fe;color:#6d28d9;}} .cs{{background:#e0f2fe;color:#0369a1;}} .left{{background:#fee2e2;color:#991b1b;}}
           .totals-row{{font-weight:800;background-color:#f8fafc;}}
-        </style>
+        
+        /* Shared table polish: softer surfaces, readable spacing and interaction cues */
+        .monthly-kpi-table-container, .perf-table-container {{
+            border: 1px solid #dbe5f0 !important;
+            border-radius: 14px !important;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.055) !important;
+            scrollbar-color: #cbd5e1 #f8fafc;
+            scrollbar-width: thin;
+        }}
+        .monthly-kpi-table, table.perf-table {{
+            color: #1e293b;
+            font-variant-numeric: tabular-nums;
+        }}
+        .monthly-kpi-table th, table.perf-table th {{
+            padding-top: 12px !important;
+            padding-bottom: 12px !important;
+            letter-spacing: 0.045em;
+            border-bottom: 1px solid #d8e2ee !important;
+            box-shadow: 0 2px 3px rgba(15,23,42,0.025);
+        }}
+        .monthly-kpi-table td, table.perf-table td {{
+            padding-top: 10px;
+            padding-bottom: 10px;
+            border-bottom-color: #edf1f7 !important;
+            transition: background-color 120ms ease;
+        }}
+        .monthly-kpi-table tr.month-row:hover td,
+        .monthly-kpi-table tr.daily-row:hover td,
+        table.perf-table tbody tr:not(.totals-row):hover td {{
+            background-color: #eff6ff;
+        }}
+        .monthly-kpi-table tr.totals-row td,
+        table.perf-table tr.totals-row td {{
+            font-weight: 800;
+            border-top: 2px solid #c8d5e5 !important;
+            box-shadow: 0 -2px 5px rgba(15,23,42,0.025);
+        }}
+        .expand-button {{
+            border-radius: 8px !important;
+            box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+            transition: background-color 120ms ease, transform 120ms ease;
+        }}
+        .expand-button:hover {{ transform: translateY(-1px); }}
+</style>
         <div class="perf-table-container">
           <table id="{advisor_table_id}" class="perf-table">
             <thead><tr>
