@@ -173,6 +173,34 @@ hr { border-color: #dce5f0 !important; opacity: 0.9; }
     [data-testid="stHeading"] h3 { font-size: 1.05rem; }
 }
 
+/* Purpose-built executive UI components */
+.sparta-section-heading { margin:1.35rem 0 .7rem; display:flex; flex-direction:column; gap:.16rem; }
+.sparta-section-eyebrow { color:#0f9f91; font-size:.64rem; line-height:1.2; font-weight:850; letter-spacing:.15em; text-transform:uppercase; }
+.sparta-section-title { color:#12213a; font-size:clamp(1.08rem,1.55vw,1.38rem); line-height:1.2; letter-spacing:-.035em; font-weight:850; }
+.sparta-section-description { color:#68788d; font-size:.78rem; line-height:1.45; }
+[data-testid="stVerticalBlockBorderWrapper"] { border:1px solid #dce5f0 !important; border-radius:17px !important; background:rgba(255,255,255,.86) !important; box-shadow:0 7px 22px rgba(15,23,42,.035) !important; }
+.sparta-kpi-group { --group-accent:#0f9f91; margin:.55rem 0 .85rem; padding:.95rem 1rem 1rem; border:1px solid #dce5f0; border-top:3px solid var(--group-accent); border-radius:17px; background:linear-gradient(145deg,#fff 0%,#fbfdff 100%); box-shadow:0 7px 20px rgba(15,23,42,.035); }
+.sparta-kpi-group.quality { --group-accent:#2563eb; }
+.sparta-kpi-group.welcome { --group-accent:#7c3aed; }
+.sparta-kpi-group.live { --group-accent:#0f9f91; }
+.sparta-kpi-group-head { display:flex; align-items:center; gap:.65rem; margin-bottom:.72rem; }
+.sparta-kpi-group-mark { flex:0 0 34px; width:34px; height:34px; display:flex; align-items:center; justify-content:center; border-radius:11px; color:var(--group-accent); background:#edf5ff; font-size:.88rem; font-weight:900; }
+.sparta-kpi-group-title { color:#172942; font-size:.88rem; line-height:1.2; font-weight:850; letter-spacing:-.015em; }
+.sparta-kpi-group-subtitle { color:#8491a3; font-size:.64rem; font-weight:750; letter-spacing:.105em; text-transform:uppercase; margin-bottom:.15rem; }
+.sparta-kpi-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.55rem; }
+.sparta-kpi-grid.grid-3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.sparta-kpi-tile { min-width:0; padding:.68rem .75rem .63rem; border:1px solid #e6edf5; border-left:3px solid var(--tile-accent,#94a3b8); border-radius:11px; background:var(--tile-tint,#f8fafc); transition:transform 140ms ease,box-shadow 140ms ease,border-color 140ms ease; }
+.sparta-kpi-tile:hover { transform:translateY(-2px); border-color:#cdd9e8; box-shadow:0 6px 15px rgba(15,23,42,.055); }
+.sparta-kpi-label { color:#66758a; font-size:.64rem; line-height:1.25; font-weight:800; letter-spacing:.035em; text-transform:uppercase; white-space:normal; }
+.sparta-kpi-value { color:#14233b; margin-top:.32rem; font-size:clamp(1.2rem,1.7vw,1.55rem); line-height:1.05; font-weight:880; letter-spacing:-.055em; font-variant-numeric:tabular-nums; }
+.sparta-kpi-detail { color:var(--tile-accent,#64748b); margin-top:.32rem; font-size:.65rem; line-height:1.25; font-weight:750; }
+[data-testid="stRadio"] > label { color:#586a80; font-size:.77rem; font-weight:750; }
+[data-testid="stRadio"] [role="radiogroup"] { gap:.42rem; }
+[data-testid="stRadio"] [role="radiogroup"] label { border:1px solid #dce5f0; border-radius:10px; padding:.43rem .7rem; background:#fff; }
+[data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) { border-color:#7bcfc5; background:#effdfa; }
+@media (max-width:1100px) { .sparta-kpi-grid,.sparta-kpi-grid.grid-3 { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (max-width:640px) { .sparta-kpi-group { padding:.8rem; border-radius:14px; } .sparta-kpi-grid,.sparta-kpi-grid.grid-3 { grid-template-columns:repeat(2,minmax(0,1fr)); } .sparta-kpi-tile { padding:.62rem; } .sparta-kpi-value { font-size:1.2rem; } .sparta-section-heading { margin-top:1rem; } }
+
 /* Dashboard hero */
 .sparta-hero {
     position: relative;
@@ -317,6 +345,68 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+def render_section_heading(eyebrow: str, title: str, description: str = "") -> None:
+    """Render a consistent, compact section heading."""
+    desc_html = f'<div class="sparta-section-description">{escape(description)}</div>' if description else ""
+    st.markdown(
+        f"""<div class="sparta-section-heading">
+            <div class="sparta-section-eyebrow">{escape(eyebrow)}</div>
+            <div class="sparta-section-title">{escape(title)}</div>
+            {desc_html}
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
+def classify_table_column(column: str, first_column: str = "", monthly: bool = False) -> str:
+    """Map a displayed metric to its grouped-header compartment."""
+    label = str(column)
+    upper = label.upper()
+    if monthly and label == "MONTH":
+        return "PERIOD"
+    if first_column and label == first_column and not monthly:
+        return "TEAM MEMBER"
+    if upper in {"APPLICATIONS", "TOTAL PRESENT", "SPD"}:
+        return "ACTIVITY"
+    if "PROJECTED" in upper or "FORECAST" in upper:
+        return "FORECAST"
+    if upper.startswith("QA") or "QUALITY" in upper:
+        return "QUALITY"
+    if "WELCOME" in upper:
+        return "WELCOME"
+    if "COMMITTED" in upper or upper.startswith("LIVE") or "LIVE CONVERSION" in upper:
+        return "COMMITTED / LIVE"
+    return "OVERVIEW"
+
+
+def render_grouped_table_header(columns, header_styles=None, *, monthly: bool = False) -> str:
+    """Build a two-tier HTML table header while keeping every metric sortable."""
+    header_styles = header_styles or {}
+    columns = list(columns)
+    first_column = columns[0] if columns and not monthly else ""
+    group_labels = [classify_table_column(c, first_column, monthly) for c in columns]
+    groups = []
+    for label in group_labels:
+        if groups and groups[-1][0] == label:
+            groups[-1] = (label, groups[-1][1] + 1)
+        else:
+            groups.append((label, 1))
+
+    html_parts = ['<thead><tr class="group-header-row">']
+    if monthly:
+        html_parts.append('<th class="expand-head" rowspan="2" aria-label="Expand monthly details"></th>')
+    for label, span in groups:
+        slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
+        html_parts.append(f'<th class="metric-group metric-group-{slug}" colspan="{span}">{escape(label)}</th>')
+    html_parts.append('</tr><tr class="column-header-row">')
+    for idx, column in enumerate(columns):
+        style = header_styles.get(column, "background-color:#f8fafc;color:#475569;")
+        cell_index = idx + 1 if monthly else idx
+        html_parts.append(f'<th data-col-index="{cell_index}" style="{style}">{escape(str(column))}</th>')
+    html_parts.append('</tr></thead>')
+    return "".join(html_parts)
+
 
 # ==========================================================
 # CONFIG / CONSTANTS
@@ -1549,56 +1639,58 @@ if source_status["crm_error"]:
 # ==========================================================
 # FILTERS SECTION
 # ==========================================================
-st.subheader("📅 Filters")
+render_section_heading("CONTROLS", "Filters", "Choose the reporting window and which agent groups should be included.")
 
-if "Sale Date Clean" in master_raw_df.columns and not master_raw_df["Sale Date Clean"].dropna().empty:
-    available_months = ["All Months"] + list(
-        master_raw_df["Sale Date Clean"].dt.to_period("M").drop_duplicates().sort_values(ascending=False).dt.strftime("%B %Y")
-    )
-else:
-    available_months = ["All Months"]
+with st.container(border=True):
+    if "Sale Date Clean" in master_raw_df.columns and not master_raw_df["Sale Date Clean"].dropna().empty:
+        available_months = ["All Months"] + list(
+            master_raw_df["Sale Date Clean"].dt.to_period("M").drop_duplicates().sort_values(ascending=False).dt.strftime("%B %Y")
+        )
+    else:
+        available_months = ["All Months"]
 
-valid_dates = master_raw_df["Sale Date Clean"].dropna() if "Sale Date Clean" in master_raw_df.columns else pd.Series(dtype="datetime64[ns]")
-min_date = valid_dates.min().date() if not valid_dates.empty else datetime.today().date()
-max_date = valid_dates.max().date() if not valid_dates.empty else datetime.today().date()
+    valid_dates = master_raw_df["Sale Date Clean"].dropna() if "Sale Date Clean" in master_raw_df.columns else pd.Series(dtype="datetime64[ns]")
+    min_date = valid_dates.min().date() if not valid_dates.empty else datetime.today().date()
+    max_date = valid_dates.max().date() if not valid_dates.empty else datetime.today().date()
 
-filter_col1, filter_col2, filter_col3 = st.columns([1, 1, 1])
-with filter_col1:
-    selected_month = st.selectbox("Select Month", options=available_months, index=0)
-with filter_col2:
-    start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, format="DD/MM/YYYY")
-with filter_col3:
-    end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, format="DD/MM/YYYY")
+    filter_col1, filter_col2, filter_col3 = st.columns([1, 1, 1])
+    with filter_col1:
+        selected_month = st.selectbox("Select Month", options=available_months, index=0)
+    with filter_col2:
+        start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, format="DD/MM/YYYY")
+    with filter_col3:
+        end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, format="DD/MM/YYYY")
 
-st.markdown("##### Tag Visibility Filters")
-tag_col1, tag_col2, tag_col3, tag_col4 = st.columns([1, 1, 1, 1])
-with tag_col1:
-    include_new = st.checkbox("Include 'New' Agents", value=True)
-with tag_col2:
-    include_cs = st.checkbox("Include 'Customer Service' Agents", value=True)
-with tag_col3:
-    include_left = st.checkbox("Include 'Left' Agents", value=False)
-with tag_col4:
-    include_untagged = st.checkbox("Include Untagged Names", value=True)
+    st.markdown("##### Tag Visibility Filters")
+    tag_col1, tag_col2, tag_col3, tag_col4 = st.columns([1, 1, 1, 1])
+    with tag_col1:
+        include_new = st.checkbox("Include 'New' Agents", value=True)
+    with tag_col2:
+        include_cs = st.checkbox("Include 'Customer Service' Agents", value=True)
+    with tag_col3:
+        include_left = st.checkbox("Include 'Left' Agents", value=False)
+    with tag_col4:
+        include_untagged = st.checkbox("Include Untagged Names", value=True)
 
 # ==========================================================
 # Projection weights (editable by user)
 # ==========================================================
-st.markdown("##### Projection weights (editable)")
-proj_col1, proj_col2, proj_col3, proj_col4 = st.columns([1, 1, 1, 2])
-with proj_col1:
-    committed_pct_input = st.number_input("Committed weight %", min_value=0, max_value=100, value=60, step=1, help="Percent of committed expected to convert to Live")
-with proj_col2:
-    welcome_pending_pct_input = st.number_input("Welcome Pending weight %", min_value=0, max_value=100, value=35, step=1, help="Percent of Welcome Pending expected to convert to Live")
-with proj_col3:
-    quality_pending_pct_input = st.number_input("Quality Pending weight %", min_value=0, max_value=100, value=25, step=1, help="Percent of Quality Pending expected to convert to Live")
-with proj_col4:
-    st.markdown(
-        f"""
-        **Applied formula** (per row):  
-        Projected Live = Live + ({committed_pct_input}% × Committed) + ({welcome_pending_pct_input}% × Welcome Pending) + ({quality_pending_pct_input}% × QA Pending)
-        """
-    )
+render_section_heading("FORECAST SETTINGS", "Projection weights", "Tune the contribution of committed and pending applications to projected live sales.")
+with st.container(border=True):
+    proj_col1, proj_col2, proj_col3, proj_col4 = st.columns([1, 1, 1, 2])
+    with proj_col1:
+        committed_pct_input = st.number_input("Committed weight %", min_value=0, max_value=100, value=60, step=1, help="Percent of committed expected to convert to Live")
+    with proj_col2:
+        welcome_pending_pct_input = st.number_input("Welcome Pending weight %", min_value=0, max_value=100, value=35, step=1, help="Percent of Welcome Pending expected to convert to Live")
+    with proj_col3:
+        quality_pending_pct_input = st.number_input("Quality Pending weight %", min_value=0, max_value=100, value=25, step=1, help="Percent of Quality Pending expected to convert to Live")
+    with proj_col4:
+        st.markdown(
+            f"""
+            **Applied formula** (per row):  
+            Projected Live = Live + ({committed_pct_input}% × Committed) + ({welcome_pending_pct_input}% × Welcome Pending) + ({quality_pending_pct_input}% × QA Pending)
+            """
+        )
 
 committed_frac = committed_pct_input / 100.0
 welcome_pending_frac = welcome_pending_pct_input / 100.0
@@ -1626,12 +1718,17 @@ else:
         filtered_portal_df = sparta2_df.copy()
 
 # ==========================================================
-# TOP KPI SECTION
+# KPI OVERVIEW — compact, grouped cards
 # ==========================================================
-st.subheader("📌 Key Performance Indicators")
+render_section_heading(
+    "AT A GLANCE",
+    "Key performance indicators",
+    "A compact view of the application funnel, welcome progress, and committed/live pipeline.",
+)
 
 def count_status(df: pd.DataFrame, column: str, target_val: str) -> int:
     return int((df[column] == target_val).sum()) if column in df.columns else 0
+
 
 def get_pct(part: int, total: int) -> str:
     return "0.0%" if total == 0 else f"{(part / total * 100):.1f}%"
@@ -1648,66 +1745,78 @@ def count_non_pending_applications(df: pd.DataFrame, status_columns: List[str]) 
             eligible &= normalized.ne("pending")
     return int(eligible.sum())
 
+
 total_applications = len(master_df)
 portal_total = len(filtered_portal_df)
-
 q_approved = count_status(master_df, "Quality Status Clean", "Approved")
 q_rework = count_status(master_df, "Quality Status Clean", "Rework")
 q_cancelled = count_status(master_df, "Quality Status Clean", "Cancelled")
 q_pending = count_status(master_df, "Quality Status Clean", "Pending")
-
 wc_done = count_status(master_df, "Welcome Status Clean", "Done")
 wc_cancelled = count_status(master_df, "Welcome Status Clean", "Cancelled")
 wc_pending = count_status(master_df, "Welcome Status Clean", "Pending")
-
 portal_live = count_status(filtered_portal_df, "Portal Status Clean", "Live")
 portal_committed = count_status(filtered_portal_df, "Portal Status Clean", "Committed")
 portal_cancelled = count_status(filtered_portal_df, "Portal Status Clean", "Cancelled")
 
-all_kpis = [
-    ("Applications", total_applications, "100% Base", "#3b82f6", "#eff6ff", "#1d4ed8"),
-    ("Quality Approved", q_approved, f"{get_pct(q_approved, total_applications)} Qualified", "#10b981", "#f0fdf4", "#15803d"),
-    ("Quality Rework", q_rework, f"{get_pct(q_rework, total_applications)} In Rework", "#f59e0b", "#fefce8", "#b45309"),
-    ("Quality Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} Rejected", "#ef4444", "#fef2f2", "#b91c1c"),
-    ("Quality Pending", q_pending, f"{get_pct(q_pending, total_applications)} Pending", "#f97316", "#fff7ed", "#c2410c"),
-    ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} Completed", "#10b981", "#f0fdf4", "#15803d"),
-    ("Welcome Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} Cancelled", "#ef4444", "#fef2f2", "#b91c1c"),
-    ("Welcome Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} Pending", "#f59e0b", "#fefce8", "#b45309"),
-    ("Live Status: Live", portal_live, f"{get_pct(portal_live, portal_total)} Live/Pend.", "#14b8a6", "#f0fdfa", "#0f766e"),
-    ("Live Status: Comm.", portal_committed, f"{get_pct(portal_committed, portal_total)} Pipeline", "#f59e0b", "#fefce8", "#b45309"),
-    ("Live Status: Canc.", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} Churned", "#ef4444", "#fef2f2", "#b91c1c"),
-]
 
-visible_kpis = [k for k in all_kpis if k[1] > 0]
+def render_kpi_compartment(title, subtitle, icon, theme, grid_class, metrics):
+    tiles = []
+    for label, value, detail, accent, tint in metrics:
+        tiles.append(
+            f"""<div class="sparta-kpi-tile" style="--tile-accent:{accent};--tile-tint:{tint};">
+                <div class="sparta-kpi-label">{escape(str(label))}</div>
+                <div class="sparta-kpi-value">{int(value):,}</div>
+                <div class="sparta-kpi-detail">{escape(str(detail))}</div>
+            </div>"""
+        )
+    st.markdown(
+        f"""<section class="sparta-kpi-group {theme}">
+          <div class="sparta-kpi-group-head">
+            <div class="sparta-kpi-group-mark">{escape(icon)}</div>
+            <div>
+              <div class="sparta-kpi-group-subtitle">{escape(subtitle)}</div>
+              <div class="sparta-kpi-group-title">{escape(title)}</div>
+            </div>
+          </div>
+          <div class="sparta-kpi-grid {grid_class}">{''.join(tiles)}</div>
+        </section>""",
+        unsafe_allow_html=True,
+    )
 
-if visible_kpis:
-    # Four cards per row keep every existing KPI visible while avoiding tiny cards
-    # on wide screens. This changes presentation only, not any KPI calculation.
-    kpi_cards_per_row = 4
-    for row_start in range(0, len(visible_kpis), kpi_cards_per_row):
-        kpi_row = visible_kpis[row_start:row_start + kpi_cards_per_row]
-        cols = st.columns(kpi_cards_per_row, gap="medium")
-        for col, (label, val, delta_sub, border_col, bg_col, delta_col) in zip(cols, kpi_row):
-            with col:
-                st.markdown(
-                    f"""
-                    <div style="border:1px solid #dfe7f1;border-top:3px solid {border_col};background:linear-gradient(145deg,#ffffff 0%,{bg_col} 100%);border-radius:15px;padding:14px 16px 13px;text-align:left;min-height:112px;box-shadow:0 6px 20px rgba(15,23,42,0.055);margin-bottom:8px;">
-                        <div style="font-size:0.66rem;font-weight:800;color:#51627a;text-transform:uppercase;letter-spacing:0.055em;line-height:1.35;min-height:1.65em;">{escape(str(label))}</div>
-                        <div style="font-size:1.8rem;line-height:1.15;font-weight:850;letter-spacing:-0.04em;color:#14233b;margin-top:6px;">{val:,}</div>
-                        <div style="font-size:0.73rem;font-weight:750;color:{delta_col};margin-top:7px;">{escape(str(delta_sub))}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-else:
-    st.info("No active KPIs for the selected filters.")
+
+render_kpi_compartment(
+    "Applications & Quality", "01 · APPLICATION FUNNEL", "01", "quality", "",
+    [
+        ("Applications", total_applications, "100% of base", "#2563eb", "#eff6ff"),
+        ("QA Approved", q_approved, f"{get_pct(q_approved, total_applications)} of apps", "#15803d", "#f0fdf4"),
+        ("QA Rework", q_rework, f"{get_pct(q_rework, total_applications)} of apps", "#a16207", "#fefce8"),
+        ("QA Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
+        ("QA Pending", q_pending, f"{get_pct(q_pending, total_applications)} of apps", "#c2410c", "#fff7ed"),
+    ],
+)
+render_kpi_compartment(
+    "Welcome", "02 · WELCOME CALL", "02", "welcome", "grid-3",
+    [
+        ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} of apps", "#15803d", "#f0fdf4"),
+        ("WC Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
+        ("WC Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} of apps", "#a16207", "#fefce8"),
+    ],
+)
+render_kpi_compartment(
+    "Committed / Live", "03 · DOWNSTREAM PIPELINE", "03", "live", "grid-3",
+    [
+        ("Live", portal_live, f"{get_pct(portal_live, portal_total)} of portal", "#0f766e", "#f0fdfa"),
+        ("Committed", portal_committed, f"{get_pct(portal_committed, portal_total)} of portal", "#a16207", "#fefce8"),
+        ("Live Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} of portal", "#b91c1c", "#fef2f2"),
+    ],
+)
 
 # ==========================================================
 # MONTHLY KPI BREAKDOWN (SELECTABLE YEAR)
 # with per-month + / - expandable daily breakdown
 # ==========================================================
-st.divider()
-st.subheader("📅 Monthly KPI Breakdown")
+render_section_heading("TRENDS & DRILL-DOWN", "Monthly KPI Breakdown", "Expand any month to inspect daily performance; use the year and agent filters to focus the view.")
 
 current_year = datetime.now().year
 years = list(range(2022, current_year + 1))
@@ -2104,7 +2213,7 @@ else:
         "MONTH", "APPLICATIONS", "TOTAL PRESENT", "SPD", "QA APPROVED", "QA Pass Rate %",
         "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
         "Welcome Done %", "WELCOME CANCELLED", "WELCOME PENDING",
-        "COMMITTED REM.", "COMMITTED CANCELLED", "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED",
+        "COMMITTED REM.", "COMMITTED CANCELLED", "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %",
     ]
 
     m_header_styles = {
@@ -2267,6 +2376,21 @@ else:
             background: #ffffff;
             cursor: pointer;
         }}
+        .monthly-kpi-table thead tr.group-header-row th.metric-group {{
+            position: sticky; top: 0; z-index: 8; cursor: default !important;
+            color: #ffffff !important; text-align: center; white-space: nowrap;
+            font-size: 0.67rem; letter-spacing: 0.11em; font-weight: 850;
+            padding: 10px 12px; border-right: 1px solid rgba(255,255,255,0.12);
+            height: 38px;
+        }}
+        .monthly-kpi-table th.metric-group-period, .monthly-kpi-table th.metric-group-team-member {{ background: #334155 !important; color: #fff !important; }}
+        .monthly-kpi-table th.metric-group-activity {{ background: #1d4ed8 !important; color: #fff !important; }}
+        .monthly-kpi-table th.metric-group-quality {{ background: #047857 !important; color: #fff !important; }}
+        .monthly-kpi-table th.metric-group-welcome {{ background: #6d28d9 !important; color: #fff !important; }}
+        .monthly-kpi-table th.metric-group-committed-live {{ background: #0f766e !important; color: #fff !important; }}
+        .monthly-kpi-table th.metric-group-forecast {{ background: #4338ca !important; color: #fff !important; }}
+        .monthly-kpi-table thead tr.column-header-row th[data-col-index] {{ position: sticky; top: 38px; z-index: 7; cursor: pointer; }}
+        .monthly-kpi-table thead tr.column-header-row th[data-col-index]:hover {{ filter: brightness(0.97); }}
         .monthly-kpi-table th.expand-head {{
             width: 48px;
             min-width: 48px;
@@ -2399,15 +2523,9 @@ else:
     <div class="monthly-kpi-table-container">
       <div class="monthly-kpi-inner">
         <table id="{monthly_table_id}" class="monthly-kpi-table">
-            <thead>
-                <tr>
-                    <th class="expand-head"></th>
     """
-
-    for col_name in display_columns:
-        th_style = m_header_styles.get(col_name, "background-color: #f8fafc; color: #475569;")
-        m_html += f'<th style="{th_style}">{col_name}</th>'
-    m_html += "</tr></thead><tbody>"
+    m_html += render_grouped_table_header(display_columns, m_header_styles, monthly=True)
+    m_html += "<tbody>"
 
     for _, row in monthly_summary_df.iterrows():
         is_total = str(row.get("MONTH", "")).strip().lower() == "total"
@@ -2493,10 +2611,10 @@ else:
                 : bVal.toString().localeCompare(aVal.toString());
         }}
 
-        const headers = table.querySelectorAll('thead th');
-        headers.forEach((th, headerIndex) => {{
-            // First column is the expand/collapse control and is not sortable.
-            if (headerIndex === 0) return;
+        const headers = table.querySelectorAll('thead tr.column-header-row th[data-col-index]');
+        headers.forEach((th) => {{
+            const headerIndex = Number(th.getAttribute('data-col-index'));
+            if (!Number.isFinite(headerIndex)) return;
 
             th.addEventListener('click', () => {{
                 const current = th.getAttribute('data-order') || 'desc';
@@ -2508,7 +2626,6 @@ else:
                 const totals = tbody.querySelector('tr.totals-row');
 
                 monthRows.sort((a, b) => {{
-                    // headerIndex is offset by one because of the expand column.
                     const aCell = a.children[headerIndex];
                     const bCell = b.children[headerIndex];
                     return compareValues(sortValue(aCell), sortValue(bCell), newOrder);
@@ -2534,8 +2651,7 @@ else:
 # PERFORMANCE TABLE SELECTOR
 # Only one performance table is displayed at a time.
 # ==========================================================
-st.divider()
-st.subheader("📊 Performance Breakdown")
+render_section_heading("TEAM PERFORMANCE", "Performance Breakdown", "Switch between sales executives, quality officers, and welcome callers. Column headings are grouped by funnel stage.")
 
 performance_table_options = [
     "👥 Sales Executive Performance Breakdown",
@@ -2570,8 +2686,7 @@ performance_source_df["_Conversion_Rate_Denominator"] = (
 # Add PROJECTED LIVE and Projected Live % to advisor summary
 # ==========================================================
 if selected_performance_table == "👥 Sales Executive Performance Breakdown":
-    st.divider()
-    st.subheader("👥 Sales Executive Performance Breakdown")
+    render_section_heading("SALES TEAM", "Sales Executive Performance", "Application activity, quality, welcome, committed/live, and projected results by executive.")
 
 if selected_performance_table == "👥 Sales Executive Performance Breakdown" and (
     not master_df.empty or not filtered_portal_df.empty
@@ -2840,7 +2955,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
             "SALES EXECUTIVE", "APPLICATIONS", "TOTAL PRESENT", "SPD", "QA APPROVED", "QA Pass Rate %",
             "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
             "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
-            "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED"
+            "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
         ]
 
         visible_cols = ["SALES EXECUTIVE"]
@@ -2949,7 +3064,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
 
         # Build advisor HTML table (use components.html to allow JS)
         advisor_table_id = "advisor-perf-table"
-        advisor_table_height = min(900, max(240, 90 + len(advisor_summary) * 45))
+        advisor_table_height = min(900, max(270, 132 + len(advisor_summary) * 45))
         adv_html = f'''
         <style>
           .perf-table-container {{
@@ -2992,6 +3107,19 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
           .tag{{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;}}
           .new{{background:#ede9fe;color:#6d28d9;}} .cs{{background:#e0f2fe;color:#0369a1;}} .left{{background:#fee2e2;color:#991b1b;}}
           .totals-row{{font-weight:800;background-color:#f8fafc;}}
+          table.perf-table thead tr.group-header-row th.metric-group {{
+            position:sticky;top:0;z-index:8;cursor:default!important;text-align:center;white-space:nowrap;
+            color:#fff!important;font-size:.67rem;letter-spacing:.11em;font-weight:850;
+            padding:10px 12px;border-right:1px solid rgba(255,255,255,.12);height:38px;
+          }}
+          table.perf-table th.metric-group-team-member, table.perf-table th.metric-group-overview {{background:#334155!important;color:#fff!important;}}
+          table.perf-table th.metric-group-activity {{background:#1d4ed8!important;color:#fff!important;}}
+          table.perf-table th.metric-group-quality {{background:#047857!important;color:#fff!important;}}
+          table.perf-table th.metric-group-welcome {{background:#6d28d9!important;color:#fff!important;}}
+          table.perf-table th.metric-group-committed-live {{background:#0f766e!important;color:#fff!important;}}
+          table.perf-table th.metric-group-forecast {{background:#4338ca!important;color:#fff!important;}}
+          table.perf-table thead tr.column-header-row th[data-col-index] {{top:38px;z-index:7;cursor:pointer;}}
+          table.perf-table thead tr.column-header-row th[data-col-index]:hover {{filter:brightness(.97);}}
         
         /* Shared table polish: softer surfaces, readable spacing and interaction cues */
         .monthly-kpi-table-container, .perf-table-container {{
@@ -3038,12 +3166,9 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
 </style>
         <div class="perf-table-container">
           <table id="{advisor_table_id}" class="perf-table">
-            <thead><tr>
         '''
-        for c in visible_cols:
-            style = header_styles.get(c, "background-color:#f8fafc;color:#475569;")
-            adv_html += f'<th style="{style}">{c}</th>'
-        adv_html += '</tr></thead><tbody>'
+        adv_html += render_grouped_table_header(visible_cols, header_styles=header_styles)
+        adv_html += '<tbody>'
 
         for _, r in advisor_summary.iterrows():
             adv_display = str(r["SALES EXECUTIVE"])
@@ -3193,8 +3318,10 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
             const table = document.getElementById(tableId);
             if(!table) return;
             const tbody = table.tBodies[0];
-            const headers = table.querySelectorAll('th');
-            headers.forEach((th, index) => {{
+            const headers = table.querySelectorAll('thead tr.column-header-row th[data-col-index]');
+            headers.forEach((th) => {{
+              const index = Number(th.getAttribute('data-col-index'));
+              if (!Number.isFinite(index)) return;
               th.addEventListener('click', () => {{
                 const current = th.getAttribute('data-order') || 'desc';
                 const newOrder = current === 'asc' ? 'desc' : 'asc';
@@ -3233,8 +3360,7 @@ elif selected_performance_table == "👥 Sales Executive Performance Breakdown":
 # Add PROJECTED LIVE and Projected Live % to performance summary
 # ==========================================================
 if selected_performance_table == "🧪 Quality Officer Performance":
-    st.divider()
-    st.subheader("🧪 Quality Officer Performance")
+    render_section_heading("QUALITY TEAM", "Quality Officer Performance", "Compare QA approvals and QA workload alongside later-stage outcomes.")
 
 if selected_performance_table == "🧪 Quality Officer Performance" and "Quality Officer" in master_df.columns and not master_df.empty:
     advisor_summary = (
@@ -3352,7 +3478,7 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
             "Quality Officer", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
             "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
             "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
-            "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED"
+            "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
         ]
 
         visible_cols = ["Quality Officer"]
@@ -3449,7 +3575,7 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
 
         # Build advisor HTML table (use components.html to allow JS)
         advisor_table_id = "quality-officer-perf-table"
-        advisor_table_height = min(900, max(240, 90 + len(advisor_summary) * 45))
+        advisor_table_height = min(900, max(270, 132 + len(advisor_summary) * 45))
         adv_html = f'''
         <style>
           .perf-table-container {{
@@ -3492,6 +3618,19 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
           .tag{{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;}}
           .new{{background:#ede9fe;color:#6d28d9;}} .cs{{background:#e0f2fe;color:#0369a1;}} .left{{background:#fee2e2;color:#991b1b;}}
           .totals-row{{font-weight:800;background-color:#f8fafc;}}
+          table.perf-table thead tr.group-header-row th.metric-group {{
+            position:sticky;top:0;z-index:8;cursor:default!important;text-align:center;white-space:nowrap;
+            color:#fff!important;font-size:.67rem;letter-spacing:.11em;font-weight:850;
+            padding:10px 12px;border-right:1px solid rgba(255,255,255,.12);height:38px;
+          }}
+          table.perf-table th.metric-group-team-member, table.perf-table th.metric-group-overview {{background:#334155!important;color:#fff!important;}}
+          table.perf-table th.metric-group-activity {{background:#1d4ed8!important;color:#fff!important;}}
+          table.perf-table th.metric-group-quality {{background:#047857!important;color:#fff!important;}}
+          table.perf-table th.metric-group-welcome {{background:#6d28d9!important;color:#fff!important;}}
+          table.perf-table th.metric-group-committed-live {{background:#0f766e!important;color:#fff!important;}}
+          table.perf-table th.metric-group-forecast {{background:#4338ca!important;color:#fff!important;}}
+          table.perf-table thead tr.column-header-row th[data-col-index] {{top:38px;z-index:7;cursor:pointer;}}
+          table.perf-table thead tr.column-header-row th[data-col-index]:hover {{filter:brightness(.97);}}
         
         /* Shared table polish: softer surfaces, readable spacing and interaction cues */
         .monthly-kpi-table-container, .perf-table-container {{
@@ -3538,12 +3677,9 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
 </style>
         <div class="perf-table-container">
           <table id="{advisor_table_id}" class="perf-table">
-            <thead><tr>
         '''
-        for c in visible_cols:
-            style = header_styles.get(c, "background-color:#f8fafc;color:#475569;")
-            adv_html += f'<th style="{style}">{c}</th>'
-        adv_html += '</tr></thead><tbody>'
+        adv_html += render_grouped_table_header(visible_cols, header_styles=header_styles)
+        adv_html += '<tbody>'
 
         for _, r in advisor_summary.iterrows():
             adv_display = str(r["Quality Officer"])
@@ -3663,8 +3799,10 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
             const table = document.getElementById(tableId);
             if(!table) return;
             const tbody = table.tBodies[0];
-            const headers = table.querySelectorAll('th');
-            headers.forEach((th, index) => {{
+            const headers = table.querySelectorAll('thead tr.column-header-row th[data-col-index]');
+            headers.forEach((th) => {{
+              const index = Number(th.getAttribute('data-col-index'));
+              if (!Number.isFinite(index)) return;
               th.addEventListener('click', () => {{
                 const current = th.getAttribute('data-order') || 'desc';
                 const newOrder = current === 'asc' ? 'desc' : 'asc';
@@ -3703,8 +3841,7 @@ elif selected_performance_table == "🧪 Quality Officer Performance":
 # Add PROJECTED LIVE and Projected Live % to performance summary
 # ==========================================================
 if selected_performance_table == "📞 Welcome Caller Performance":
-    st.divider()
-    st.subheader("📞 Welcome Caller Performance")
+    render_section_heading("WELCOME TEAM", "Welcome Caller Performance", "Compare welcome completion and conversion outcomes by caller.")
 
 if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome Call By" in master_df.columns and not master_df.empty:
     advisor_summary = (
@@ -3822,7 +3959,7 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
             "Welcome Call By", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
             "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
             "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
-            "LIVE", "Live Conversion %", "PROJECTED LIVE", "Projected Live %", "LIVE CANCELLED"
+            "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
         ]
 
         visible_cols = ["Welcome Call By"]
@@ -3919,7 +4056,7 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
 
         # Build advisor HTML table (use components.html to allow JS)
         advisor_table_id = "welcome-caller-perf-table"
-        advisor_table_height = min(900, max(240, 90 + len(advisor_summary) * 45))
+        advisor_table_height = min(900, max(270, 132 + len(advisor_summary) * 45))
         adv_html = f'''
         <style>
           .perf-table-container {{
@@ -3962,6 +4099,19 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
           .tag{{padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px;font-size:0.68rem;display:inline-block;vertical-align:middle;}}
           .new{{background:#ede9fe;color:#6d28d9;}} .cs{{background:#e0f2fe;color:#0369a1;}} .left{{background:#fee2e2;color:#991b1b;}}
           .totals-row{{font-weight:800;background-color:#f8fafc;}}
+          table.perf-table thead tr.group-header-row th.metric-group {{
+            position:sticky;top:0;z-index:8;cursor:default!important;text-align:center;white-space:nowrap;
+            color:#fff!important;font-size:.67rem;letter-spacing:.11em;font-weight:850;
+            padding:10px 12px;border-right:1px solid rgba(255,255,255,.12);height:38px;
+          }}
+          table.perf-table th.metric-group-team-member, table.perf-table th.metric-group-overview {{background:#334155!important;color:#fff!important;}}
+          table.perf-table th.metric-group-activity {{background:#1d4ed8!important;color:#fff!important;}}
+          table.perf-table th.metric-group-quality {{background:#047857!important;color:#fff!important;}}
+          table.perf-table th.metric-group-welcome {{background:#6d28d9!important;color:#fff!important;}}
+          table.perf-table th.metric-group-committed-live {{background:#0f766e!important;color:#fff!important;}}
+          table.perf-table th.metric-group-forecast {{background:#4338ca!important;color:#fff!important;}}
+          table.perf-table thead tr.column-header-row th[data-col-index] {{top:38px;z-index:7;cursor:pointer;}}
+          table.perf-table thead tr.column-header-row th[data-col-index]:hover {{filter:brightness(.97);}}
         
         /* Shared table polish: softer surfaces, readable spacing and interaction cues */
         .monthly-kpi-table-container, .perf-table-container {{
@@ -4008,12 +4158,9 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
 </style>
         <div class="perf-table-container">
           <table id="{advisor_table_id}" class="perf-table">
-            <thead><tr>
         '''
-        for c in visible_cols:
-            style = header_styles.get(c, "background-color:#f8fafc;color:#475569;")
-            adv_html += f'<th style="{style}">{c}</th>'
-        adv_html += '</tr></thead><tbody>'
+        adv_html += render_grouped_table_header(visible_cols, header_styles=header_styles)
+        adv_html += '<tbody>'
 
         for _, r in advisor_summary.iterrows():
             adv_display = str(r["Welcome Call By"])
@@ -4133,8 +4280,10 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
             const table = document.getElementById(tableId);
             if(!table) return;
             const tbody = table.tBodies[0];
-            const headers = table.querySelectorAll('th');
-            headers.forEach((th, index) => {{
+            const headers = table.querySelectorAll('thead tr.column-header-row th[data-col-index]');
+            headers.forEach((th) => {{
+              const index = Number(th.getAttribute('data-col-index'));
+              if (!Number.isFinite(index)) return;
               th.addEventListener('click', () => {{
                 const current = th.getAttribute('data-order') || 'desc';
                 const newOrder = current === 'asc' ? 'desc' : 'asc';
