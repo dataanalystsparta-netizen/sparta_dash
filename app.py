@@ -12,7 +12,8 @@ import logging
 import re
 import time
 from datetime import datetime
-from html import escape
+from html import escape, unescape
+import unicodedata
 from typing import List
 
 import numpy as np
@@ -658,105 +659,130 @@ def categorize_crm_welcome_status_series(s: pd.Series) -> pd.Series:
     )
 
 
+def normalize_crm_status_text(value) -> str:
+    """Normalize CRM status labels consistently (case, whitespace, dashes, HTML entities)."""
+    if pd.isna(value):
+        return ""
+    text = unescape(str(value)).replace("\u200b", "").replace("\ufeff", "")
+    text = unicodedata.normalize("NFKC", text)
+    text = text.replace("\u00a0", " ")
+    text = re.sub(r"[\u2010-\u2015\u2212]", "-", text)
+    text = re.sub(r"<br\s*/?>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+", " ", text).strip().casefold()
+    return text
+
+
+def _crm_status_key(value) -> str:
+    """Return a punctuation-insensitive normalized status label."""
+    return re.sub(r"[^a-z0-9]+", " ", normalize_crm_status_text(value)).strip()
+
+
 def derive_crm_portal_status(row: pd.Series) -> str:
-    """
-    Derive the executive dashboard Live / Committed / Cancelled taxonomy from
-    CRM's downstream provisioning, onboarding, dispatch and confirmation data.
+    """Map a CRM record to Live, Committed, Cancelled, or an empty state.
 
-    A blank downstream section is NOT automatically "Committed" in CRM because
-    the CRM sheet contains the complete application population, unlike Sparta2.
-    """
-    onboarding = clean_reason_text(
-        row.get("Committed (Live) Status (Onboarding Status)", "")
-    ).lower()
-    provisioning = clean_reason_text(row.get("Provisioning Status", "")).lower()
-    dispatch = clean_reason_text(row.get("LetterStatus (Dispatch Status)", "")).lower()
-    confirmation = clean_reason_text(row.get("Confirmation Status", "")).lower()
+    Important onboarding rules:
+      * Onboarding Approved -> Live
+      * Port-Pending (including hyphen/dash/spacing variants) -> Live
+      * Onboarding Pending -> Committed
 
-    prov_cancel_reason = clean_reason_text(
+    Explicit cancellation states in the actual workflow status fields still take
+    priority. Cancellation *reason* text is evaluated after these explicit
+    onboarding mappings, so a stale/unrelated reason cannot cause a valid
+    Onboarding Approved record to disappear from the dashboard.
+    """
+    # The main CRM export header is preferred; alternate labels help older mirror
+    # versions remain readable without silently dropping onboarding states.
+    onboarding_raw = ""
+    for column in (
+        "Committed (Live) Status (Onboarding Status)",
+        "Onboarding Status",
+        "Final Status",
+        "Portal Status",
+    ):
+        candidate = row.get(column, "")
+        if _crm_status_key(candidate):
+            onboarding_raw = candidate
+            break
+
+    onboarding = normalize_crm_status_text(onboarding_raw)
+    onboarding_key = _crm_status_key(onboarding_raw)
+    provisioning = normalize_crm_status_text(row.get("Provisioning Status", ""))
+    dispatch = normalize_crm_status_text(row.get("LetterStatus (Dispatch Status)", ""))
+    confirmation = normalize_crm_status_text(row.get("Confirmation Status", ""))
+
+    prov_cancel_reason = normalize_crm_status_text(
         row.get("Cancellation/Rejection Reason - Provisioning", "")
-    ).lower()
-    dispatch_cancel_reason = clean_reason_text(
+    )
+    dispatch_cancel_reason = normalize_crm_status_text(
         row.get("Cancellation/Rejection Reason - Dispatch", "")
-    ).lower()
-    confirmation_cancel_reason = clean_reason_text(
+    )
+    confirmation_cancel_reason = normalize_crm_status_text(
         row.get("Cancellation/Rejection Reason - Confirmation", "")
-    ).lower()
-    onboarding_cancel_reason = clean_reason_text(
+    )
+    onboarding_cancel_reason = normalize_crm_status_text(
         row.get("Cancellation/Rejection Reason - Onboarding", "")
-    ).lower()
-
-    # CRM-specific confirmation semantics:
-    # - Confirmation Approved / Followup / Pending -> Committed
-    # - Confirmation To Be Cancelled -> Live Cancelled
-    confirmation_is_cancelled = bool(
-        re.search(
-            r"to\s*be\s*cancelled|\bcancelled\b|\bcancel\b|reject(?:ed)?|rejection",
-            confirmation,
-            re.IGNORECASE,
-        )
     )
 
-    # Explicit cancellation/rejection wins over all other downstream signals.
-    cancelled_text = " | ".join(
+    cancellation_pattern = (
+        r"order\s+cancel(?:led|ed)|\bto\s+be\s+cancel(?:led|ed)\b|"
+        r"\bcancel(?:led|ed|lation)\b|\breject(?:ed|ion)?\b|\brejection\b"
+    )
+
+    # An explicit confirmation cancellation must always win.
+    if re.search(cancellation_pattern, confirmation, re.IGNORECASE):
+        return "Cancelled"
+
+    # Cancellation written in a current workflow status (rather than a reason)
+    # also wins over approval signals.
+    workflow_statuses = " | ".join([provisioning, dispatch, confirmation, onboarding])
+    if re.search(cancellation_pattern, workflow_statuses, re.IGNORECASE):
+        return "Cancelled"
+
+    # Canonical onboarding mappings. Use normalized keys so punctuation, repeated
+    # spaces, non-breaking spaces, and hyphen variants do not break recognition.
+    if (
+        re.search(r"\bonboarding\s+approved\b", onboarding_key)
+        or re.search(r"\bport\s+pending\b", onboarding_key)
+        or re.search(r"\bportpending\b", onboarding_key)
+        or re.search(r"\blive\b|\bactive\b|\bcompleted\b", onboarding_key)
+    ):
+        return "Live"
+
+    if re.search(r"\bonboarding\s+pending\b", onboarding_key):
+        return "Committed"
+
+    # If an explicit cancellation reason exists, retain the established
+    # cancellation treatment for records without one of the authoritative
+    # onboarding mappings above.
+    cancellation_reasons = " | ".join(
         [
-            provisioning,
-            dispatch,
-            confirmation,
-            onboarding,
             prov_cancel_reason,
             dispatch_cancel_reason,
             confirmation_cancel_reason,
             onboarding_cancel_reason,
+            normalize_crm_status_text(row.get("Cancellation Reason - quality", "")),
+            normalize_crm_status_text(row.get("Cancellation Reason - welcome", "")),
+            normalize_crm_status_text(row.get("Cancellation/Rejection Reason - Potential Opportunity", "")),
         ]
     )
-    if confirmation_is_cancelled or re.search(
-        r"order\s*cancelled|to\s*be\s*cancelled|cancelled|cancellation|reject(?:ed)?|rejection",
-        cancelled_text,
-        re.IGNORECASE,
-    ):
+    if re.search(cancellation_pattern, cancellation_reasons, re.IGNORECASE):
         return "Cancelled"
 
-    # CRM-specific onboarding mapping:
-    # - Onboarding Approved -> Live
-    # - Port-Pending -> Live
-    # - Onboarding Pending -> Committed Rem. (not Live)
-    # Keep the broader existing live/active/completed signals for compatible
-    # CRM values, but do not let the word "Pending" alone promote onboarding
-    # records into the Live bucket.
-    if re.search(
-        r"\bonboarding\s+approved\b|\bport[\s-]*pending\b|\blive\b|\bactive\b|\bcompleted\b",
-        onboarding,
-        re.IGNORECASE,
-    ):
-        return "Live"
-
-    if re.search(r"\bonboarding\s+pending\b", onboarding, re.IGNORECASE):
+    # Confirmation Approved / Follow-up / Pending is a direct committed-pipeline signal.
+    if re.search(r"\bconfirmation\s+(?:approved|follow\s*up|pending)\b", _crm_status_key(confirmation)):
         return "Committed"
 
-    # CRM confirmation is a direct Committed-pipeline signal. These three
-    # statuses must all be counted under COMMITTED REM.
-    if re.search(
-        r"confirmation\s+(?:approved|follow[- ]?up|pending)",
-        confirmation,
-        re.IGNORECASE,
-    ):
-        return "Committed"
-
-    # Other genuine downstream order/provisioning signals that are not
-    # cancelled and not yet onboarding-live remain in the Committed pipeline.
     committed_text = " | ".join([provisioning, dispatch, confirmation, onboarding])
     if re.search(
-        r"connectivity:\s*committed|\bcommitted\b|processed|re[ -]?processed|in\s+progress|send\s+for\s+rework|dispatch\s+approved",
-        committed_text,
+        r"connectivity\s*:?\s*committed|\bcommitted\b|processed|re\s*processed|"
+        r"in\s+progress|send\s+for\s+rework|dispatch\s+approved",
+        _crm_status_key(committed_text),
         re.IGNORECASE,
     ):
         return "Committed"
 
-    # No downstream pipeline state yet (for example a potential opportunity
-    # or a welcome-only record): do not include it in Live/Committed KPIs.
+    # No recognized downstream pipeline state yet (e.g. potential opportunity only).
     return ""
-
 
 def build_crm_portal_frame(api: pd.DataFrame) -> pd.DataFrame:
     """Build the CRM equivalent of the legacy Sparta2 frame."""
@@ -1030,6 +1056,25 @@ def make_source_record_key(date_value, phone_value) -> str:
     return f"{pd.Timestamp(parsed).strftime('%Y-%m-%d')}|{phone}"
 
 
+def make_crm_record_key(date_value, phone_value, source_row_id) -> str:
+    """Create a CRM record key without dropping valid dated rows with no phone.
+
+    Sale Date + phone remains the preferred reconciliation key. When CRM has a
+    valid sale date but no usable phone number, use a row-specific fallback key.
+    It keeps that record in the application/portal counts without accidentally
+    joining unrelated no-phone records together.
+    """
+    key = make_source_record_key(date_value, phone_value)
+    if key:
+        return key
+
+    parsed = parse_mixed_dates_value(date_value)
+    if pd.isna(parsed):
+        return ""
+
+    return f"{pd.Timestamp(parsed).strftime('%Y-%m-%d')}|CRM-NO-PHONE|{source_row_id}"
+
+
 def fetch_crm_mirror():
     """Read the CRM Excel mirror from the dedicated Google worksheet."""
     try:
@@ -1084,12 +1129,17 @@ def normalize_crm_records(crm_df: pd.DataFrame):
     api["Advisor"] = api["Advisor (Created Username)"].apply(canonicalize_crm_advisor)
     api["Customer Name"] = api["Customer Name"].fillna("").astype(str).str.strip()
     api["Telephone No."] = api["Phone Number"].apply(normalized_phone_value)
+    # Keep Sale Date + Phone as the normal key. A dated CRM record with a blank
+    # or unusable phone number receives a unique fallback key instead of being
+    # silently discarded before any KPI/status categorisation can see it.
     api["_RecordKey"] = [
-        make_source_record_key(d, p)
-        for d, p in zip(api["Sale Date Clean"], api["Telephone No."])
+        make_crm_record_key(d, p, row_id)
+        for row_id, d, p in zip(api.index, api["Sale Date Clean"], api["Telephone No."])
     ]
 
-    # Stable Sale Date + Phone key is required for downstream reconciliation.
+    # Only records with an invalid sale date should lack a key here; the date
+    # boundary above already removes those rows. Keep fallback-key records and
+    # deduplicate records with the same genuine Sale Date + Phone key.
     api = api[api["_RecordKey"] != ""].copy()
     api = api.drop_duplicates(subset=["_RecordKey"], keep="last").reset_index(drop=True)
 
