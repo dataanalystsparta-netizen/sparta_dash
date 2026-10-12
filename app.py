@@ -420,7 +420,7 @@ SCOPES: List[str] = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 # HYBRID DATA SOURCE CONFIGURATION
 # ==========================================================
 # Historical / legacy (Excel-backed) data is authoritative through
-# 17-Sep-2026 inclusive. CRM is authoritative from 18-Sep-2026 onward.
+# 16-Sep-2026 inclusive. CRM is authoritative from 17-Sep-2026 onward.
 SOURCE_CUTOFF_DATE = pd.Timestamp("2026-09-16")
 CRM_START_DATE = pd.Timestamp("2026-09-17")
 
@@ -1043,7 +1043,7 @@ def normalize_crm_records(crm_df: pd.DataFrame):
         if col not in api.columns:
             api[col] = ""
 
-    # CRM source becomes authoritative from 18-Sep-2026 onward.
+    # CRM source becomes authoritative from 17-Sep-2026 onward.
     api["Sale Date Clean"] = api["Sale Date"].apply(parse_mixed_dates_value)
     api = api[api["Sale Date Clean"] >= CRM_START_DATE].copy()
 
@@ -1145,8 +1145,8 @@ def load_hybrid_data():
     """
     Load the two sources independently and enforce the explicit date boundary.
 
-    Legacy / Excel-backed source: Sale Date <= 17-Sep-2026
-    CRM source: Sale Date >= 18-Sep-2026
+    Legacy / Excel-backed source: Sale Date <= 16-Sep-2026
+    CRM source: Sale Date >= 17-Sep-2026
     """
     # ------------------------- LEGACY / EXCEL -------------------------
     legacy_app = load_sparta()
@@ -1197,8 +1197,8 @@ def load_hybrid_data():
         )
 
     source_status = {
-        "cutoff": "17 Sep 2026",
-        "crm_start": "18 Sep 2026",
+        "cutoff": "16 Sep 2026",
+        "crm_start": "17 Sep 2026",
         "legacy_app_rows": int(len(legacy_app)),
         "legacy_portal_rows": int(len(legacy_portal)),
         "crm_app_rows": int(len(crm_app)),
@@ -1589,9 +1589,9 @@ master_raw_df = assign_periods(master_raw_df)
 sparta2_df = assign_periods(sparta2_df)
 
 source_status_text = (
-    f"Source boundary: Excel / legacy through 17 Sep 2026 · "
+    f"Source boundary: Excel / legacy through 16 Sep 2026 · "
     f"{source_status['legacy_app_rows']:,} application rows | "
-    f"CRM from 18 Sep 2026 · {source_status['crm_app_rows']:,} application rows"
+    f"CRM from 17 Sep 2026 · {source_status['crm_app_rows']:,} application rows"
 )
 st.caption(source_status_text)
 
