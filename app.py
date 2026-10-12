@@ -106,7 +106,7 @@ API_REQUIRED_COLUMNS = [
     "Cancellation/Rejection Reason - Potential Opportunity",
 ]
 
-NEW_ADVISORS = ["Aryan", "Shivam"]
+NEW_ADVISORS = ["Dollyk"]
 CUSTOMER_SERVICE_ADVISORS = ["Aman", "Ravi Inbound", "Santosh Joshi", "Vijender", "Laxmi Narayan","Alex"]
 LEFT_ADVISORS = [
     "Gaurav", "Guru", "Niki", "Shaheen", "Manmeet", "Gungun", "Rani", "Archana", "Deepali", "Sushanshu",
