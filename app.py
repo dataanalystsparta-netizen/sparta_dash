@@ -5,7 +5,8 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
 - New dropdown "Select Agent (Monthly table)" appears in the Monthly KPI section.
 - Default: "All Agents" (entire team). Selecting an agent filters the monthly table
   to that agent's rows (both application and portal data, when available from the merged master dataset).
-- No other behavior changed.
+- CRM Inbound Cancelled records are reported separately and excluded from QA, Welcome, and Committed/Live categories.
+- CRM QA pass rate excludes QA-Pending, Rework, and Inbound Cancelled; legacy QA pass-rate rules remain unchanged.
 """
 
 import logging
@@ -371,7 +372,7 @@ def classify_table_column(column: str, first_column: str = "", monthly: bool = F
         return "ACTIVITY"
     if "PROJECTED" in upper or "FORECAST" in upper:
         return "FORECAST"
-    if upper.startswith("QA") or "QUALITY" in upper:
+    if upper.startswith("QA") or "QUALITY" in upper or "INBOUND CANCELLED" in upper:
         return "QUALITY"
     if "WELCOME" in upper:
         return "WELCOME"
@@ -606,23 +607,36 @@ def categorize_portal_status_series(s: pd.Series) -> pd.Series:
 # sheets. The legacy categorisers above are intentionally left untouched.
 
 
+def is_crm_inbound_cancelled_series(s: pd.Series) -> pd.Series:
+    """Return True for CRM quality statuses explicitly containing 'inbound'.
+
+    Inbound-cancelled CRM records are reported as their own category and must
+    not be counted as QA-cancelled, Welcome, or Committed/Live outcomes.
+    Legacy records never use this CRM-specific flag.
+    """
+    normalized = s.fillna("").astype(str).str.strip().str.lower()
+    return normalized.str.contains(r"\binbound\b", na=False)
+
+
 def categorize_crm_quality_status_series(s: pd.Series) -> pd.Series:
     """Map CRM Quality Status values to the executive dashboard taxonomy."""
     s_norm = s.fillna("").astype(str).str.strip().str.lower()
 
+    # Inbound cancellations are a separate CRM category, not QA Cancelled.
+    inbound_cancelled_mask = is_crm_inbound_cancelled_series(s)
     # CRM-specific: QA-Pending must remain in QA Pending, not QA Cancelled.
     pending_mask = s_norm.str.contains(r"^qa[- ]?pending$|^pending$", na=False)
     approved_mask = s_norm.str.contains(r"qa[- ]?approved|approved", na=False)
     rework_mask = s_norm.str.contains(r"rework", na=False)
     cancelled_mask = s_norm.str.contains(
-        r"qa[- ]?reject|reject|cancel|hold|duplicate|inbound|n/a|rec in accessible",
+        r"qa[- ]?reject|reject|cancel|hold|duplicate|n/a|rec in accessible",
         na=False,
     )
 
     return pd.Series(
         np.select(
-            [pending_mask, approved_mask, rework_mask, cancelled_mask],
-            ["Pending", "Approved", "Rework", "Cancelled"],
+            [inbound_cancelled_mask, pending_mask, approved_mask, rework_mask, cancelled_mask],
+            ["Inbound Cancelled", "Pending", "Approved", "Rework", "Cancelled"],
             default="Cancelled",
         ),
         index=s.index,
@@ -778,7 +792,13 @@ def build_crm_portal_frame(api: pd.DataFrame) -> pd.DataFrame:
 
     # Unlike Sparta2, CRM contains the entire application population. Only
     # rows with an actual downstream pipeline state become portal rows.
+    # Inbound-cancelled records are deliberately excluded from all downstream
+    # categories even if other CRM status fields are populated.
     portal = portal[portal["Portal Status Clean"] != ""].copy()
+    inbound_mask = api.get(
+        "Inbound Cancelled", pd.Series(False, index=api.index)
+    ).fillna(False).astype(bool)
+    portal = portal.loc[~inbound_mask.reindex(portal.index).fillna(False)].copy()
     return portal.reset_index(drop=True)
 
 
@@ -1059,6 +1079,7 @@ def normalize_crm_records(crm_df: pd.DataFrame):
     api["Advisor"] = api["Advisor (Created Username)"].apply(canonicalize_crm_advisor)
     api["Customer Name"] = api["Customer Name"].fillna("").astype(str).str.strip()
     api["Telephone No."] = api["Phone Number"].apply(normalized_phone_value)
+    api["Inbound Cancelled"] = is_crm_inbound_cancelled_series(api["Quality Status"])
     api["_RecordKey"] = [
         make_source_record_key(d, p)
         for d, p in zip(api["Sale Date Clean"], api["Telephone No."])
@@ -1137,6 +1158,10 @@ def normalize_crm_records(crm_df: pd.DataFrame):
     app["Welcome Status Clean"] = categorize_crm_welcome_status_series(
         app["Welcome Status"]
     )
+    app["Inbound Cancelled"] = api["Inbound Cancelled"].fillna(False).astype(bool)
+    # These are isolated cancellation outcomes, not Welcome-stage records.
+    app.loc[app["Inbound Cancelled"], "Welcome Status Clean"] = ""
+
     app["Source"] = "CRM"
     app["_RecordKey"] = api["_RecordKey"]
 
@@ -1183,6 +1208,13 @@ def load_hybrid_data():
 
     app_df = pd.concat([legacy_app, crm_app], ignore_index=True, sort=False)
     portal_df = pd.concat([legacy_portal, crm_portal], ignore_index=True, sort=False)
+
+    # Keep the CRM-specific flag available even when the CRM source is empty
+    # or temporarily unavailable, so legacy-only performance tables still run.
+    if "Inbound Cancelled" not in app_df.columns:
+        app_df["Inbound Cancelled"] = False
+    else:
+        app_df["Inbound Cancelled"] = app_df["Inbound Cancelled"].fillna(False).astype(bool)
 
     if "Sale Date Clean" in app_df.columns:
         app_df["Sale Date Clean"] = pd.to_datetime(
@@ -1718,15 +1750,52 @@ def get_pct(part: int, total: int) -> str:
 
 
 def count_non_pending_applications(df: pd.DataFrame, status_columns: List[str]) -> int:
-    """Count rows excluding applications currently pending at any supplied stage."""
+    """Count stage-rate-eligible rows, excluding pending states and inbound cancels.
+
+    Inbound-cancelled CRM records are separate from the funnel and therefore
+    cannot enter Welcome or Live conversion denominators either.
+    """
     if df is None or df.empty:
         return 0
     eligible = pd.Series(True, index=df.index, dtype=bool)
+    if "Inbound Cancelled" in df.columns:
+        inbound_flag = df["Inbound Cancelled"].fillna(False).astype(bool)
+        eligible &= ~inbound_flag
     for column in status_columns:
         if column in df.columns:
             normalized = df[column].fillna("").astype(str).str.strip().str.lower()
-            eligible &= normalized.ne("pending")
+            eligible &= ~normalized.isin({"pending", "inbound cancelled"})
     return int(eligible.sum())
+
+
+def qa_pass_rate_eligible_mask(df: pd.DataFrame) -> pd.Series:
+    """Return rows included in QA pass-rate denominator.
+
+    Legacy rules are preserved (exclude QA Pending only). For CRM rows, exclude
+    QA Pending, Rework, and Inbound Cancelled as requested.
+    """
+    if df is None or df.empty:
+        return pd.Series(False, index=getattr(df, "index", []), dtype=bool)
+
+    status = (
+        df.get("Quality Status Clean", pd.Series("", index=df.index))
+        .fillna("").astype(str).str.strip().str.lower()
+    )
+    source = (
+        df.get("Source", pd.Series("", index=df.index))
+        .fillna("").astype(str).str.strip().str.upper()
+    )
+    eligible = status.ne("pending")
+    is_crm = source.eq("CRM")
+    eligible &= ~(is_crm & status.isin({"rework", "inbound cancelled"}))
+    if "Inbound Cancelled" in df.columns:
+        eligible &= ~df["Inbound Cancelled"].fillna(False).astype(bool)
+    return eligible.astype(bool)
+
+
+def count_qa_pass_rate_denominator(df: pd.DataFrame) -> int:
+    """Count QA pass-rate eligible rows, applying source-specific CRM rules."""
+    return int(qa_pass_rate_eligible_mask(df).sum())
 
 
 total_applications = len(master_df)
@@ -1735,6 +1804,10 @@ q_approved = count_status(master_df, "Quality Status Clean", "Approved")
 q_rework = count_status(master_df, "Quality Status Clean", "Rework")
 q_cancelled = count_status(master_df, "Quality Status Clean", "Cancelled")
 q_pending = count_status(master_df, "Quality Status Clean", "Pending")
+inbound_cancelled = int(
+    master_df.get("Inbound Cancelled", pd.Series(False, index=master_df.index))
+    .fillna(False).astype(bool).sum()
+)
 wc_done = count_status(master_df, "Welcome Status Clean", "Done")
 wc_cancelled = count_status(master_df, "Welcome Status Clean", "Cancelled")
 wc_pending = count_status(master_df, "Welcome Status Clean", "Pending")
@@ -1769,13 +1842,14 @@ def render_kpi_compartment(title, subtitle, icon, theme, grid_class, metrics):
 
 
 render_kpi_compartment(
-    "Applications & Quality", "01 · APPLICATION FUNNEL", "01", "quality", "",
+    "Applications & Quality", "01 · APPLICATION FUNNEL", "01", "quality", "grid-3",
     [
         ("Applications", total_applications, "100% of base", "#2563eb", "#eff6ff"),
         ("QA Approved", q_approved, f"{get_pct(q_approved, total_applications)} of apps", "#15803d", "#f0fdf4"),
         ("QA Rework", q_rework, f"{get_pct(q_rework, total_applications)} of apps", "#a16207", "#fefce8"),
         ("QA Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
         ("QA Pending", q_pending, f"{get_pct(q_pending, total_applications)} of apps", "#c2410c", "#fff7ed"),
+        ("Inbound Cancelled", inbound_cancelled, f"{get_pct(inbound_cancelled, total_applications)} of apps · CRM", "#7c2d12", "#fff7ed"),
     ],
 )
 render_kpi_compartment(
@@ -1883,17 +1957,19 @@ else:
         m_qa_rework = count_status(m_app, "Quality Status Clean", "Rework")
         m_qa_cancelled = count_status(m_app, "Quality Status Clean", "Cancelled")
         m_qa_pending = count_status(m_app, "Quality Status Clean", "Pending")
+        m_inbound_cancelled = int(
+            m_app.get("Inbound Cancelled", pd.Series(False, index=m_app.index))
+            .fillna(False).astype(bool).sum()
+        )
 
         m_wc_done = count_status(m_app, "Welcome Status Clean", "Done")
         m_wc_cancelled = count_status(m_app, "Welcome Status Clean", "Cancelled")
         m_wc_pending = count_status(m_app, "Welcome Status Clean", "Pending")
 
-        # Stage conversion rates exclude applications still Pending.
-        # QA pass rate excludes QA-Pending only; welcome/live rates exclude rows
-        # pending either at QA or Welcome, counting each application only once.
-        qa_rate_denominator = count_non_pending_applications(
-            m_app, ["Quality Status Clean"]
-        )
+        # QA pass-rate denominator is source-specific: CRM excludes Pending,
+        # Rework, and Inbound Cancelled; legacy continues excluding Pending only.
+        # Welcome/Live conversion rates exclude pending stages and inbound cancels.
+        qa_rate_denominator = count_qa_pass_rate_denominator(m_app)
         conversion_rate_denominator = count_non_pending_applications(
             m_app, ["Quality Status Clean", "Welcome Status Clean"]
         )
@@ -1962,6 +2038,9 @@ else:
         qa_rework_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Rework")
         qa_cancelled_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Cancelled")
         qa_pending_raw = format_raw_breakdown(m_app, "Quality Status", "Quality Status Clean", "Pending")
+        inbound_cancelled_raw = format_raw_breakdown(
+            m_app, "Quality Status", "Quality Status Clean", "Inbound Cancelled"
+        )
 
         welcome_done_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Done")
         welcome_cancelled_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Cancelled")
@@ -2038,6 +2117,8 @@ else:
             "QA CANCELLED RAW": qa_cancelled_raw,
             "QA PENDING": m_qa_pending,
             "QA PENDING RAW": qa_pending_raw,
+            "INBOUND CANCELLED": m_inbound_cancelled,
+            "INBOUND CANCELLED RAW": inbound_cancelled_raw,
             "WELCOME DONE": m_wc_done,
             "WELCOME DONE RAW": welcome_done_raw,
             "Welcome Done % Val": (m_wc_done / conversion_rate_denominator * 100) if conversion_rate_denominator > 0 else 0.0,
@@ -2120,9 +2201,7 @@ else:
     # ----------------------------------------------------------
     if not monthly_summary_df.empty:
         tot_apps = monthly_summary_df["APPLICATIONS"].sum()
-        total_qa_rate_denominator = count_non_pending_applications(
-            monthly_app_df, ["Quality Status Clean"]
-        )
+        total_qa_rate_denominator = count_qa_pass_rate_denominator(monthly_app_df)
         total_conversion_rate_denominator = count_non_pending_applications(
             monthly_app_df, ["Quality Status Clean", "Welcome Status Clean"]
         )
@@ -2146,6 +2225,8 @@ else:
             "QA CANCELLED RAW": format_raw_breakdown(monthly_app_df, "Quality Status", "Quality Status Clean", "Cancelled"),
             "QA PENDING": monthly_summary_df["QA PENDING"].sum(),
             "QA PENDING RAW": format_raw_breakdown(monthly_app_df, "Quality Status", "Quality Status Clean", "Pending"),
+            "INBOUND CANCELLED": monthly_summary_df["INBOUND CANCELLED"].sum(),
+            "INBOUND CANCELLED RAW": format_raw_breakdown(monthly_app_df, "Quality Status", "Quality Status Clean", "Inbound Cancelled"),
             "WELCOME DONE": monthly_summary_df["WELCOME DONE"].sum(),
             "WELCOME DONE RAW": format_raw_breakdown(monthly_app_df, "Welcome Status", "Welcome Status Clean", "Done"),
             "Welcome Done % Val": (monthly_summary_df["WELCOME DONE"].sum() / total_conversion_rate_denominator * 100) if total_conversion_rate_denominator > 0 else 0.0,
@@ -2201,7 +2282,7 @@ else:
 
     display_columns = [
         "MONTH", "APPLICATIONS", "TOTAL PRESENT", "SPD", "QA APPROVED", "QA Pass Rate %",
-        "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE",
+        "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED", "WELCOME DONE",
         "Welcome Done %", "WELCOME CANCELLED", "WELCOME PENDING",
         "COMMITTED REM.", "COMMITTED CANCELLED", "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %",
     ]
@@ -2216,6 +2297,7 @@ else:
         "QA REWORK": "background-color: #fefce8; color: #a16207;",
         "QA CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
         "QA PENDING": "background-color: #fff7ed; color: #c2410c;",
+        "INBOUND CANCELLED": "background-color: #fff7ed; color: #7c2d12;",
         "WELCOME DONE": "background-color: #f0fdf4; color: #15803d;",
         "Welcome Done %": "background-color: #f0fdf4; color: #15803d;",
         "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
@@ -2234,6 +2316,7 @@ else:
         "QA REWORK": "QA REWORK RAW",
         "QA CANCELLED": "QA CANCELLED RAW",
         "QA PENDING": "QA PENDING RAW",
+        "INBOUND CANCELLED": "INBOUND CANCELLED RAW",
         "WELCOME DONE": "WELCOME DONE RAW",
         "WELCOME CANCELLED": "WELCOME CANCELLED RAW",
         "WELCOME PENDING": "WELCOME PENDING RAW",
@@ -2666,9 +2749,16 @@ _welcome_status_normalized = (
     performance_source_df.get("Welcome Status Clean", pd.Series("", index=performance_source_df.index))
     .fillna("").astype(str).str.strip().str.lower()
 )
-performance_source_df["_QA_Rate_Denominator"] = _qa_status_normalized.ne("pending").astype(int)
+performance_source_df["_QA_Rate_Denominator"] = qa_pass_rate_eligible_mask(
+    performance_source_df
+).astype(int)
 performance_source_df["_Conversion_Rate_Denominator"] = (
-    _qa_status_normalized.ne("pending") & _welcome_status_normalized.ne("pending")
+    _qa_status_normalized.ne("pending")
+    & _welcome_status_normalized.ne("pending")
+    & ~performance_source_df.get(
+        "Inbound Cancelled", pd.Series(False, index=performance_source_df.index)
+    ).fillna(False).astype(bool)
+    & _qa_status_normalized.ne("inbound cancelled")
 ).astype(int)
 
 # ==========================================================
@@ -2690,7 +2780,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
     if app_perf_df.empty:
         advisor_summary = pd.DataFrame(columns=[
             "_AdvisorKey", "Advisor", "Applications", "QA_Approved", "QA_Rework",
-            "QA_Cancelled", "QA_Pending", "Welcome_Done", "Welcome_Cancelled",
+            "QA_Cancelled", "QA_Pending", "Inbound_Cancelled", "Welcome_Done", "Welcome_Cancelled",
             "Welcome_Pending", "QA_Rate_Denominator", "Conversion_Rate_Denominator",
         ])
     else:
@@ -2703,6 +2793,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
                     QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
                     QA_Cancelled=("Quality Status Clean", lambda x: (x == "Cancelled").sum()),
                     QA_Pending=("Quality Status Clean", lambda x: (x == "Pending").sum()),
+                    Inbound_Cancelled=("Inbound Cancelled", lambda x: x.fillna(False).astype(bool).sum()),
                     Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
                     Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
                     Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
@@ -2782,7 +2873,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
     advisor_summary.loc[advisor_summary["Advisor"] == "", "Advisor"] = "Unassigned"
 
     _numeric_zero_cols = [
-        "Applications", "QA_Approved", "QA_Rework", "QA_Cancelled", "QA_Pending",
+        "Applications", "QA_Approved", "QA_Rework", "QA_Cancelled", "QA_Pending", "Inbound_Cancelled",
         "Welcome_Done", "Welcome_Cancelled", "Welcome_Pending", "Committed", "Live",
         "Live_Cancelled", "QA_Rate_Denominator", "Conversion_Rate_Denominator",
     ]
@@ -2880,6 +2971,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
             "QA_Rework": "QA REWORK",
             "QA_Cancelled": "QA CANCELLED",
             "QA_Pending": "QA PENDING",
+            "Inbound_Cancelled": "INBOUND CANCELLED",
             "Welcome_Done": "WELCOME DONE",
             "Welcome_Cancelled": "WELCOME CANCELLED",
             "Welcome_Pending": "WELCOME PENDING",
@@ -2897,6 +2989,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
             "QA REWORK": ("Quality Status", "Quality Status Clean", "Rework"),
             "QA CANCELLED": ("Quality Status", "Quality Status Clean", "Cancelled"),
             "QA PENDING": ("Quality Status", "Quality Status Clean", "Pending"),
+            "INBOUND CANCELLED": ("Quality Status", "Quality Status Clean", "Inbound Cancelled"),
             "WELCOME DONE": ("Welcome Status", "Welcome Status Clean", "Done"),
             "WELCOME CANCELLED": ("Welcome Status", "Welcome Status Clean", "Cancelled"),
             "WELCOME PENDING": ("Welcome Status", "Welcome Status Clean", "Pending"),
@@ -2938,12 +3031,12 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
 
         numeric_cols = {
             "APPLICATIONS", "TOTAL PRESENT", "SPD", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
-            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE"
+            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE", "INBOUND CANCELLED"
         }
 
         base_col_order = [
             "SALES EXECUTIVE", "APPLICATIONS", "TOTAL PRESENT", "SPD", "QA APPROVED", "QA Pass Rate %",
-            "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
+            "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED", "WELCOME DONE", "Welcome Done %",
             "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
             "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
         ]
@@ -2997,6 +3090,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
             "QA REWORK": "background-color:#fefce8;color:#a16207;",
             "QA CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
             "QA PENDING": "background-color:#fff7ed;color:#c2410c;",
+            "INBOUND CANCELLED": "background-color:#fff7ed;color:#7c2d12;",
             "WELCOME DONE": "background-color:#f0fdf4;color:#15803d;",
             "Welcome Done %": "background-color:#f0fdf4;color:#15803d;",
             "WELCOME CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
@@ -3363,6 +3457,7 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
                 QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
                 QA_Cancelled=("Quality Status Clean", lambda x: (x == "Cancelled").sum()),
                 QA_Pending=("Quality Status Clean", lambda x: (x == "Pending").sum()),
+                Inbound_Cancelled=("Inbound Cancelled", lambda x: x.fillna(False).astype(bool).sum()),
                 Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
                 Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
                 Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
@@ -3411,6 +3506,7 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
             "QA_Rework": "QA REWORK",
             "QA_Cancelled": "QA CANCELLED",
             "QA_Pending": "QA PENDING",
+            "Inbound_Cancelled": "INBOUND CANCELLED",
             "Welcome_Done": "WELCOME DONE",
             "Welcome_Cancelled": "WELCOME CANCELLED",
             "Welcome_Pending": "WELCOME PENDING",
@@ -3428,6 +3524,7 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
             "QA REWORK": ("Quality Status", "Quality Status Clean", "Rework"),
             "QA CANCELLED": ("Quality Status", "Quality Status Clean", "Cancelled"),
             "QA PENDING": ("Quality Status", "Quality Status Clean", "Pending"),
+            "INBOUND CANCELLED": ("Quality Status", "Quality Status Clean", "Inbound Cancelled"),
             "WELCOME DONE": ("Welcome Status", "Welcome Status Clean", "Done"),
             "WELCOME CANCELLED": ("Welcome Status", "Welcome Status Clean", "Cancelled"),
             "WELCOME PENDING": ("Welcome Status", "Welcome Status Clean", "Pending"),
@@ -3460,13 +3557,13 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
         master_df.drop(columns=["_advisor_norm"], inplace=True, errors=True)
 
         numeric_cols = {
-            "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
+            "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED",
             "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE"
         }
 
         base_col_order = [
             "Quality Officer", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
-            "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
+            "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED", "WELCOME DONE", "Welcome Done %",
             "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
             "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
         ]
@@ -3518,6 +3615,7 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
             "QA REWORK": "background-color:#fefce8;color:#a16207;",
             "QA CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
             "QA PENDING": "background-color:#fff7ed;color:#c2410c;",
+            "INBOUND CANCELLED": "background-color:#fff7ed;color:#7c2d12;",
             "WELCOME DONE": "background-color:#f0fdf4;color:#15803d;",
             "Welcome Done %": "background-color:#f0fdf4;color:#15803d;",
             "WELCOME CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
@@ -3844,6 +3942,7 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
                 QA_Rework=("Quality Status Clean", lambda x: (x == "Rework").sum()),
                 QA_Cancelled=("Quality Status Clean", lambda x: (x == "Cancelled").sum()),
                 QA_Pending=("Quality Status Clean", lambda x: (x == "Pending").sum()),
+                Inbound_Cancelled=("Inbound Cancelled", lambda x: x.fillna(False).astype(bool).sum()),
                 Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
                 Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
                 Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
@@ -3892,6 +3991,7 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
             "QA_Rework": "QA REWORK",
             "QA_Cancelled": "QA CANCELLED",
             "QA_Pending": "QA PENDING",
+            "Inbound_Cancelled": "INBOUND CANCELLED",
             "Welcome_Done": "WELCOME DONE",
             "Welcome_Cancelled": "WELCOME CANCELLED",
             "Welcome_Pending": "WELCOME PENDING",
@@ -3909,6 +4009,7 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
             "QA REWORK": ("Quality Status", "Quality Status Clean", "Rework"),
             "QA CANCELLED": ("Quality Status", "Quality Status Clean", "Cancelled"),
             "QA PENDING": ("Quality Status", "Quality Status Clean", "Pending"),
+            "INBOUND CANCELLED": ("Quality Status", "Quality Status Clean", "Inbound Cancelled"),
             "WELCOME DONE": ("Welcome Status", "Welcome Status Clean", "Done"),
             "WELCOME CANCELLED": ("Welcome Status", "Welcome Status Clean", "Cancelled"),
             "WELCOME PENDING": ("Welcome Status", "Welcome Status Clean", "Pending"),
@@ -3941,13 +4042,13 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
         master_df.drop(columns=["_advisor_norm"], inplace=True, errors=True)
 
         numeric_cols = {
-            "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
+            "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED",
             "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE"
         }
 
         base_col_order = [
             "Welcome Call By", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
-            "QA REWORK", "QA CANCELLED", "QA PENDING", "WELCOME DONE", "Welcome Done %",
+            "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED", "WELCOME DONE", "Welcome Done %",
             "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
             "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
         ]
@@ -3999,6 +4100,7 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
             "QA REWORK": "background-color:#fefce8;color:#a16207;",
             "QA CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
             "QA PENDING": "background-color:#fff7ed;color:#c2410c;",
+            "INBOUND CANCELLED": "background-color:#fff7ed;color:#7c2d12;",
             "WELCOME DONE": "background-color:#f0fdf4;color:#15803d;",
             "Welcome Done %": "background-color:#f0fdf4;color:#15803d;",
             "WELCOME CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
