@@ -2121,7 +2121,7 @@ else:
             "INBOUND CANCELLED RAW": inbound_cancelled_raw,
             "WELCOME DONE": m_wc_done,
             "WELCOME DONE RAW": welcome_done_raw,
-            "Welcome Done % Val": (m_wc_done / conversion_rate_denominator * 100) if conversion_rate_denominator > 0 else 0.0,
+            "Welcome Done % Val": (m_wc_done / (m_wc_done + m_wc_cancelled) * 100) if (m_wc_done + m_wc_cancelled) > 0 else 0.0,
             "WELCOME CANCELLED": m_wc_cancelled,
             "WELCOME CANCELLED RAW": welcome_cancelled_raw,
             "WELCOME PENDING": m_wc_pending,
@@ -2229,7 +2229,7 @@ else:
             "INBOUND CANCELLED RAW": format_raw_breakdown(monthly_app_df, "Quality Status", "Quality Status Clean", "Inbound Cancelled"),
             "WELCOME DONE": monthly_summary_df["WELCOME DONE"].sum(),
             "WELCOME DONE RAW": format_raw_breakdown(monthly_app_df, "Welcome Status", "Welcome Status Clean", "Done"),
-            "Welcome Done % Val": (monthly_summary_df["WELCOME DONE"].sum() / total_conversion_rate_denominator * 100) if total_conversion_rate_denominator > 0 else 0.0,
+            "Welcome Done % Val": (monthly_summary_df["WELCOME DONE"].sum() / (monthly_summary_df["WELCOME DONE"].sum() + monthly_summary_df["WELCOME CANCELLED"].sum()) * 100) if (monthly_summary_df["WELCOME DONE"].sum() + monthly_summary_df["WELCOME CANCELLED"].sum()) > 0 else 0.0,
             "WELCOME CANCELLED": monthly_summary_df["WELCOME CANCELLED"].sum(),
             "WELCOME CANCELLED RAW": format_raw_breakdown(monthly_app_df, "Welcome Status", "Welcome Status Clean", "Cancelled"),
             "WELCOME PENDING": monthly_summary_df["WELCOME PENDING"].sum(),
@@ -2943,7 +2943,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         ).fillna(0.0)
         advisor_summary["Welcome Done % Val"] = (
             advisor_summary["Welcome_Done"]
-            / advisor_summary["Conversion_Rate_Denominator"].replace(0, np.nan)
+            / (advisor_summary["Welcome_Done"] + advisor_summary["Welcome_Cancelled"]).replace(0, np.nan)
             * 100
         ).fillna(0.0)
         advisor_summary["Live Conversion % Val"] = (
@@ -3118,6 +3118,7 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         )
         total_qa_approved = int(totals_series.get("QA APPROVED", 0))
         total_welcome_done = int(totals_series.get("WELCOME DONE", 0))
+        total_welcome_cancelled = int(totals_series.get("WELCOME CANCELLED", 0))
         total_live = int(totals_series.get("LIVE", 0))
 
         # totals percentages (overall)
@@ -3127,9 +3128,10 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
             total_qa_approved / total_qa_rate_denominator * 100
             if total_qa_rate_denominator > 0 else 0.0
         )
+        total_welcome_denominator = total_welcome_done + total_welcome_cancelled
         total_welcome_pct = (
-            total_welcome_done / total_conversion_rate_denominator * 100
-            if total_conversion_rate_denominator > 0 else 0.0
+            total_welcome_done / total_welcome_denominator * 100
+            if total_welcome_denominator > 0 else 0.0
         )
         total_live_pct = (
             total_live / total_conversion_rate_denominator * 100
@@ -3478,7 +3480,7 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
         ).fillna(0.0)
         advisor_summary["Welcome Done % Val"] = (
             advisor_summary["Welcome_Done"]
-            / advisor_summary["Conversion_Rate_Denominator"].replace(0, np.nan)
+            / (advisor_summary["Welcome_Done"] + advisor_summary["Welcome_Cancelled"]).replace(0, np.nan)
             * 100
         ).fillna(0.0)
         advisor_summary["Live Conversion % Val"] = (
@@ -3633,6 +3635,7 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
         total_apps = int(totals_series.get("APPLICATIONS", 0))
         total_qa_approved = int(totals_series.get("QA APPROVED", 0))
         total_welcome_done = int(totals_series.get("WELCOME DONE", 0))
+        total_welcome_cancelled = int(totals_series.get("WELCOME CANCELLED", 0))
         total_live = int(totals_series.get("LIVE", 0))
 
         # totals percentages (overall)
@@ -3642,9 +3645,10 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
             total_qa_approved / total_qa_rate_denominator * 100
             if total_qa_rate_denominator > 0 else 0.0
         )
+        total_welcome_denominator = total_welcome_done + total_welcome_cancelled
         total_welcome_pct = (
-            total_welcome_done / total_conversion_rate_denominator * 100
-            if total_conversion_rate_denominator > 0 else 0.0
+            total_welcome_done / total_welcome_denominator * 100
+            if total_welcome_denominator > 0 else 0.0
         )
         total_live_pct = (
             total_live / total_conversion_rate_denominator * 100
@@ -3963,7 +3967,7 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
         ).fillna(0.0)
         advisor_summary["Welcome Done % Val"] = (
             advisor_summary["Welcome_Done"]
-            / advisor_summary["Conversion_Rate_Denominator"].replace(0, np.nan)
+            / (advisor_summary["Welcome_Done"] + advisor_summary["Welcome_Cancelled"]).replace(0, np.nan)
             * 100
         ).fillna(0.0)
         advisor_summary["Live Conversion % Val"] = (
@@ -4118,6 +4122,7 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
         total_apps = int(totals_series.get("APPLICATIONS", 0))
         total_qa_approved = int(totals_series.get("QA APPROVED", 0))
         total_welcome_done = int(totals_series.get("WELCOME DONE", 0))
+        total_welcome_cancelled = int(totals_series.get("WELCOME CANCELLED", 0))
         total_live = int(totals_series.get("LIVE", 0))
 
         # totals percentages (overall)
@@ -4127,9 +4132,10 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
             total_qa_approved / total_qa_rate_denominator * 100
             if total_qa_rate_denominator > 0 else 0.0
         )
+        total_welcome_denominator = total_welcome_done + total_welcome_cancelled
         total_welcome_pct = (
-            total_welcome_done / total_conversion_rate_denominator * 100
-            if total_conversion_rate_denominator > 0 else 0.0
+            total_welcome_done / total_welcome_denominator * 100
+            if total_welcome_denominator > 0 else 0.0
         )
         total_live_pct = (
             total_live / total_conversion_rate_denominator * 100
