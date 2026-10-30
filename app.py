@@ -7,6 +7,8 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
   to that agent's rows (both application and portal data, when available from the merged master dataset).
 - CRM Inbound Cancelled records are reported separately and excluded from QA, Welcome, and Committed/Live categories.
 - CRM QA pass rate excludes QA-Pending, Rework, and Inbound Cancelled; legacy QA pass-rate rules remain unchanged.
+- CRM Provisioning Status is reported separately as Completed, Pending, and Cancelled; legacy rows remain unclassified.
+- Executive KPI cards use a tighter, more compact layout.
 """
 
 import logging
@@ -180,27 +182,28 @@ hr { border-color: #dce5f0 !important; opacity: 0.9; }
 .sparta-section-title { color:#12213a; font-size:clamp(1.08rem,1.55vw,1.38rem); line-height:1.2; letter-spacing:-.035em; font-weight:850; }
 .sparta-section-description { color:#68788d; font-size:.78rem; line-height:1.45; }
 [data-testid="stVerticalBlockBorderWrapper"] { border:1px solid #dce5f0 !important; border-radius:17px !important; background:rgba(255,255,255,.86) !important; box-shadow:0 7px 22px rgba(15,23,42,.035) !important; }
-.sparta-kpi-group { --group-accent:#0f9f91; margin:.55rem 0 .85rem; padding:.95rem 1rem 1rem; border:1px solid #dce5f0; border-top:3px solid var(--group-accent); border-radius:17px; background:linear-gradient(145deg,#fff 0%,#fbfdff 100%); box-shadow:0 7px 20px rgba(15,23,42,.035); }
+.sparta-kpi-group { --group-accent:#0f9f91; margin:.28rem 0 .45rem; padding:.5rem .65rem .58rem; border:1px solid #dce5f0; border-top:2px solid var(--group-accent); border-radius:12px; background:linear-gradient(145deg,#fff 0%,#fbfdff 100%); box-shadow:0 3px 10px rgba(15,23,42,.025); }
 .sparta-kpi-group.quality { --group-accent:#2563eb; }
 .sparta-kpi-group.welcome { --group-accent:#7c3aed; }
+.sparta-kpi-group.provisioning { --group-accent:#0d9488; }
 .sparta-kpi-group.live { --group-accent:#0f9f91; }
-.sparta-kpi-group-head { display:flex; align-items:center; gap:.65rem; margin-bottom:.72rem; }
-.sparta-kpi-group-mark { flex:0 0 34px; width:34px; height:34px; display:flex; align-items:center; justify-content:center; border-radius:11px; color:var(--group-accent); background:#edf5ff; font-size:.88rem; font-weight:900; }
-.sparta-kpi-group-title { color:#172942; font-size:.88rem; line-height:1.2; font-weight:850; letter-spacing:-.015em; }
-.sparta-kpi-group-subtitle { color:#8491a3; font-size:.64rem; font-weight:750; letter-spacing:.105em; text-transform:uppercase; margin-bottom:.15rem; }
-.sparta-kpi-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.55rem; }
+.sparta-kpi-group-head { display:flex; align-items:center; gap:.45rem; margin-bottom:.38rem; }
+.sparta-kpi-group-mark { flex:0 0 25px; width:25px; height:25px; display:flex; align-items:center; justify-content:center; border-radius:8px; color:var(--group-accent); background:#edf5ff; font-size:.68rem; font-weight:900; }
+.sparta-kpi-group-title { color:#172942; font-size:.78rem; line-height:1.12; font-weight:850; letter-spacing:-.015em; }
+.sparta-kpi-group-subtitle { color:#8491a3; font-size:.54rem; font-weight:750; letter-spacing:.09em; text-transform:uppercase; margin-bottom:.08rem; }
+.sparta-kpi-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.35rem; }
 .sparta-kpi-grid.grid-3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
-.sparta-kpi-tile { min-width:0; padding:.68rem .75rem .63rem; border:1px solid #e6edf5; border-left:3px solid var(--tile-accent,#94a3b8); border-radius:11px; background:var(--tile-tint,#f8fafc); transition:transform 140ms ease,box-shadow 140ms ease,border-color 140ms ease; }
-.sparta-kpi-tile:hover { transform:translateY(-2px); border-color:#cdd9e8; box-shadow:0 6px 15px rgba(15,23,42,.055); }
-.sparta-kpi-label { color:#66758a; font-size:.64rem; line-height:1.25; font-weight:800; letter-spacing:.035em; text-transform:uppercase; white-space:normal; }
-.sparta-kpi-value { color:#14233b; margin-top:.32rem; font-size:clamp(1.2rem,1.7vw,1.55rem); line-height:1.05; font-weight:880; letter-spacing:-.055em; font-variant-numeric:tabular-nums; }
-.sparta-kpi-detail { color:var(--tile-accent,#64748b); margin-top:.32rem; font-size:.65rem; line-height:1.25; font-weight:750; }
+.sparta-kpi-tile { min-width:0; padding:.4rem .5rem .38rem; border:1px solid #e6edf5; border-left:2px solid var(--tile-accent,#94a3b8); border-radius:8px; background:var(--tile-tint,#f8fafc); transition:border-color 140ms ease; }
+.sparta-kpi-tile:hover { border-color:#cdd9e8; }
+.sparta-kpi-label { color:#66758a; font-size:.56rem; line-height:1.18; font-weight:800; letter-spacing:.025em; text-transform:uppercase; white-space:normal; }
+.sparta-kpi-value { color:#14233b; margin-top:.16rem; font-size:clamp(1rem,1.25vw,1.18rem); line-height:1; font-weight:880; letter-spacing:-.045em; font-variant-numeric:tabular-nums; }
+.sparta-kpi-detail { color:var(--tile-accent,#64748b); margin-top:.14rem; font-size:.55rem; line-height:1.15; font-weight:700; }
 [data-testid="stRadio"] > label { color:#586a80; font-size:.77rem; font-weight:750; }
 [data-testid="stRadio"] [role="radiogroup"] { gap:.42rem; }
 [data-testid="stRadio"] [role="radiogroup"] label { border:1px solid #dce5f0; border-radius:10px; padding:.43rem .7rem; background:#fff; }
 [data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) { border-color:#7bcfc5; background:#effdfa; }
 @media (max-width:1100px) { .sparta-kpi-grid,.sparta-kpi-grid.grid-3 { grid-template-columns:repeat(3,minmax(0,1fr)); } }
-@media (max-width:640px) { .sparta-kpi-group { padding:.8rem; border-radius:14px; } .sparta-kpi-grid,.sparta-kpi-grid.grid-3 { grid-template-columns:repeat(2,minmax(0,1fr)); } .sparta-kpi-tile { padding:.62rem; } .sparta-kpi-value { font-size:1.2rem; } .sparta-section-heading { margin-top:1rem; } }
+@media (max-width:640px) { .sparta-kpi-group { padding:.45rem; border-radius:10px; } .sparta-kpi-grid,.sparta-kpi-grid.grid-3 { grid-template-columns:repeat(2,minmax(0,1fr)); } .sparta-kpi-tile { padding:.38rem .42rem; } .sparta-kpi-value { font-size:1.05rem; } .sparta-section-heading { margin-top:1rem; } }
 
 /* Dashboard hero */
 .sparta-hero {
@@ -339,6 +342,7 @@ st.markdown(
           <span class="sparta-funnel-chip">Applications</span>
           <span class="sparta-funnel-chip">Quality</span>
           <span class="sparta-funnel-chip">Welcome</span>
+          <span class="sparta-funnel-chip">Provisioning</span>
           <span class="sparta-funnel-chip">Committed / Live</span>
         </div>
       </div>
@@ -376,6 +380,8 @@ def classify_table_column(column: str, first_column: str = "", monthly: bool = F
         return "QUALITY"
     if "WELCOME" in upper:
         return "WELCOME"
+    if "PROVISIONING" in upper:
+        return "PROVISIONING"
     if "COMMITTED" in upper or upper.startswith("LIVE") or "LIVE CONVERSION" in upper:
         return "COMMITTED / LIVE"
     return "OVERVIEW"
@@ -672,6 +678,43 @@ def categorize_crm_welcome_status_series(s: pd.Series) -> pd.Series:
     )
 
 
+def categorize_crm_provisioning_status_series(s: pd.Series) -> pd.Series:
+    """Map CRM Provisioning Status to Completed / Pending / Cancelled.
+
+    Completed: Connectivity: Committed, Connectivity: Order Provisioned.
+    Pending: Pending, Order Delayed, or Send For Rework (including mixed VoIP
+    values such as "Send For Rework | VoIP: Pending").
+    Cancelled: To Be Cancelled or Order Cancelled.
+
+    Unknown/blank values remain blank, and legacy records are not classified.
+    """
+    normalized = (
+        s.fillna("").astype(str).str.strip().str.lower()
+        .str.replace("–", "-", regex=False)
+        .str.replace("—", "-", regex=False)
+    )
+    cancelled_mask = normalized.str.contains(
+        r"to\s*be\s*cancelled|to\s*be\s*canceled|order\s*cancelled|order\s*canceled|\bcancelled\b|\bcanceled\b",
+        na=False,
+    )
+    pending_mask = normalized.str.contains(
+        r"\bpending\b|\bdelayed\b|send\s+for\s+rework|\brework\b",
+        na=False,
+    )
+    completed_mask = normalized.str.contains(
+        r"\bcommitted\b|\bprovisioned\b",
+        na=False,
+    )
+    return pd.Series(
+        np.select(
+            [cancelled_mask, pending_mask, completed_mask],
+            ["Cancelled", "Pending", "Completed"],
+            default="",
+        ),
+        index=s.index,
+    )
+
+
 def derive_crm_portal_status(row: pd.Series) -> str:
     """Map CRM downstream statuses into Live / Committed / Cancelled.
 
@@ -734,10 +777,12 @@ def derive_crm_portal_status(row: pd.Series) -> str:
     if re.search(r"\bconfirmation\s+(approved|follow[- ]?up|pending)\b", confirmation):
         return "Committed"
 
-    # Other genuine downstream order/provisioning signals remain Committed.
+    # Explicit provisioning rework is now reported as Provisioning Pending;
+    # it must not, by itself, promote the same CRM record into Committed.
+    # Other genuine downstream order / dispatch signals remain Committed.
     committed_text = " | ".join([provisioning, dispatch, confirmation, onboarding])
     if re.search(
-        r"connectivity:\s*committed|\bcommitted\b|\bprocessed\b|re[ -]?processed|in\s+progress|send\s+for\s+rework|dispatch\s+approved",
+        r"connectivity:\s*committed|\bcommitted\b|\bprocessed\b|re[ -]?processed|in\s+progress|dispatch\s+approved",
         committed_text,
         re.IGNORECASE,
     ):
@@ -1139,6 +1184,9 @@ def normalize_crm_records(crm_df: pd.DataFrame):
     app["Provisioning Status"] = api[
         "Provisioning Status"
     ].fillna("").astype(str).str.strip()
+    app["Provisioning Status Clean"] = categorize_crm_provisioning_status_series(
+        app["Provisioning Status"]
+    )
     app["Provisioning Date"] = ""
     app["Quality Date"] = ""
     app["Welcome Date"] = ""
@@ -1215,6 +1263,14 @@ def load_hybrid_data():
         app_df["Inbound Cancelled"] = False
     else:
         app_df["Inbound Cancelled"] = app_df["Inbound Cancelled"].fillna(False).astype(bool)
+
+    # CRM-only stage: legacy / Excel rows intentionally remain blank.
+    if "Provisioning Status Clean" not in app_df.columns:
+        app_df["Provisioning Status Clean"] = ""
+    else:
+        app_df["Provisioning Status Clean"] = (
+            app_df["Provisioning Status Clean"].fillna("").astype(str).str.strip()
+        )
 
     if "Sale Date Clean" in app_df.columns:
         app_df["Sale Date Clean"] = pd.to_datetime(
@@ -1738,7 +1794,7 @@ else:
 render_section_heading(
     "AT A GLANCE",
     "Key performance indicators",
-    "A compact view of the application funnel, welcome progress, and committed/live pipeline.",
+    "A compact view of the application funnel, welcome progress, provisioning, and committed/live pipeline.",
 )
 
 def count_status(df: pd.DataFrame, column: str, target_val: str) -> int:
@@ -1811,6 +1867,9 @@ inbound_cancelled = int(
 wc_done = count_status(master_df, "Welcome Status Clean", "Done")
 wc_cancelled = count_status(master_df, "Welcome Status Clean", "Cancelled")
 wc_pending = count_status(master_df, "Welcome Status Clean", "Pending")
+provisioning_completed = count_status(master_df, "Provisioning Status Clean", "Completed")
+provisioning_pending = count_status(master_df, "Provisioning Status Clean", "Pending")
+provisioning_cancelled = count_status(master_df, "Provisioning Status Clean", "Cancelled")
 portal_live = count_status(filtered_portal_df, "Portal Status Clean", "Live")
 portal_committed = count_status(filtered_portal_df, "Portal Status Clean", "Committed")
 portal_cancelled = count_status(filtered_portal_df, "Portal Status Clean", "Cancelled")
@@ -1861,7 +1920,15 @@ render_kpi_compartment(
     ],
 )
 render_kpi_compartment(
-    "Committed / Live", "03 · DOWNSTREAM PIPELINE", "03", "live", "grid-3",
+    "Provisioning", "03 · PROVISIONING", "03", "provisioning", "grid-3",
+    [
+        ("Provisioning Completed", provisioning_completed, "CRM · Committed / Provisioned", "#15803d", "#f0fdf4"),
+        ("Provisioning Pending", provisioning_pending, "CRM · Pending / Delayed / Rework", "#a16207", "#fefce8"),
+        ("Provisioning Cancelled", provisioning_cancelled, "CRM · Cancelled orders", "#b91c1c", "#fef2f2"),
+    ],
+)
+render_kpi_compartment(
+    "Committed / Live", "04 · DOWNSTREAM PIPELINE", "04", "live", "grid-3",
     [
         ("Live", portal_live, f"{get_pct(portal_live, portal_total)} of portal", "#0f766e", "#f0fdfa"),
         ("Committed", portal_committed, f"{get_pct(portal_committed, portal_total)} of portal", "#a16207", "#fefce8"),
@@ -1965,6 +2032,9 @@ else:
         m_wc_done = count_status(m_app, "Welcome Status Clean", "Done")
         m_wc_cancelled = count_status(m_app, "Welcome Status Clean", "Cancelled")
         m_wc_pending = count_status(m_app, "Welcome Status Clean", "Pending")
+        m_prov_completed = count_status(m_app, "Provisioning Status Clean", "Completed")
+        m_prov_pending = count_status(m_app, "Provisioning Status Clean", "Pending")
+        m_prov_cancelled = count_status(m_app, "Provisioning Status Clean", "Cancelled")
 
         # QA pass-rate denominator is source-specific: CRM excludes Pending,
         # Rework, and Inbound Cancelled; legacy continues excluding Pending only.
@@ -2046,6 +2116,16 @@ else:
         welcome_cancelled_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Cancelled")
         welcome_pending_raw = format_raw_breakdown(m_app, "Welcome Status", "Welcome Status Clean", "Pending")
 
+        provisioning_completed_raw = format_raw_breakdown(
+            m_app, "Provisioning Status", "Provisioning Status Clean", "Completed"
+        )
+        provisioning_pending_raw = format_raw_breakdown(
+            m_app, "Provisioning Status", "Provisioning Status Clean", "Pending"
+        )
+        provisioning_cancelled_raw = format_raw_breakdown(
+            m_app, "Provisioning Status", "Provisioning Status Clean", "Cancelled"
+        )
+
         legacy_committed_raw = format_raw_breakdown(
             legacy_portal, "Portal Status", "Portal Status Clean", "Committed"
         )
@@ -2126,6 +2206,12 @@ else:
             "WELCOME CANCELLED RAW": welcome_cancelled_raw,
             "WELCOME PENDING": m_wc_pending,
             "WELCOME PENDING RAW": welcome_pending_raw,
+            "PROVISIONING COMPLETED": m_prov_completed,
+            "PROVISIONING COMPLETED RAW": provisioning_completed_raw,
+            "PROVISIONING PENDING": m_prov_pending,
+            "PROVISIONING PENDING RAW": provisioning_pending_raw,
+            "PROVISIONING CANCELLED": m_prov_cancelled,
+            "PROVISIONING CANCELLED RAW": provisioning_cancelled_raw,
             "COMMITTED REM.": m_p_committed,
             "COMMITTED RAW": committed_raw,
             "COMMITTED CANCELLED": m_p_committed_cancelled,
@@ -2234,6 +2320,12 @@ else:
             "WELCOME CANCELLED RAW": format_raw_breakdown(monthly_app_df, "Welcome Status", "Welcome Status Clean", "Cancelled"),
             "WELCOME PENDING": monthly_summary_df["WELCOME PENDING"].sum(),
             "WELCOME PENDING RAW": format_raw_breakdown(monthly_app_df, "Welcome Status", "Welcome Status Clean", "Pending"),
+            "PROVISIONING COMPLETED": monthly_summary_df["PROVISIONING COMPLETED"].sum(),
+            "PROVISIONING COMPLETED RAW": format_raw_breakdown(monthly_app_df, "Provisioning Status", "Provisioning Status Clean", "Completed"),
+            "PROVISIONING PENDING": monthly_summary_df["PROVISIONING PENDING"].sum(),
+            "PROVISIONING PENDING RAW": format_raw_breakdown(monthly_app_df, "Provisioning Status", "Provisioning Status Clean", "Pending"),
+            "PROVISIONING CANCELLED": monthly_summary_df["PROVISIONING CANCELLED"].sum(),
+            "PROVISIONING CANCELLED RAW": format_raw_breakdown(monthly_app_df, "Provisioning Status", "Provisioning Status Clean", "Cancelled"),
             "COMMITTED REM.": monthly_summary_df["COMMITTED REM."].sum(),
             "COMMITTED RAW": "Aggregate committed breakdown shown in the monthly rows",
             "COMMITTED CANCELLED": monthly_summary_df["COMMITTED CANCELLED"].sum(),
@@ -2284,6 +2376,7 @@ else:
         "MONTH", "APPLICATIONS", "TOTAL PRESENT", "SPD", "QA APPROVED", "QA Pass Rate %",
         "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED", "WELCOME DONE",
         "Welcome Done %", "WELCOME CANCELLED", "WELCOME PENDING",
+        "PROVISIONING COMPLETED", "PROVISIONING PENDING", "PROVISIONING CANCELLED",
         "COMMITTED REM.", "COMMITTED CANCELLED", "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %",
     ]
 
@@ -2302,6 +2395,9 @@ else:
         "Welcome Done %": "background-color: #f0fdf4; color: #15803d;",
         "WELCOME CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
         "WELCOME PENDING": "background-color: #fefce8; color: #a16207;",
+        "PROVISIONING COMPLETED": "background-color: #f0fdf4; color: #15803d;",
+        "PROVISIONING PENDING": "background-color: #fefce8; color: #a16207;",
+        "PROVISIONING CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
         "COMMITTED REM.": "background-color: #fff7ed; color: #c2410c;",
         "COMMITTED CANCELLED": "background-color: #fef2f2; color: #b91c1c;",
         "LIVE": "background-color: #f0fdfa; color: #0f766e;",
@@ -2320,6 +2416,9 @@ else:
         "WELCOME DONE": "WELCOME DONE RAW",
         "WELCOME CANCELLED": "WELCOME CANCELLED RAW",
         "WELCOME PENDING": "WELCOME PENDING RAW",
+        "PROVISIONING COMPLETED": "PROVISIONING COMPLETED RAW",
+        "PROVISIONING PENDING": "PROVISIONING PENDING RAW",
+        "PROVISIONING CANCELLED": "PROVISIONING CANCELLED RAW",
         "COMMITTED REM.": "COMMITTED RAW",
         "COMMITTED CANCELLED": "COMMITTED CANCELLED RAW",
         "LIVE": "LIVE RAW",
@@ -2766,7 +2865,7 @@ performance_source_df["_Conversion_Rate_Denominator"] = (
 # Add PROJECTED LIVE and Projected Live % to advisor summary
 # ==========================================================
 if selected_performance_table == "👥 Sales Executive Performance Breakdown":
-    render_section_heading("SALES TEAM", "Sales Executive Performance", "Application activity, quality, welcome, committed/live, and projected results by executive.")
+    render_section_heading("SALES TEAM", "Sales Executive Performance", "Application activity, quality, welcome, provisioning, committed/live, and projected results by executive.")
 
 if selected_performance_table == "👥 Sales Executive Performance Breakdown" and (
     not master_df.empty or not filtered_portal_df.empty
@@ -2781,7 +2880,8 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         advisor_summary = pd.DataFrame(columns=[
             "_AdvisorKey", "Advisor", "Applications", "QA_Approved", "QA_Rework",
             "QA_Cancelled", "QA_Pending", "Inbound_Cancelled", "Welcome_Done", "Welcome_Cancelled",
-            "Welcome_Pending", "QA_Rate_Denominator", "Conversion_Rate_Denominator",
+            "Welcome_Pending", "Provisioning_Completed", "Provisioning_Pending",
+            "Provisioning_Cancelled", "QA_Rate_Denominator", "Conversion_Rate_Denominator",
         ])
     else:
         advisor_summary = (
@@ -2797,6 +2897,9 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
                     Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
                     Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
                     Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
+                    Provisioning_Completed=("Provisioning Status Clean", lambda x: (x == "Completed").sum()),
+                    Provisioning_Pending=("Provisioning Status Clean", lambda x: (x == "Pending").sum()),
+                    Provisioning_Cancelled=("Provisioning Status Clean", lambda x: (x == "Cancelled").sum()),
                     QA_Rate_Denominator=("_QA_Rate_Denominator", "sum"),
                     Conversion_Rate_Denominator=("_Conversion_Rate_Denominator", "sum"),
                 )
@@ -2874,8 +2977,9 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
 
     _numeric_zero_cols = [
         "Applications", "QA_Approved", "QA_Rework", "QA_Cancelled", "QA_Pending", "Inbound_Cancelled",
-        "Welcome_Done", "Welcome_Cancelled", "Welcome_Pending", "Committed", "Live",
-        "Live_Cancelled", "QA_Rate_Denominator", "Conversion_Rate_Denominator",
+        "Welcome_Done", "Welcome_Cancelled", "Welcome_Pending",
+        "Provisioning_Completed", "Provisioning_Pending", "Provisioning_Cancelled",
+        "Committed", "Live", "Live_Cancelled", "QA_Rate_Denominator", "Conversion_Rate_Denominator",
     ]
     for _column in _numeric_zero_cols:
         if _column not in advisor_summary.columns:
@@ -2975,6 +3079,9 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
             "Welcome_Done": "WELCOME DONE",
             "Welcome_Cancelled": "WELCOME CANCELLED",
             "Welcome_Pending": "WELCOME PENDING",
+            "Provisioning_Completed": "PROVISIONING COMPLETED",
+            "Provisioning_Pending": "PROVISIONING PENDING",
+            "Provisioning_Cancelled": "PROVISIONING CANCELLED",
             "Committed": "COMMITTED REM.",
             "Live": "LIVE",
             "Live_Cancelled": "LIVE CANCELLED",
@@ -2993,6 +3100,9 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
             "WELCOME DONE": ("Welcome Status", "Welcome Status Clean", "Done"),
             "WELCOME CANCELLED": ("Welcome Status", "Welcome Status Clean", "Cancelled"),
             "WELCOME PENDING": ("Welcome Status", "Welcome Status Clean", "Pending"),
+            "PROVISIONING COMPLETED": ("Provisioning Status", "Provisioning Status Clean", "Completed"),
+            "PROVISIONING PENDING": ("Provisioning Status", "Provisioning Status Clean", "Pending"),
+            "PROVISIONING CANCELLED": ("Provisioning Status", "Provisioning Status Clean", "Cancelled"),
             "COMMITTED REM.": ("Portal Status", "Portal Status Clean", "Committed"),
             "LIVE": ("Portal Status", "Portal Status Clean", "Live"),
             "LIVE CANCELLED": ("Portal Status", "Portal Status Clean", "Cancelled"),
@@ -3031,14 +3141,17 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
 
         numeric_cols = {
             "APPLICATIONS", "TOTAL PRESENT", "SPD", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING",
-            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE", "INBOUND CANCELLED"
+            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING",
+            "PROVISIONING COMPLETED", "PROVISIONING PENDING", "PROVISIONING CANCELLED",
+            "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE", "INBOUND CANCELLED"
         }
 
         base_col_order = [
             "SALES EXECUTIVE", "APPLICATIONS", "TOTAL PRESENT", "SPD", "QA APPROVED", "QA Pass Rate %",
             "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED", "WELCOME DONE", "Welcome Done %",
-            "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
-            "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
+            "WELCOME CANCELLED", "WELCOME PENDING",
+            "PROVISIONING COMPLETED", "PROVISIONING PENDING", "PROVISIONING CANCELLED",
+            "COMMITTED REM.", "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
         ]
 
         visible_cols = ["SALES EXECUTIVE"]
@@ -3095,6 +3208,9 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
             "Welcome Done %": "background-color:#f0fdf4;color:#15803d;",
             "WELCOME CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
             "WELCOME PENDING": "background-color:#fefce8;color:#a16207;",
+            "PROVISIONING COMPLETED": "background-color:#f0fdf4;color:#15803d;",
+            "PROVISIONING PENDING": "background-color:#fefce8;color:#a16207;",
+            "PROVISIONING CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
             "COMMITTED REM.": "background-color:#fff7ed;color:#c2410c;",
             "LIVE": "background-color:#f0fdfa;color:#0f766e;",
             "LIVE CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
@@ -3446,7 +3562,7 @@ elif selected_performance_table == "👥 Sales Executive Performance Breakdown":
 # Add PROJECTED LIVE and Projected Live % to performance summary
 # ==========================================================
 if selected_performance_table == "🧪 Quality Officer Performance":
-    render_section_heading("QUALITY TEAM", "Quality Officer Performance", "Compare QA approvals and QA workload alongside later-stage outcomes.")
+    render_section_heading("QUALITY TEAM", "Quality Officer Performance", "Compare QA approvals and QA workload alongside welcome, provisioning, and later-stage outcomes.")
 
 if selected_performance_table == "🧪 Quality Officer Performance" and "Quality Officer" in master_df.columns and not master_df.empty:
     advisor_summary = (
@@ -3463,6 +3579,9 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
                 Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
                 Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
                 Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
+                Provisioning_Completed=("Provisioning Status Clean", lambda x: (x == "Completed").sum()),
+                Provisioning_Pending=("Provisioning Status Clean", lambda x: (x == "Pending").sum()),
+                Provisioning_Cancelled=("Provisioning Status Clean", lambda x: (x == "Cancelled").sum()),
                 Committed=("Portal Status Clean", lambda x: (x == "Committed").sum()),
                 Live=("Portal Status Clean", lambda x: (x == "Live").sum()),
                 Live_Cancelled=("Portal Status Clean", lambda x: (x == "Cancelled").sum()),
@@ -3512,6 +3631,9 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
             "Welcome_Done": "WELCOME DONE",
             "Welcome_Cancelled": "WELCOME CANCELLED",
             "Welcome_Pending": "WELCOME PENDING",
+            "Provisioning_Completed": "PROVISIONING COMPLETED",
+            "Provisioning_Pending": "PROVISIONING PENDING",
+            "Provisioning_Cancelled": "PROVISIONING CANCELLED",
             "Committed": "COMMITTED REM.",
             "Live": "LIVE",
             "Live_Cancelled": "LIVE CANCELLED",
@@ -3530,6 +3652,9 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
             "WELCOME DONE": ("Welcome Status", "Welcome Status Clean", "Done"),
             "WELCOME CANCELLED": ("Welcome Status", "Welcome Status Clean", "Cancelled"),
             "WELCOME PENDING": ("Welcome Status", "Welcome Status Clean", "Pending"),
+            "PROVISIONING COMPLETED": ("Provisioning Status", "Provisioning Status Clean", "Completed"),
+            "PROVISIONING PENDING": ("Provisioning Status", "Provisioning Status Clean", "Pending"),
+            "PROVISIONING CANCELLED": ("Provisioning Status", "Provisioning Status Clean", "Cancelled"),
             "COMMITTED REM.": ("Portal Status", "Portal Status Clean", "Committed"),
             "LIVE": ("Portal Status", "Portal Status Clean", "Live"),
             "LIVE CANCELLED": ("Portal Status", "Portal Status Clean", "Cancelled"),
@@ -3560,14 +3685,17 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
 
         numeric_cols = {
             "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED",
-            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE"
+            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING",
+            "PROVISIONING COMPLETED", "PROVISIONING PENDING", "PROVISIONING CANCELLED",
+            "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE"
         }
 
         base_col_order = [
             "Quality Officer", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
             "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED", "WELCOME DONE", "Welcome Done %",
-            "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
-            "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
+            "WELCOME CANCELLED", "WELCOME PENDING",
+            "PROVISIONING COMPLETED", "PROVISIONING PENDING", "PROVISIONING CANCELLED",
+            "COMMITTED REM.", "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
         ]
 
         visible_cols = ["Quality Officer"]
@@ -3622,6 +3750,9 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
             "Welcome Done %": "background-color:#f0fdf4;color:#15803d;",
             "WELCOME CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
             "WELCOME PENDING": "background-color:#fefce8;color:#a16207;",
+            "PROVISIONING COMPLETED": "background-color:#f0fdf4;color:#15803d;",
+            "PROVISIONING PENDING": "background-color:#fefce8;color:#a16207;",
+            "PROVISIONING CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
             "COMMITTED REM.": "background-color:#fff7ed;color:#c2410c;",
             "LIVE": "background-color:#f0fdfa;color:#0f766e;",
             "LIVE CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
@@ -3933,7 +4064,7 @@ elif selected_performance_table == "🧪 Quality Officer Performance":
 # Add PROJECTED LIVE and Projected Live % to performance summary
 # ==========================================================
 if selected_performance_table == "📞 Welcome Caller Performance":
-    render_section_heading("WELCOME TEAM", "Welcome Caller Performance", "Compare welcome completion and conversion outcomes by caller.")
+    render_section_heading("WELCOME TEAM", "Welcome Caller Performance", "Compare welcome completion, provisioning, and conversion outcomes by caller.")
 
 if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome Call By" in master_df.columns and not master_df.empty:
     advisor_summary = (
@@ -3950,6 +4081,9 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
                 Welcome_Done=("Welcome Status Clean", lambda x: (x == "Done").sum()),
                 Welcome_Cancelled=("Welcome Status Clean", lambda x: (x == "Cancelled").sum()),
                 Welcome_Pending=("Welcome Status Clean", lambda x: (x == "Pending").sum()),
+                Provisioning_Completed=("Provisioning Status Clean", lambda x: (x == "Completed").sum()),
+                Provisioning_Pending=("Provisioning Status Clean", lambda x: (x == "Pending").sum()),
+                Provisioning_Cancelled=("Provisioning Status Clean", lambda x: (x == "Cancelled").sum()),
                 Committed=("Portal Status Clean", lambda x: (x == "Committed").sum()),
                 Live=("Portal Status Clean", lambda x: (x == "Live").sum()),
                 Live_Cancelled=("Portal Status Clean", lambda x: (x == "Cancelled").sum()),
@@ -3999,6 +4133,9 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
             "Welcome_Done": "WELCOME DONE",
             "Welcome_Cancelled": "WELCOME CANCELLED",
             "Welcome_Pending": "WELCOME PENDING",
+            "Provisioning_Completed": "PROVISIONING COMPLETED",
+            "Provisioning_Pending": "PROVISIONING PENDING",
+            "Provisioning_Cancelled": "PROVISIONING CANCELLED",
             "Committed": "COMMITTED REM.",
             "Live": "LIVE",
             "Live_Cancelled": "LIVE CANCELLED",
@@ -4017,6 +4154,9 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
             "WELCOME DONE": ("Welcome Status", "Welcome Status Clean", "Done"),
             "WELCOME CANCELLED": ("Welcome Status", "Welcome Status Clean", "Cancelled"),
             "WELCOME PENDING": ("Welcome Status", "Welcome Status Clean", "Pending"),
+            "PROVISIONING COMPLETED": ("Provisioning Status", "Provisioning Status Clean", "Completed"),
+            "PROVISIONING PENDING": ("Provisioning Status", "Provisioning Status Clean", "Pending"),
+            "PROVISIONING CANCELLED": ("Provisioning Status", "Provisioning Status Clean", "Cancelled"),
             "COMMITTED REM.": ("Portal Status", "Portal Status Clean", "Committed"),
             "LIVE": ("Portal Status", "Portal Status Clean", "Live"),
             "LIVE CANCELLED": ("Portal Status", "Portal Status Clean", "Cancelled"),
@@ -4047,14 +4187,17 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
 
         numeric_cols = {
             "APPLICATIONS", "QA APPROVED", "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED",
-            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE"
+            "WELCOME DONE", "WELCOME CANCELLED", "WELCOME PENDING",
+            "PROVISIONING COMPLETED", "PROVISIONING PENDING", "PROVISIONING CANCELLED",
+            "COMMITTED REM.", "LIVE", "LIVE CANCELLED", "PROJECTED LIVE"
         }
 
         base_col_order = [
             "Welcome Call By", "APPLICATIONS", "QA APPROVED", "QA Pass Rate %",
             "QA REWORK", "QA CANCELLED", "QA PENDING", "INBOUND CANCELLED", "WELCOME DONE", "Welcome Done %",
-            "WELCOME CANCELLED", "WELCOME PENDING", "COMMITTED REM.",
-            "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
+            "WELCOME CANCELLED", "WELCOME PENDING",
+            "PROVISIONING COMPLETED", "PROVISIONING PENDING", "PROVISIONING CANCELLED",
+            "COMMITTED REM.", "LIVE", "Live Conversion %", "LIVE CANCELLED", "PROJECTED LIVE", "Projected Live %"
         ]
 
         visible_cols = ["Welcome Call By"]
@@ -4109,6 +4252,9 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
             "Welcome Done %": "background-color:#f0fdf4;color:#15803d;",
             "WELCOME CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
             "WELCOME PENDING": "background-color:#fefce8;color:#a16207;",
+            "PROVISIONING COMPLETED": "background-color:#f0fdf4;color:#15803d;",
+            "PROVISIONING PENDING": "background-color:#fefce8;color:#a16207;",
+            "PROVISIONING CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
             "COMMITTED REM.": "background-color:#fff7ed;color:#c2410c;",
             "LIVE": "background-color:#f0fdfa;color:#0f766e;",
             "LIVE CANCELLED": "background-color:#fef2f2;color:#b91c1c;",
