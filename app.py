@@ -1,4 +1,4 @@
-0"""
+"""
 Sparta Executive Sales Dashboard — modern visual refresh.
 Preserves editable projection weights, agent/month filters, KPI logic, hybrid sources, attendance/SPD, and all interactive tables.
 
