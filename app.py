@@ -1,4 +1,4 @@
-"""
+0"""
 Sparta Executive Sales Dashboard — modern visual refresh.
 Preserves editable projection weights, agent/month filters, KPI logic, hybrid sources, attendance/SPD, and all interactive tables.
 
@@ -460,13 +460,13 @@ API_REQUIRED_COLUMNS = [
     "Cancellation/Rejection Reason - Potential Opportunity",
 ]
 
-NEW_ADVISORS = ["Dollyk"]
-CUSTOMER_SERVICE_ADVISORS = ["Aman", "Ravi Inbound", "Santosh Joshi", "Vijender", "Laxmi Narayan","Alex"]
+NEW_ADVISORS = ["Dollyk","Nisha","Akash2026","Rabichandra","Prichim"]
+CUSTOMER_SERVICE_ADVISORS = ["Aman", "Ravi Inbound", "Santosh Joshi", "Vijender", "Laxmi Narayan","Alex","Shailendra"]
 LEFT_ADVISORS = [
     "Gaurav", "Guru", "Niki", "Shaheen", "Manmeet", "Gungun", "Rani", "Archana", "Deepali", "Sushanshu",
     "Supreme", "Tokivi", "Sangeeta", "Vijay", "Khushbu", "Kushal", "Nishant", "Pawan", "Mehak", "Khushboo", "Ashima",
     "Aarti", "Abhay", "Diwakar", "Manshay", "Khusboo", "Manmet", "Lakshay", "Sneha", "Swarali", "Monica", "Paras",
-    "Veer", "Yash", "Sudhanshu", "Rishabh", "Krrish", "Anshu", "Edwin", "Sravan", "Seema"
+    "Veer", "Yash", "Sudhanshu", "Rishabh", "Krrish", "Anshu", "Edwin", "Sravan", "Seema","Shivams","Ayushi"
 ]
 
 NEW_ADVISORS_SET = {a.strip().lower() for a in NEW_ADVISORS}
