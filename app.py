@@ -14,6 +14,7 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
 """
 
 import logging
+import math
 import re
 import time
 from datetime import datetime
@@ -2227,7 +2228,7 @@ with outcome_chart_col:
         """<div style="padding:.2rem .15rem .35rem;">
         <div style="color:#0f9f91;font-size:.62rem;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">APPLICATION OUTCOMES</div>
         <div style="color:#14233b;font-size:1.05rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled</div>
-        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">The chart shows each original status value. Hover for its share of all applications and its share within Live, Pending or Cancelled.</div>
+        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">Original status names stay unchanged. Small sectors use outside labels with leader arrows; hover for application count and both percentages.</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -2254,18 +2255,29 @@ with outcome_chart_col:
             "Cancelled": {"parent": "#b91c1c", "leaf": "#f1a3a3"},
         }
         labels = ["All Applications"]
+        display_text = ["All Applications"]
         ids = ["all-applications"]
         parents = [""]
         values = [int(outcome_total)]
         colors = ["#eaf0f6"]
-        # Each node carries only the three requested tooltip facts plus the
-        # parent outcome name used to describe the within-category percentage.
+        # Each node carries the original display name, share of all applications,
+        # share within its parent outcome, and parent outcome label.
         customdata = [["All Applications", "100.0%", "100.0%", "All Applications"]]
+
+        # A little breathing room is reserved on both sides of the circle for
+        # leader-line labels when an individual status sector is too narrow.
+        # Plotly's sunburst trace does not automatically place leaf labels outside
+        # with leader lines, so those callouts are positioned explicitly.
+        callouts_by_side = {"left": [], "right": []}
+        small_sector_threshold = 0.025  # Never keep sectors below 2.5% labelled only inside.
+        estimated_outer_radius_px = 300.0
+        cumulative_count = 0
 
         for outcome_name in ["Live", "Pending", "Cancelled"]:
             outcome_id = f"outcome::{outcome_name}"
             outcome_count = int(outcome_summary.get(outcome_name, 0))
             labels.append(outcome_name)
+            display_text.append(outcome_name)
             ids.append(outcome_id)
             parents.append("all-applications")
             values.append(outcome_count)
@@ -2280,7 +2292,32 @@ with outcome_chart_col:
                 count = int(row["Applications"])
                 leaf_share_all = count / outcome_total * 100 if outcome_total else 0.0
                 leaf_share_category = count / outcome_count * 100 if outcome_count else 0.0
+
+                # Plotly starts the first root sector at 3 o'clock and proceeds
+                # clockwise. This midpoint locates the outer edge of each leaf
+                # sector for its outside callout arrow.
+                midpoint_fraction = (cumulative_count + count / 2) / outcome_total
+                angle = -2 * math.pi * midpoint_fraction
+                anchor_x = 0.5 + 0.265 * math.cos(angle)
+                anchor_y = 0.5 + 0.405 * math.sin(angle)
+                # Estimate whether the exact status text plus its count can fit
+                # along this leaf's outer arc. Long CRM values receive callouts
+                # even when their sector is larger than the minimum threshold.
+                sector_arc_px = (
+                    2 * math.pi * estimated_outer_radius_px * (count / outcome_total)
+                    if outcome_total else 0.0
+                )
+                estimated_label_width_px = max(66.0, len(original_status) * 7.2 + 30.0)
+                needs_callout = (
+                    leaf_share_all < small_sector_threshold
+                    or sector_arc_px < estimated_label_width_px
+                )
+
                 labels.append(original_status)
+                # The name for a small sector is moved outside the ring. Keep its
+                # count visible in the sector where possible, and show both name
+                # and count in the callout if the wedge itself is very narrow.
+                display_text.append("" if needs_callout else original_status)
                 ids.append(leaf_id)
                 parents.append(outcome_id)
                 values.append(count)
@@ -2292,6 +2329,68 @@ with outcome_chart_col:
                     outcome_name,
                 ])
 
+                if needs_callout:
+                    side = "right" if math.cos(angle) >= 0 else "left"
+                    callouts_by_side[side].append({
+                        "status": original_status,
+                        "count": count,
+                        "anchor_x": anchor_x,
+                        "anchor_y": anchor_y,
+                        "color": outcome_colors[outcome_name]["parent"],
+                    })
+                cumulative_count += count
+
+        callout_annotations = []
+        for side, callouts in callouts_by_side.items():
+            # Evenly distribute labels vertically on each side to reduce overlap.
+            # The arrowhead remains attached to the precise sector midpoint.
+            callouts.sort(key=lambda item: item["anchor_y"], reverse=True)
+            if not callouts:
+                continue
+            top_y, bottom_y = 0.93, 0.07
+            if len(callouts) == 1:
+                slot_positions = [0.5]
+            else:
+                slot_positions = np.linspace(top_y, bottom_y, len(callouts)).tolist()
+
+            label_x = 0.012 if side == "left" else 0.988
+            for item, label_y in zip(callouts, slot_positions):
+                label_html = (
+                    f'<b>{escape(item["status"])}</b>'
+                    f'<br><span style="font-size:12px">{item["count"]:,} applications</span>'
+                )
+                callout_annotations.append({
+                    "x": item["anchor_x"],
+                    "y": item["anchor_y"],
+                    "xref": "paper",
+                    "yref": "paper",
+                    # Arrow tails use pixel offsets (Plotly annotations do not
+                    # support paper coordinates for ax/ay). Estimate the chart
+                    # plot area's desktop width/height so labels sit in the
+                    # reserved side bands while remaining anchored to the wedge.
+                    "ax": (label_x - item["anchor_x"]) * 1200,
+                    "ay": (item["anchor_y"] - float(label_y)) * 760,
+                    "text": label_html,
+                    "showarrow": True,
+                    "arrowhead": 2,
+                    "arrowsize": 0.9,
+                    "arrowwidth": 1.2,
+                    "arrowcolor": item["color"],
+                    "standoff": 3,
+                    "bgcolor": "rgba(255,255,255,0.96)",
+                    "bordercolor": item["color"],
+                    "borderwidth": 1,
+                    "borderpad": 4,
+                    "font": {
+                        "family": "Inter, Segoe UI, Arial, sans-serif",
+                        "size": 15,
+                        "color": "#172942",
+                    },
+                    "align": "left" if side == "left" else "right",
+                    "xanchor": "left" if side == "left" else "right",
+                    "yanchor": "middle",
+                })
+
         fig = go.Figure(
             go.Sunburst(
                 ids=ids,
@@ -2300,28 +2399,41 @@ with outcome_chart_col:
                 values=values,
                 branchvalues="total",
                 sort=False,
+                rotation=0,
                 maxdepth=-1,
+                domain=dict(x=[0.22, 0.78], y=[0.07, 0.93]),
                 marker=dict(colors=colors, line=dict(color="#ffffff", width=2)),
                 customdata=customdata,
-                textinfo="label+value",
+                text=display_text,
+                textinfo="text+value",
                 insidetextorientation="auto",
-                insidetextfont=dict(size=11, color="#14233b"),
+                textfont=dict(size=18, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
+                insidetextfont=dict(size=18, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
+                outsidetextfont=dict(size=16, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
                 hovertemplate=(
                     "<b>%{customdata[0]}</b><br>"
+                    "Applications: %{value:,.0f}<br>"
                     "% of all applications: %{customdata[1]}<br>"
                     "% within %{customdata[3]}: %{customdata[2]}<extra></extra>"
+                ),
+                hoverlabel=dict(
+                    bgcolor="#ffffff",
+                    bordercolor="#d7e1ec",
+                    font=dict(size=15, color="#172942", family="Inter, Segoe UI, Arial, sans-serif"),
+                    namelength=-1,
                 ),
             )
         )
         fig.update_layout(
-            height=740,
-            margin=dict(t=8, l=8, r=8, b=8),
+            height=800,
+            margin=dict(t=16, l=8, r=8, b=16),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=11, color="#172942"),
-            # Show text for small segments wherever Plotly can fit it. The chart
-            # remains zoomable when a narrow segment cannot be read comfortably.
-            uniformtext=dict(minsize=6, mode="show"),
+            font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=14, color="#172942"),
+            annotations=callout_annotations,
+            # Increase minimum readable text size. Text that cannot fit inside
+            # a small sector is moved to a labelled callout with a leader arrow.
+            uniformtext=dict(minsize=15, mode="hide"),
         )
         with st.container(border=True):
             st.plotly_chart(
@@ -2330,7 +2442,7 @@ with outcome_chart_col:
                 config={"displayModeBar": False, "scrollZoom": False},
             )
             st.caption(
-                "All status names remain unchanged. Labels show the original value and application count; click any ring to focus on its branch."
+                "All status names remain unchanged. Small sectors are labelled outside the circle with arrows. Hover shows count, % of all applications and % within the outcome; click any ring to focus on its branch."
             )
 
 # Complete source-value reconciliation stays available without occupying the
