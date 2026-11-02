@@ -2316,11 +2316,47 @@ with outcome_chart_col:
             .reset_index()
         )
 
+        # Font sizes are assigned per sector so short labels can be prominent,
+        # while long CRM status names use a slightly smaller size. Counts are
+        # rendered on a second line inside every sector.
+        def _sunburst_font_size(label, value, kind):
+            if kind == "root":
+                return 20
+            if kind == "outcome":
+                return 19
+            if kind == "bucket":
+                return 16
+
+            label_length = len(str(label))
+            if int(value) >= 30:
+                base_size = 18
+            elif int(value) >= 15:
+                base_size = 17
+            elif int(value) >= 8:
+                base_size = 16
+            elif int(value) >= 4:
+                base_size = 15
+            else:
+                base_size = 14
+
+            if label_length > 38:
+                length_penalty = 4
+            elif label_length > 30:
+                length_penalty = 3
+            elif label_length > 22:
+                length_penalty = 2
+            elif label_length > 14:
+                length_penalty = 1
+            else:
+                length_penalty = 0
+            return max(11, base_size - length_penalty)
+
         node_ids = ["all-applications"]
         node_labels = ["All Applications"]
         node_parents = [""]
         node_values = [int(outcome_total)]
         node_colors = ["#eaf0f6"]
+        node_font_sizes = [_sunburst_font_size("All Applications", outcome_total, "root")]
         node_customdata = [["All Applications", "100.0%", "100.0%", "100.0%", "All Applications", "All Applications", ""]]
         node_lookup = {
             "all-applications": {
@@ -2342,6 +2378,7 @@ with outcome_chart_col:
             node_parents.append(parent_id)
             node_values.append(int(value))
             node_colors.append(color)
+            node_font_sizes.append(_sunburst_font_size(label, value, kind))
             node_customdata.append(custom)
             node_lookup[node_id] = {
                 "id": node_id, "label": str(label), "parent": parent_id,
@@ -2433,9 +2470,10 @@ with outcome_chart_col:
                 marker=dict(colors=node_colors, line=dict(color="#ffffff", width=2)),
                 customdata=node_customdata,
                 textinfo="label",
+                texttemplate="<b>%{label}</b><br>%{value:,.0f}",
                 insidetextorientation="auto",
-                textfont=dict(size=12, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
-                insidetextfont=dict(size=12, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
+                textfont=dict(size=node_font_sizes, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
+                insidetextfont=dict(size=node_font_sizes, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
                 hovertemplate=(
                     "<b>%{customdata[0]}</b><br>"
                     "Applications: %{value:,.0f}<br>"
@@ -2458,7 +2496,7 @@ with outcome_chart_col:
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=14, color="#172942"),
-            uniformtext=dict(minsize=8, mode="show"),
+            uniformtext=dict(minsize=11, mode="show"),
         )
         with st.container(border=True):
             st.plotly_chart(
@@ -2467,10 +2505,11 @@ with outcome_chart_col:
                 config={"displayModeBar": False, "scrollZoom": False, "responsive": True},
             )
             st.caption(
-                "All four levels are visible by default, with labels placed directly on their sectors. "
-                "The chart expands to the available column width; smaller labels are reduced to fit. "
-                "Outcome colours remain consistent through every outer ring. Hover over any sector for "
-                "its exact count, percentages and source field; the complete value list remains below."
+                "All four levels are visible by default. Each sector displays its category name and "
+                "application count directly inside the ring, with larger fonts for shorter labels and "
+                "smaller fonts for longer CRM status names. Outcome colours remain consistent through "
+                "every outer ring. Hover over any sector for exact percentages and source details; the "
+                "complete value list remains below."
             )
 
 
