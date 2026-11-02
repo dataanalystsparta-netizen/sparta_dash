@@ -2252,7 +2252,7 @@ with outcome_chart_col:
         """<div style="padding:.2rem .15rem .35rem;">
         <div style="color:#0f9f91;font-size:.62rem;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">APPLICATION OUTCOMES</div>
         <div style="color:#14233b;font-size:1.05rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled</div>
-        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">Explore outcomes, then stage buckets, then exact original status values. Small-sector arrows are recalculated for the level currently on screen. Dispatch / Letter fields appear under Confirmation, with their original field names retained.</div>
+        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">Default view shows All Applications and Live / Pending / Cancelled. Click an outcome to reveal its stage buckets, then click a bucket to reveal exact original status values. Small-sector arrows are recalculated for the level currently on screen. Dispatch / Letter fields appear under Confirmation, with their original field names retained.</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -2274,8 +2274,8 @@ with outcome_chart_col:
         st.warning("Plotly is not installed. Use the exact values table below to inspect every source status.")
     else:
         # Four hierarchy levels: All Applications -> Outcome -> Stage Bucket ->
-        # exact original status. Only one child ring is rendered at a time; each
-        # click re-roots the chart and reveals the next level.
+        # exact original status. The default shows the root plus outcomes; each
+        # click reveals exactly one additional ring for the selected branch.
         outcome_colors = {
             "Live": "#0f766e",
             "Pending": "#b45309",
@@ -2415,8 +2415,8 @@ with outcome_chart_col:
         # Streamlit captures direct Sunburst clicks (id + parent). Store the
         # selected node and rebuild the visible chart level so labels and arrows
         # are recalculated for the currently visible sectors, not left static.
-        level_state_key = "sparta_outcome_sunburst_level"
-        chart_state_key = "sparta_outcome_sunburst_clicks"
+        level_state_key = "sparta_outcome_sunburst_level_v2"
+        chart_state_key = "sparta_outcome_sunburst_clicks_v2"
         if level_state_key not in st.session_state:
             st.session_state[level_state_key] = "all-applications"
         active_level = st.session_state.get(level_state_key, "all-applications")
@@ -2512,8 +2512,11 @@ with outcome_chart_col:
                 branchvalues="total",
                 sort=False,
                 rotation=0,
-                level=active_level,
-                maxdepth=1,
+                # Plotly expects an empty level string to start from the root.
+                # Two rendered sectors means root + outcomes by default, then
+                # selected outcome + buckets, then selected bucket + statuses.
+                level="" if active_level == "all-applications" else active_level,
+                maxdepth=2,
                 domain=dict(x=[0.20, 0.80], y=[0.07, 0.93]),
                 marker=dict(colors=node_colors, line=dict(color="#ffffff", width=2)),
                 customdata=node_customdata,
@@ -2598,7 +2601,7 @@ with outcome_chart_col:
                     st.session_state[level_state_key] = clicked_id
                     st.rerun()
             st.caption(
-                "Click Live, Pending or Cancelled to reveal Quality, Welcome, Provisioning, Confirmation, Onboarding or Inbound buckets; "
+                "The default view shows All Applications and Live / Pending / Cancelled. Click an outcome to reveal its stage buckets; "
                 "click a bucket to reveal original status values. Small-sector arrows are recalculated for each drill-down. "
                 "Dispatch / Letter source fields are grouped under Confirmation without renaming the original values. Use Back or Reset to navigate."
             )
