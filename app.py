@@ -198,9 +198,10 @@ hr { border-color: #dce5f0 !important; opacity: 0.9; }
 .sparta-kpi-group-mark { flex:0 0 25px; width:25px; height:25px; display:flex; align-items:center; justify-content:center; border-radius:8px; color:var(--group-accent); background:#edf5ff; font-size:.68rem; font-weight:900; }
 .sparta-kpi-group-title { color:#172942; font-size:.78rem; line-height:1.12; font-weight:850; letter-spacing:-.015em; }
 .sparta-kpi-group-subtitle { color:#8491a3; font-size:.54rem; font-weight:750; letter-spacing:.09em; text-transform:uppercase; margin-bottom:.08rem; }
-.sparta-kpi-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.35rem; }
+.sparta-kpi-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.32rem; }
 .sparta-kpi-grid.grid-3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
-.sparta-kpi-grid.grid-1 { grid-template-columns:minmax(0,220px); }
+.sparta-kpi-grid.grid-2 { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.sparta-kpi-grid.grid-1 { grid-template-columns:minmax(0,1fr); }
 .sparta-kpi-grid.grid-5 { grid-template-columns:repeat(5,minmax(0,1fr)); }
 .sparta-outcome-summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem; margin:.4rem 0 .75rem; }
 .sparta-outcome-summary { min-width:0; padding:.65rem .85rem; border:1px solid #e3eaf3; border-left:3px solid var(--outcome-accent); border-radius:11px; background:var(--outcome-tint); }
@@ -216,10 +217,10 @@ hr { border-color: #dce5f0 !important; opacity: 0.9; }
 [data-testid="stRadio"] [role="radiogroup"] { gap:.42rem; }
 [data-testid="stRadio"] [role="radiogroup"] label { border:1px solid #dce5f0; border-radius:10px; padding:.43rem .7rem; background:#fff; }
 [data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) { border-color:#7bcfc5; background:#effdfa; }
-@media (max-width:1100px) { .sparta-kpi-grid,.sparta-kpi-grid.grid-3,.sparta-kpi-grid.grid-5 { grid-template-columns:repeat(3,minmax(0,1fr)); } }
-@media (max-width:640px) { .sparta-kpi-group { padding:.45rem; border-radius:10px; } .sparta-kpi-grid,.sparta-kpi-grid.grid-3,.sparta-kpi-grid.grid-5 { grid-template-columns:repeat(2,minmax(0,1fr)); }
+@media (max-width:1100px) { .sparta-kpi-grid,.sparta-kpi-grid.grid-3,.sparta-kpi-grid.grid-5 { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:640px) { .sparta-kpi-group { padding:.42rem; border-radius:10px; } .sparta-kpi-grid,.sparta-kpi-grid.grid-3,.sparta-kpi-grid.grid-5 { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .sparta-outcome-summary-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:.35rem; } .sparta-outcome-summary { padding:.55rem; } .sparta-outcome-value { font-size:1.1rem; }
-.sparta-kpi-grid.grid-1 { grid-template-columns:minmax(0,220px); } .sparta-kpi-tile { padding:.38rem .42rem; } .sparta-kpi-value { font-size:1.05rem; } .sparta-section-heading { margin-top:1rem; } }
+.sparta-kpi-grid.grid-1 { grid-template-columns:minmax(0,1fr); } .sparta-kpi-grid.grid-2 { grid-template-columns:repeat(2,minmax(0,1fr)); } .sparta-kpi-tile { padding:.34rem .38rem; } .sparta-kpi-value { font-size:1rem; } .sparta-section-heading { margin-top:1rem; } }
 
 /* Dashboard hero */
 .sparta-hero {
@@ -2157,98 +2158,90 @@ def build_application_outcome_hierarchy(df: pd.DataFrame):
 outcome_df, outcome_bucket_table, outcome_summary = build_application_outcome_hierarchy(master_df)
 outcome_total = len(outcome_df)
 
-# Place the KPI compartments and the interactive hierarchy side by side.
-# The chart is deliberately compact; the expander below exposes every exact
-# source-field/status value and its count without renaming any source category.
-kpi_dashboard_col, outcome_chart_col = st.columns([2.15, 1.0], gap="medium")
+# Place a narrow, vertically stacked KPI rail beside the larger interactive chart.
+# KPI groups are intentionally stacked down the left; the sunburst receives most
+# of the horizontal space so original status values have more room to display.
+kpi_dashboard_col, outcome_chart_col = st.columns([0.96, 2.34], gap="medium")
 
 with kpi_dashboard_col:
-    # First compact KPI row: applications, quality, and standalone inbound.
-    kpi_quality_col, kpi_inbound_col = st.columns([4.2, 1.0], gap="small")
-    with kpi_quality_col:
-        st.markdown(
-            render_kpi_compartment(
-                "Applications & Quality", "01 · APPLICATION FUNNEL", "01", "quality", "grid-5",
-                [
-                    ("Applications", total_applications, "100% of base", "#2563eb", "#eff6ff"),
-                    ("QA Approved", q_approved, f"{get_pct(q_approved, total_applications)} of apps", "#15803d", "#f0fdf4"),
-                    ("QA Rework · Legacy", q_rework, "Legacy only · CRM Rework is Pending", "#a16207", "#fefce8"),
-                    ("QA Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
-                    ("QA Pending", q_pending, f"{get_pct(q_pending, total_applications)} of apps · includes CRM Rework", "#c2410c", "#fff7ed"),
-                ],
-            ),
-            unsafe_allow_html=True,
-        )
-    with kpi_inbound_col:
-        st.markdown(
-            render_kpi_compartment(
-                "Inbound Cancelled", "STANDALONE", "!", "inbound", "grid-1",
-                [("Inbound Cancelled", inbound_cancelled, f"{get_pct(inbound_cancelled, total_applications)} of apps · CRM", "#9a3412", "#fff7ed")],
-            ),
-            unsafe_allow_html=True,
-        )
-
-    # Second compact KPI row: three adjacent stage compartments.
-    kpi_welcome_col, kpi_provisioning_col, kpi_live_col = st.columns(3, gap="small")
-    with kpi_welcome_col:
-        st.markdown(
-            render_kpi_compartment(
-                "Welcome", "02 · WELCOME CALL", "02", "welcome", "grid-3",
-                [
-                    ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} of apps", "#15803d", "#f0fdf4"),
-                    ("WC Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
-                    ("WC Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} of apps", "#a16207", "#fefce8"),
-                ],
-            ),
-            unsafe_allow_html=True,
-        )
-    with kpi_provisioning_col:
-        st.markdown(
-            render_kpi_compartment(
-                "Provisioning", "03 · PROVISIONING", "03", "provisioning", "grid-3",
-                [
-                    ("Completed", provisioning_completed, "CRM · Committed / Provisioned", "#15803d", "#f0fdf4"),
-                    ("Pending", provisioning_pending, "CRM · Pending / Delayed / Rework", "#a16207", "#fefce8"),
-                    ("Cancelled", provisioning_cancelled, "CRM · Cancelled orders", "#b91c1c", "#fef2f2"),
-                ],
-            ),
-            unsafe_allow_html=True,
-        )
-    with kpi_live_col:
-        st.markdown(
-            render_kpi_compartment(
-                "Committed / Live", "04 · DOWNSTREAM PIPELINE", "04", "live", "grid-3",
-                [
-                    ("Live", portal_live, f"{get_pct(portal_live, portal_total)} of portal", "#0f766e", "#f0fdfa"),
-                    ("Committed", portal_committed, f"{get_pct(portal_committed, portal_total)} of portal", "#a16207", "#fefce8"),
-                    ("Live Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} of portal", "#b91c1c", "#fef2f2"),
-                ],
-            ),
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        "<div style='color:#0f9f91;font-size:.60rem;font-weight:850;letter-spacing:.14em;text-transform:uppercase;margin:.1rem 0 .28rem;'>KEY FIGURES</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        render_kpi_compartment(
+            "Applications & Quality", "01 · APPLICATION FUNNEL", "01", "quality", "grid-2",
+            [
+                ("Applications", total_applications, "100% of base", "#2563eb", "#eff6ff"),
+                ("QA Approved", q_approved, f"{get_pct(q_approved, total_applications)} of apps", "#15803d", "#f0fdf4"),
+                ("QA Rework · Legacy", q_rework, "Legacy only · CRM Rework is Pending", "#a16207", "#fefce8"),
+                ("QA Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
+                ("QA Pending", q_pending, f"{get_pct(q_pending, total_applications)} of apps · includes CRM Rework", "#c2410c", "#fff7ed"),
+            ],
+        ),
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        render_kpi_compartment(
+            "Inbound Cancelled", "STANDALONE", "!", "inbound", "grid-1",
+            [("Inbound Cancelled", inbound_cancelled, f"{get_pct(inbound_cancelled, total_applications)} of apps · CRM", "#9a3412", "#fff7ed")],
+        ),
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        render_kpi_compartment(
+            "Welcome", "02 · WELCOME CALL", "02", "welcome", "grid-2",
+            [
+                ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} of apps", "#15803d", "#f0fdf4"),
+                ("WC Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
+                ("WC Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} of apps", "#a16207", "#fefce8"),
+            ],
+        ),
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        render_kpi_compartment(
+            "Provisioning", "03 · PROVISIONING", "03", "provisioning", "grid-2",
+            [
+                ("Completed", provisioning_completed, "CRM · Committed / Provisioned", "#15803d", "#f0fdf4"),
+                ("Pending", provisioning_pending, "CRM · Pending / Delayed / Rework", "#a16207", "#fefce8"),
+                ("Cancelled", provisioning_cancelled, "CRM · Cancelled orders", "#b91c1c", "#fef2f2"),
+            ],
+        ),
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        render_kpi_compartment(
+            "Committed / Live", "04 · DOWNSTREAM PIPELINE", "04", "live", "grid-2",
+            [
+                ("Live", portal_live, f"{get_pct(portal_live, portal_total)} of portal", "#0f766e", "#f0fdfa"),
+                ("Committed", portal_committed, f"{get_pct(portal_committed, portal_total)} of portal", "#a16207", "#fefce8"),
+                ("Live Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} of portal", "#b91c1c", "#fef2f2"),
+            ],
+        ),
+        unsafe_allow_html=True,
+    )
 
 with outcome_chart_col:
     st.markdown(
         """<div style="padding:.2rem .15rem .35rem;">
         <div style="color:#0f9f91;font-size:.62rem;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">APPLICATION OUTCOMES</div>
-        <div style="color:#14233b;font-size:1rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled</div>
-        <div style="color:#718096;font-size:.68rem;line-height:1.35;margin-top:.2rem;">Select a segment or hover to inspect the original source values.</div>
+        <div style="color:#14233b;font-size:1.05rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled</div>
+        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">The chart shows each original status value. Hover for its share of all applications and its share within Live, Pending or Cancelled.</div>
         </div>""",
         unsafe_allow_html=True,
     )
 
-    # Small outcome totals remain visible even where a sunburst segment is too
-    # narrow to fit its original status label.
     compact_outcome_html = []
     for name, color in [("Live", "#0f766e"), ("Pending", "#b45309"), ("Cancelled", "#b91c1c")]:
         value = int(outcome_summary.get(name, 0))
         share = value / outcome_total * 100 if outcome_total else 0.0
         compact_outcome_html.append(
-            f'<span style="display:inline-flex;align-items:center;gap:.22rem;margin:0 .45rem .25rem 0;'
-            f'font-size:.69rem;color:#40516a;"><span style="width:7px;height:7px;border-radius:50%;background:{color};display:inline-block;"></span>'
+            f'<span style="display:inline-flex;align-items:center;gap:.22rem;margin:0 .55rem .25rem 0;'
+            f'font-size:.72rem;color:#40516a;"><span style="width:8px;height:8px;border-radius:50%;background:{color};display:inline-block;"></span>'
             f'<b style="color:#172942;">{name} {value:,}</b> <span style="color:#8491a3;">({share:.1f}%)</span></span>'
         )
-    st.markdown("<div style='margin:.1rem 0 .15rem;'>" + "".join(compact_outcome_html) + "</div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin:.1rem 0 .2rem;'>" + "".join(compact_outcome_html) + "</div>", unsafe_allow_html=True)
 
     if outcome_total == 0:
         st.info("No applications are available for the selected reporting period.")
@@ -2265,10 +2258,10 @@ with outcome_chart_col:
         parents = [""]
         values = [int(outcome_total)]
         colors = ["#eaf0f6"]
-        customdata = [["All Applications", "All", "All Applications", int(outcome_total), "100.0%"]]
+        # Each node carries only the three requested tooltip facts plus the
+        # parent outcome name used to describe the within-category percentage.
+        customdata = [["All Applications", "100.0%", "100.0%", "All Applications"]]
 
-        # Three outcome sectors, with each original source field/status value
-        # retained as a separate leaf. Labels are never translated or renamed.
         for outcome_name in ["Live", "Pending", "Cancelled"]:
             outcome_id = f"outcome::{outcome_name}"
             outcome_count = int(outcome_summary.get(outcome_name, 0))
@@ -2278,24 +2271,25 @@ with outcome_chart_col:
             values.append(outcome_count)
             colors.append(outcome_colors[outcome_name]["parent"])
             category_share = outcome_count / outcome_total * 100 if outcome_total else 0.0
-            customdata.append([outcome_name, "All", "All", outcome_count, f"{category_share:.1f}%"])
+            customdata.append([outcome_name, f"{category_share:.1f}%", "100.0%", outcome_name])
 
             leaves = outcome_bucket_table[outcome_bucket_table["Outcome"] == outcome_name]
             for leaf_index, row in leaves.reset_index(drop=True).iterrows():
                 leaf_id = f"leaf::{outcome_name}::{leaf_index}"
                 original_status = str(row["Status"])
                 count = int(row["Applications"])
+                leaf_share_all = count / outcome_total * 100 if outcome_total else 0.0
+                leaf_share_category = count / outcome_count * 100 if outcome_count else 0.0
                 labels.append(original_status)
                 ids.append(leaf_id)
                 parents.append(outcome_id)
                 values.append(count)
                 colors.append(outcome_colors[outcome_name]["leaf"])
                 customdata.append([
-                    outcome_name,
-                    str(row["Source"]),
-                    str(row["Stage"]),
                     original_status,
-                    f"{count / outcome_total * 100:.1f}%",
+                    f"{leaf_share_all:.1f}%",
+                    f"{leaf_share_category:.1f}%",
+                    outcome_name,
                 ])
 
         fig = go.Figure(
@@ -2306,27 +2300,28 @@ with outcome_chart_col:
                 values=values,
                 branchvalues="total",
                 sort=False,
-                maxdepth=2,
+                maxdepth=-1,
                 marker=dict(colors=colors, line=dict(color="#ffffff", width=2)),
                 customdata=customdata,
                 textinfo="label+value",
-                insidetextorientation="radial",
-                insidetextfont=dict(size=10, color="#14233b"),
+                insidetextorientation="auto",
+                insidetextfont=dict(size=11, color="#14233b"),
                 hovertemplate=(
-                    "<b>%{label}</b><br>Applications: %{value:,.0f}<br>"
-                    "Outcome: %{customdata[0]}<br>Source: %{customdata[1]}<br>"
-                    "Source field: %{customdata[2]}<br>Original status: %{customdata[3]}<br>"
-                    "Share of all applications: %{customdata[4]}<extra></extra>"
+                    "<b>%{customdata[0]}</b><br>"
+                    "% of all applications: %{customdata[1]}<br>"
+                    "% within %{customdata[3]}: %{customdata[2]}<extra></extra>"
                 ),
             )
         )
         fig.update_layout(
-            height=420,
-            margin=dict(t=4, l=4, r=4, b=4),
+            height=740,
+            margin=dict(t=8, l=8, r=8, b=8),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=10, color="#172942"),
-            uniformtext=dict(minsize=8, mode="hide"),
+            font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=11, color="#172942"),
+            # Show text for small segments wherever Plotly can fit it. The chart
+            # remains zoomable when a narrow segment cannot be read comfortably.
+            uniformtext=dict(minsize=6, mode="show"),
         )
         with st.container(border=True):
             st.plotly_chart(
@@ -2335,7 +2330,7 @@ with outcome_chart_col:
                 config={"displayModeBar": False, "scrollZoom": False},
             )
             st.caption(
-                "Click a Live, Pending or Cancelled sector to zoom into its original status values. Hover for source field, exact value and count."
+                "All status names remain unchanged. Labels show the original value and application count; click any ring to focus on its branch."
             )
 
 # Complete source-value reconciliation stays available without occupying the
