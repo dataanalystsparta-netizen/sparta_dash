@@ -2424,7 +2424,8 @@ with outcome_chart_col:
 
         # Assign each node its midpoint around the full circle. Since every
         # parent reconciles to the sum of its children, absolute application
-        # counts can be used to calculate each child sector's angular position.
+        # counts calculate each child sector's angular position. Plotly starts
+        # at 3 o'clock and proceeds counter-clockwise (rotation=0).
         for parent_id in node_ids:
             parent_start = sector_starts.get(parent_id, 0.0)
             cumulative_count = 0
@@ -2440,12 +2441,14 @@ with outcome_chart_col:
         # Approximate the usable arc at each ring's radius. Long labels and
         # narrow sectors become external callouts; all remaining labels stay
         # directly on their sectors. The original status text is never changed.
+        # The sunburst is kept in a central circular lane so the two callout
+        # columns sit outside it. These are paper-coordinate radii (not guessed
+        # screen pixels), measured near the middle of each hierarchy ring.
         ring_settings = {
-            "outcome": {"radius_x": 0.105, "radius_y": 0.14, "radius_px": 135.0},
-            "bucket":  {"radius_x": 0.195, "radius_y": 0.26, "radius_px": 245.0},
-            "status":  {"radius_x": 0.27, "radius_y": 0.35, "radius_px": 345.0},
+            "outcome": {"radius_x": 0.090, "radius_y": 0.085, "radius_px": 85.0},
+            "bucket":  {"radius_x": 0.155, "radius_y": 0.145, "radius_px": 140.0},
+            "status":  {"radius_x": 0.215, "radius_y": 0.200, "radius_px": 195.0},
         }
-        estimated_chart_width_px = 1250.0
         callout_counts = {"left": 0, "right": 0}
 
         for node_id in node_ids[1:]:
@@ -2465,7 +2468,10 @@ with outcome_chart_col:
                 continue
 
             midpoint_fraction = sector_positions.get(node_id, 0.0)
-            angle = math.pi / 2 - 2 * math.pi * midpoint_fraction
+            # Plotly Sunburst starts its first sector at 3 o'clock and lays
+            # subsequent sectors counter-clockwise. Match that exact convention
+            # so every arrow lands on the sector that owns its label.
+            angle = 2 * math.pi * midpoint_fraction
             anchor_x = 0.5 + settings["radius_x"] * math.cos(angle)
             anchor_y = 0.5 + settings["radius_y"] * math.sin(angle)
             side = "right" if math.cos(angle) >= 0 else "left"
@@ -2483,31 +2489,38 @@ with outcome_chart_col:
 
         callout_annotations = []
         max_side_callouts = max(callout_counts.values()) if callout_counts else 0
+        chart_width = 900
         chart_height = max(920, 180 + max_side_callouts * 52)
+        # Plotly arrow tails use pixel offsets. Keep the chart canvas fixed so
+        # those offsets are calculated against the actual rendered dimensions.
+        plot_width_px = chart_width - 16  # 8 px left + right margins
+        plot_height_px = chart_height - 40  # 20 px top + bottom margins
         for side, callouts in callouts_by_side.items():
             callouts.sort(key=lambda item: item["anchor_y"], reverse=True)
             if not callouts:
                 continue
             slot_positions = (
                 [0.5] if len(callouts) == 1
-                else np.linspace(0.97, 0.03, len(callouts)).tolist()
+                else np.linspace(0.965, 0.035, len(callouts)).tolist()
             )
-            label_x = 0.012 if side == "left" else 0.988
+            label_x = 0.008 if side == "left" else 0.992
             for item, label_y in zip(callouts, slot_positions):
                 callout_annotations.append({
                     "x": item["anchor_x"], "y": item["anchor_y"],
                     "xref": "paper", "yref": "paper",
-                    "ax": (label_x - item["anchor_x"]) * estimated_chart_width_px,
-                    "ay": (item["anchor_y"] - float(label_y)) * chart_height,
+                    # Plotly annotations use pixel offsets for arrow tails.
+                    # The fixed chart canvas makes these offsets predictable.
+                    "ax": (label_x - item["anchor_x"]) * plot_width_px,
+                    "ay": (item["anchor_y"] - float(label_y)) * plot_height_px,
                     "text": (
                         f"<b>{escape(item['label'])}</b><br>"
-                        f"<span style='font-size:12px'>{item['count']:,} applications</span>"
+                        f"<span style='font-size:11px'>{item['count']:,} applications</span>"
                     ),
                     "showarrow": True, "arrowhead": 2, "arrowsize": 0.9,
-                    "arrowwidth": 1.25, "arrowcolor": item["color"], "standoff": 3,
+                    "arrowwidth": 1.2, "arrowcolor": item["color"], "standoff": 3,
                     "bgcolor": "rgba(255,255,255,0.98)", "bordercolor": item["color"],
-                    "borderwidth": 1, "borderpad": 4, "width": 265,
-                    "font": {"family": "Inter, Segoe UI, Arial, sans-serif", "size": 13, "color": "#172942"},
+                    "borderwidth": 1, "borderpad": 4, "width": 205,
+                    "font": {"family": "Inter, Segoe UI, Arial, sans-serif", "size": 12, "color": "#172942"},
                     "align": "left" if side == "left" else "right",
                     "xanchor": "left" if side == "left" else "right", "yanchor": "middle",
                 })
@@ -2523,7 +2536,8 @@ with outcome_chart_col:
                 rotation=0,
                 level="",
                 maxdepth=4,
-                domain=dict(x=[0.20, 0.80], y=[0.05, 0.95]),
+                # Reserve left/right lanes for the outside label boxes.
+                domain=dict(x=[0.25, 0.75], y=[0.05, 0.95]),
                 marker=dict(colors=node_colors, line=dict(color="#ffffff", width=2)),
                 customdata=node_customdata,
                 textinfo="label",
@@ -2547,6 +2561,7 @@ with outcome_chart_col:
             )
         )
         fig.update_layout(
+            width=chart_width,
             height=chart_height,
             margin=dict(t=20, l=8, r=8, b=20),
             paper_bgcolor="rgba(0,0,0,0)",
@@ -2558,13 +2573,13 @@ with outcome_chart_col:
         with st.container(border=True):
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                use_container_width=False,
                 config={"displayModeBar": False, "scrollZoom": False},
             )
             st.caption(
                 "All four levels are visible by default: All Applications → Live / Pending / Cancelled → "
-                "stage buckets → exact original CRM status values. Labels that do not fit inside a "
-                "sector are shown in arrow-connected text boxes. Outcome colours remain consistent "
+                "stage buckets → exact original CRM status values. Small labels are shown in side "
+                "callouts with arrows anchored to their own sectors. Outcome colours remain consistent "
                 "through every outer ring; hover over any sector for its count, percentages and source field."
             )
 
