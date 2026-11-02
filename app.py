@@ -2030,142 +2030,198 @@ def _is_cancel_status(raw_value: str, clean_value: str = "") -> bool:
     ))
 
 
-def classify_application_outcome(row: pd.Series):
-    """Assign each application once to Live, Pending, or Cancelled plus a stage bucket.
+def _original_status_value(raw_value, fallback="") -> str:
+    """Return the source status as displayed, without renaming or recategorizing it."""
+    if raw_value is not None:
+        try:
+            if pd.isna(raw_value):
+                raw_value = ""
+        except (TypeError, ValueError):
+            pass
+    text = str(raw_value).strip() if raw_value is not None else ""
+    if text.lower() in {"nan", "none", "null", "nat"}:
+        text = ""
+    if text:
+        return text
+    fallback_text = str(fallback).strip() if fallback is not None else ""
+    return fallback_text if fallback_text else "(blank)"
 
-    Cancellation is checked first, in stage order. A provisioning cancellation
-    therefore remains under Provisioning Cancelled and cannot be counted again
-    as a downstream committed/live cancellation.
+
+def classify_application_outcome(row: pd.Series):
+    """Assign each application once to Live, Pending, or Cancelled.
+
+    The chart leaf is the original source status value, not a dashboard-created
+    description. The source field/stage is retained separately so identical
+    values from different CRM columns remain distinguishable.
+
+    Cancellation precedence follows the earliest stage reached:
+    Inbound -> Quality -> Welcome -> Provisioning -> Dispatch -> Confirmation
+    -> Onboarding. A Provisioning cancellation therefore cannot be counted
+    again as a later Committed/Live cancellation.
     """
+    source = _outcome_text(row.get("Source", "")) or "Unknown"
+    is_crm = source.strip().lower() == "crm"
+
     inbound_value = row.get("Inbound Cancelled", False)
-    inbound = False if pd.isna(inbound_value) else str(inbound_value).strip().lower() in {"true", "1", "yes"}
-    inbound_status = _outcome_text(row.get("Inbound Status", "")).lower()
+    try:
+        inbound = False if pd.isna(inbound_value) else str(inbound_value).strip().lower() in {"true", "1", "yes"}
+    except (TypeError, ValueError):
+        inbound = str(inbound_value).strip().lower() in {"true", "1", "yes"}
+    inbound_status_raw = _original_status_value(row.get("Inbound Status", ""), row.get("Inbound Status Clean", ""))
+    inbound_status_norm = _outcome_text(row.get("Inbound Status", "")).lower()
     inbound_clean = _outcome_text(row.get("Inbound Status Clean", "")).lower()
-    if inbound or inbound_clean == "inbound cancelled" or inbound_status in {
+    if inbound or inbound_clean == "inbound cancelled" or inbound_status_norm in {
         "inbound cancel", "inbound cancelled", "inbound canceled"
     }:
-        return "Cancelled", "Inbound Cancelled"
+        return "Cancelled", "Inbound Status", inbound_status_raw
 
-    quality_raw = _outcome_text(row.get("Quality Status", ""))
+    # Keep original source values untouched for display; normalized copies are
+    # used only for classification comparisons.
+    quality_source_raw = row.get("Quality Status", "")
+    welcome_source_raw = row.get("Welcome Status", "")
+    provisioning_source_raw = row.get("Provisioning Status", "")
+    dispatch_source_raw = row.get("Letter Status", row.get("LetterStatus", ""))
+    confirmation_source_raw = row.get("Confirmation Status", "")
+    if not _outcome_text(confirmation_source_raw):
+        confirmation_source_raw = row.get("Call Status", "")
+    onboarding_source_raw = row.get("Final Status", "")
+    if not _outcome_text(onboarding_source_raw):
+        onboarding_source_raw = row.get("Portal Status", "")
+    portal_source_raw = row.get("Portal Status", "")
+
+    quality_raw = _outcome_text(quality_source_raw)
     quality_clean = _outcome_text(row.get("Quality Status Clean", ""))
-    welcome_raw = _outcome_text(row.get("Welcome Status", ""))
+    welcome_raw = _outcome_text(welcome_source_raw)
     welcome_clean = _outcome_text(row.get("Welcome Status Clean", ""))
-    provisioning_raw = _outcome_text(row.get("Provisioning Status", ""))
+    provisioning_raw = _outcome_text(provisioning_source_raw)
     provisioning_clean = _outcome_text(row.get("Provisioning Status Clean", ""))
-    dispatch_raw = _outcome_text(row.get("Letter Status", row.get("LetterStatus", "")))
-    confirmation_raw = _outcome_text(row.get("Confirmation Status", ""))
-    if not confirmation_raw:
-        confirmation_raw = _outcome_text(row.get("Call Status", ""))
-    onboarding_raw = _outcome_text(row.get("Final Status", ""))
-    if not onboarding_raw:
-        onboarding_raw = _outcome_text(row.get("Portal Status", ""))
+    dispatch_raw = _outcome_text(dispatch_source_raw)
+    confirmation_raw = _outcome_text(confirmation_source_raw)
+    onboarding_raw = _outcome_text(onboarding_source_raw)
+    portal_raw = _outcome_text(portal_source_raw)
     portal_clean = _outcome_text(row.get("Portal Status Clean", ""))
 
-    # The first stage containing an explicit cancellation owns the outcome.
-    cancellation_stages = [
-        ("Quality Cancelled", quality_raw, quality_clean),
-        ("Welcome Cancelled", welcome_raw, welcome_clean),
-        ("Provisioning Cancelled", provisioning_raw, provisioning_clean),
-        ("Dispatch Cancelled", dispatch_raw, ""),
-        ("Confirmation Cancelled", confirmation_raw, ""),
-        ("Onboarding / Live Cancelled", onboarding_raw, ""),
-    ]
-    for bucket, raw, clean in cancellation_stages:
-        if _is_cancel_status(raw, clean):
-            return "Cancelled", bucket
+    # Use original source field names for each population where the CRM and
+    # legacy worksheets use different headings.
+    welcome_stage = "Welcome Call Status" if is_crm else "Welcome Status"
+    dispatch_stage = "LetterStatus (Dispatch Status)" if is_crm else "Letter Status"
+    confirmation_stage = "Confirmation Status" if is_crm else "Call Status"
+    onboarding_stage = (
+        "Committed (Live) Status (Onboarding Status)" if is_crm else "Portal Status"
+    )
 
-    # Portal status is a final safety net for legacy portal-specific cancellations.
+    cancellation_stages = [
+        ("Quality Status", quality_raw, quality_clean, quality_source_raw),
+        (welcome_stage, welcome_raw, welcome_clean, welcome_source_raw),
+        ("Provisioning Status", provisioning_raw, provisioning_clean, provisioning_source_raw),
+        (dispatch_stage, dispatch_raw, "", dispatch_source_raw),
+        (confirmation_stage, confirmation_raw, "", confirmation_source_raw),
+        (onboarding_stage, onboarding_raw, "", onboarding_source_raw),
+    ]
+    for stage_name, raw_value, clean_value, original_value in cancellation_stages:
+        if _is_cancel_status(raw_value, clean_value):
+            return "Cancelled", stage_name, _original_status_value(original_value, clean_value)
+
+    # Portal-only legacy cancellation values are retained exactly as sourced.
     if portal_clean.lower() == "cancelled":
-        return "Cancelled", "Committed / Live Cancelled"
+        return "Cancelled", "Portal Status", _original_status_value(portal_source_raw, portal_clean)
 
     onboarding_norm = onboarding_raw.lower()
     if re.search(r"\bonboarding\s+approved\b", onboarding_norm):
-        return "Live", "Onboarding Approved"
+        return "Live", onboarding_stage, _original_status_value(onboarding_source_raw)
     if re.search(r"\bport\s*[- ]\s*pending\b", onboarding_norm):
-        return "Live", "Port Pending"
-    # Preserve historical legacy records whose final portal value was simply Live.
+        return "Live", onboarding_stage, _original_status_value(onboarding_source_raw)
+    # Preserve historical legacy values rather than replacing them with a new label.
     if re.fullmatch(r"live|active", onboarding_norm):
-        return "Live", "Live (Legacy Status)"
+        return "Live", onboarding_stage, _original_status_value(onboarding_source_raw)
 
-    # Everything not explicitly live or cancelled is Pending. The leaf is the
-    # furthest identifiable stage/status reached by the application.
-    if onboarding_raw:
-        return "Pending", "Onboarding Pending"
+    # Everything not explicitly Live or Cancelled is Pending. Use the furthest
+    # populated stage and display that source's original status text verbatim.
+    pending_candidates = [
+        (onboarding_stage, onboarding_raw, onboarding_source_raw),
+        (confirmation_stage, confirmation_raw, confirmation_source_raw),
+        (dispatch_stage, dispatch_raw, dispatch_source_raw),
+        ("Provisioning Status", provisioning_raw, provisioning_source_raw),
+        (welcome_stage, welcome_raw, welcome_source_raw),
+        ("Quality Status", quality_raw, quality_source_raw),
+    ]
+    for stage_name, normalized_value, original_value in pending_candidates:
+        if normalized_value:
+            return "Pending", stage_name, _original_status_value(original_value)
 
-    confirmation_norm = confirmation_raw.lower()
-    if confirmation_norm:
-        return "Pending", "Committed / Awaiting Live"
+    # A legacy portal status may be populated even when its underlying CRM-like
+    # stage columns are blank. Keep that exact status visible in the chart.
+    if portal_raw:
+        return "Pending", "Portal Status", _original_status_value(portal_source_raw)
 
-    if portal_clean.lower() == "committed":
-        return "Pending", "Committed / Awaiting Live"
-
-    dispatch_norm = dispatch_raw.lower()
-    if dispatch_norm:
-        if "pending" in dispatch_norm:
-            return "Pending", "Dispatch Pending"
-        return "Pending", "Dispatch Approved / Awaiting Confirmation"
-
-    provisioning_norm = provisioning_raw.lower()
-    if provisioning_clean.lower() == "pending":
-        return "Pending", "Provisioning Pending"
-    if provisioning_clean.lower() == "completed":
-        if "committed" in provisioning_norm:
-            return "Pending", "Committed / Awaiting Live"
-        return "Pending", "Provisioning Completed / Awaiting Dispatch"
-
-    if welcome_clean.lower() == "pending":
-        return "Pending", "Welcome Pending"
-    if welcome_clean.lower() == "done":
-        return "Pending", "Welcome Done / Awaiting Provisioning"
-
-    if quality_clean.lower() == "pending":
-        return "Pending", "Quality Pending"
-    if quality_clean.lower() == "approved":
-        return "Pending", "Quality Approved / Awaiting Welcome"
-
-    return "Pending", "Awaiting First Stage / Other Pending"
+    return "Pending", "Application Status", "(blank)"
 
 
 def build_application_outcome_hierarchy(df: pd.DataFrame):
-    """Return exclusive outcomes and a grouped bucket-count table."""
+    """Return exclusive outcomes grouped by source field and original status."""
+    columns = ["Outcome", "Source", "Stage", "Status"]
     if df is None or df.empty:
-        empty = pd.DataFrame(columns=["Outcome", "Bucket"])
-        table = pd.DataFrame(columns=["Outcome", "Bucket", "Applications", "% of Total"])
+        empty = pd.DataFrame(columns=columns)
+        table = pd.DataFrame(columns=columns + ["Applications", "% of Total"])
         return empty, table, {"Live": 0, "Pending": 0, "Cancelled": 0}
 
     outcomes = df.apply(classify_application_outcome, axis=1, result_type="expand")
-    outcomes.columns = ["Outcome", "Bucket"]
-    outcome_df = outcomes
-    total = len(outcome_df)
-    order = ["Live", "Pending", "Cancelled"]
-    summary = outcome_df["Outcome"].value_counts().reindex(order, fill_value=0).astype(int).to_dict()
-    bucket_table = (
-        outcome_df.groupby(["Outcome", "Bucket"], dropna=False)
-        .size()
-        .rename("Applications")
-        .reset_index()
+    outcomes.columns = ["Outcome", "Stage", "Status"]
+    outcomes["Source"] = (
+        df.get("Source", pd.Series("Unknown", index=df.index))
+        .fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
     )
-    bucket_table["Outcome Order"] = bucket_table["Outcome"].map({name: i for i, name in enumerate(order)})
+    total = len(outcomes)
+    outcome_order = ["Live", "Pending", "Cancelled"]
+    summary = (
+        outcomes["Outcome"].value_counts()
+        .reindex(outcome_order, fill_value=0).astype(int).to_dict()
+    )
+    bucket_table = (
+        outcomes.groupby(["Outcome", "Source", "Stage", "Status"], dropna=False)
+        .size().rename("Applications").reset_index()
+    )
+    stage_order = {
+        "Inbound Status": 0,
+        "Quality Status": 1,
+        "Welcome Call Status": 2,
+        "Welcome Status": 2,
+        "Provisioning Status": 3,
+        "LetterStatus (Dispatch Status)": 4,
+        "Letter Status": 4,
+        "Confirmation Status": 5,
+        "Call Status": 5,
+        "Committed (Live) Status (Onboarding Status)": 6,
+        "Portal Status": 6,
+        "Application Status": 7,
+    }
+    bucket_table["Outcome Order"] = bucket_table["Outcome"].map(
+        {name: i for i, name in enumerate(outcome_order)}
+    )
+    bucket_table["Source Order"] = bucket_table["Source"].map(
+        {"CRM": 0, "Excel / Legacy": 1}
+    ).fillna(2)
+    bucket_table["Stage Order"] = bucket_table["Stage"].map(stage_order).fillna(99)
     bucket_table = bucket_table.sort_values(
-        ["Outcome Order", "Applications", "Bucket"],
-        ascending=[True, False, True],
-    ).drop(columns="Outcome Order")
+        ["Outcome Order", "Source Order", "Stage Order", "Applications", "Status"],
+        ascending=[True, True, True, False, True],
+    ).drop(columns=["Outcome Order", "Source Order", "Stage Order"])
     bucket_table["% of Total"] = (
         bucket_table["Applications"] / total * 100
     ).map(lambda value: f"{value:.1f}%")
-    # Each application must belong to exactly one top-level outcome and one leaf bucket.
+
     if sum(summary.values()) != total or int(bucket_table["Applications"].sum()) != total:
         raise ValueError("Application outcome hierarchy does not reconcile to total applications.")
-    return outcome_df, bucket_table.reset_index(drop=True), summary
+    return outcomes.reset_index(drop=True), bucket_table.reset_index(drop=True), summary
 
 
 # ==========================================================
-# INTERACTIVE APPLICATION OUTCOME HIERARCHY
+# INTERACTIVE APPLICATION OUTCOME BREAKDOWN — EXACT SOURCE VALUES
 # ==========================================================
 render_section_heading(
     "APPLICATION OUTCOMES",
-    "Application outcome hierarchy",
-    "Every application is counted once: Live, Pending or Cancelled. Select a segment to drill into its stage bucket; hover for exact counts and share.",
+    "Application outcome breakdown",
+    "Every application is counted once as Live, Pending or Cancelled. The chart shows the original source field and status value without renaming the CRM categories.",
 )
 
 outcome_df, outcome_bucket_table, outcome_summary = build_application_outcome_hierarchy(master_df)
@@ -2193,86 +2249,103 @@ st.markdown(
 
 if outcome_total == 0:
     st.info("No applications are available for the selected reporting period.")
-elif go is None:
-    st.warning("Plotly is not installed in this environment. The exact outcome bucket counts are shown below instead.")
 else:
-    outcome_colors = {
-        "Live": ["#0f766e", "#14b8a6", "#5eead4", "#99f6e4"],
-        "Pending": ["#b45309", "#d97706", "#f59e0b", "#fbbf24", "#fde68a", "#ffedd5", "#fed7aa", "#fef3c7"],
-        "Cancelled": ["#b91c1c", "#dc2626", "#ef4444", "#f87171", "#fca5a5", "#fecaca", "#fee2e2"],
-    }
-    labels = ["All Applications"]
-    ids = ["all-applications"]
-    parents = [""]
-    values = [outcome_total]
-    colors = ["#172942"]
-
-    for outcome_name in ["Live", "Pending", "Cancelled"]:
-        count = int(outcome_summary.get(outcome_name, 0))
-        if count <= 0:
-            continue
-        labels.append(outcome_name)
-        ids.append(f"outcome-{outcome_name.lower()}")
-        parents.append("all-applications")
-        values.append(count)
-        palette = outcome_colors[outcome_name]
-        colors.append(palette[0])
-
-        leaves = outcome_bucket_table[outcome_bucket_table["Outcome"] == outcome_name]
-        for leaf_index, leaf in enumerate(leaves.itertuples(index=False)):
-            bucket = str(leaf.Bucket)
-            leaf_count = int(leaf.Applications)
-            labels.append(bucket)
-            ids.append(f"{outcome_name.lower()}-{leaf_index}-{re.sub(r'[^a-z0-9]+', '-', bucket.lower()).strip('-')}")
-            parents.append(f"outcome-{outcome_name.lower()}")
-            values.append(leaf_count)
-            colors.append(palette[(leaf_index + 1) % len(palette)])
-
-    hierarchy_fig = go.Figure(
-        go.Sunburst(
-            labels=labels,
-            ids=ids,
-            parents=parents,
-            values=values,
-            branchvalues="total",
-            marker=dict(colors=colors, line=dict(color="#ffffff", width=2)),
-            insidetextorientation="radial",
-            textinfo="label+value",
-            hovertemplate=(
-                "<b>%{label}</b><br>"
-                "Applications: %{value:,}<br>"
-                "Share of total: %{percentRoot:.1%}"
-                "<extra></extra>"
+    if go is None:
+        st.warning("Plotly is not installed in this environment. The exact original status values and counts are shown in the table below.")
+    else:
+        outcome_colors = {
+            "Live": "#0f766e",
+            "Pending": "#d97706",
+            "Cancelled": "#dc2626",
+        }
+        chart_data = outcome_bucket_table.copy()
+        chart_data["Chart Label"] = chart_data.apply(
+            lambda r: f"{r['Source']} · {r['Stage']}: {r['Status']}", axis=1
+        )
+        chart_labels = chart_data["Chart Label"].astype(str).tolist()
+        chart_height = max(560, min(1500, 105 + 38 * len(chart_data)))
+        fig = go.Figure()
+        for outcome_name in ["Live", "Pending", "Cancelled"]:
+            subset = chart_data[chart_data["Outcome"] == outcome_name].copy()
+            if subset.empty:
+                continue
+            fig.add_trace(
+                go.Bar(
+                    name=outcome_name,
+                    x=subset["Applications"].astype(int).tolist(),
+                    y=subset["Chart Label"].astype(str).tolist(),
+                    orientation="h",
+                    marker=dict(color=outcome_colors[outcome_name], line=dict(color="#ffffff", width=1)),
+                    text=subset["Applications"].map(lambda value: f"{int(value):,}").tolist(),
+                    textposition="outside",
+                    cliponaxis=False,
+                    customdata=subset[["Source", "Stage", "Status", "% of Total"]].astype(str).values,
+                    hovertemplate=(
+                        "<b>%{customdata[2]}</b><br>"
+                        "Outcome: %{fullData.name}<br>"
+                        "Source: %{customdata[0]}<br>"
+                        "Field: %{customdata[1]}<br>"
+                        "Applications: %{x:,}<br>"
+                        "Share of all applications: %{customdata[3]}"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+        fig.update_layout(
+            height=chart_height,
+            margin=dict(t=18, l=12, r=70, b=24),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=11, color="#172942"),
+            barmode="overlay",
+            bargap=0.28,
+            showlegend=True,
+            legend=dict(
+                title="Application category",
+                orientation="h",
+                yanchor="bottom", y=1.02,
+                xanchor="right", x=1,
             ),
-            sort=False,
-            maxdepth=-1,
+            xaxis=dict(
+                title="Number of applications",
+                rangemode="tozero",
+                gridcolor="#e8eef5",
+                zerolinecolor="#cbd5e1",
+            ),
+            yaxis=dict(
+                title="Original source field and status value",
+                categoryorder="array",
+                categoryarray=chart_labels,
+                autorange="reversed",
+                tickfont=dict(size=10),
+                automargin=True,
+                gridcolor="rgba(0,0,0,0)",
+            ),
+            uniformtext=dict(minsize=10, mode="show"),
         )
-    )
-    hierarchy_fig.update_layout(
-        height=540,
-        margin=dict(t=16, l=12, r=12, b=12),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=12, color="#172942"),
-        uniformtext=dict(minsize=10, mode="hide"),
-        showlegend=False,
-    )
-    with st.container(border=True):
-        st.plotly_chart(
-            hierarchy_fig,
-            use_container_width=True,
-            config={"displayModeBar": False, "scrollZoom": False},
-        )
-        st.caption("Tip: click Live, Pending or Cancelled to zoom into its buckets. Click the centre of the chart to return to the full hierarchy.")
+        with st.container(border=True):
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                config={"displayModeBar": False, "scrollZoom": False},
+            )
+            st.caption(
+                "Each bar is one original source-field/status combination. Colours show Live, Pending or Cancelled; hover for source, exact field, count and share. No CRM status labels are renamed."
+            )
 
-with st.expander("View exact counts by outcome bucket", expanded=False):
+    st.markdown("**Exact category values and counts**")
+    display_outcome_table = outcome_bucket_table.rename(
+        columns={"Stage": "Source field / stage", "Status": "Original status value"}
+    )
     st.dataframe(
-        outcome_bucket_table,
+        display_outcome_table,
         hide_index=True,
         use_container_width=True,
         column_config={
             "Outcome": st.column_config.TextColumn("Outcome", width="small"),
-            "Bucket": st.column_config.TextColumn("Stage / status bucket", width="large"),
+            "Source": st.column_config.TextColumn("Source", width="small"),
+            "Source field / stage": st.column_config.TextColumn("Source field / stage", width="medium"),
+            "Original status value": st.column_config.TextColumn("Original status value", width="large"),
             "Applications": st.column_config.NumberColumn("Applications", format="%d"),
             "% of Total": st.column_config.TextColumn("% of Total", width="small"),
         },
