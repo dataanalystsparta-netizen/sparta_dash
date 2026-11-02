@@ -10,7 +10,7 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
 - CRM Provisioning Status is reported separately as Completed, Pending, and Cancelled; provisioning cancellations do not enter Committed/Live.
 - CRM Connectivity: Committed counts in both Provisioning Completed and Committed Rem.; legacy rows remain unclassified for Provisioning.
 - Executive KPI cards use a compact two-row, multi-column layout.
-- Interactive sunburst hierarchy classifies every filtered application once as Live, Pending, or Cancelled, with stage-level buckets and counts.
+- Compact interactive sunburst sits beside the KPI cards; each leaf preserves its exact original source status and count, with a full detail table in an expander.
 """
 
 import logging
@@ -1937,70 +1937,6 @@ def render_kpi_compartment(title, subtitle, icon, theme, grid_class, metrics):
     )
 
 
-# Two compact rows instead of five full-width KPI rows.
-kpi_quality_col, kpi_inbound_col = st.columns([4.2, 1.0], gap="small")
-with kpi_quality_col:
-    st.markdown(
-        render_kpi_compartment(
-            "Applications & Quality", "01 · APPLICATION FUNNEL", "01", "quality", "grid-5",
-            [
-                ("Applications", total_applications, "100% of base", "#2563eb", "#eff6ff"),
-                ("QA Approved", q_approved, f"{get_pct(q_approved, total_applications)} of apps", "#15803d", "#f0fdf4"),
-                ("QA Rework · Legacy", q_rework, "Legacy only · CRM Rework is Pending", "#a16207", "#fefce8"),
-                ("QA Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
-                ("QA Pending", q_pending, f"{get_pct(q_pending, total_applications)} of apps · includes CRM Rework", "#c2410c", "#fff7ed"),
-            ],
-        ),
-        unsafe_allow_html=True,
-    )
-with kpi_inbound_col:
-    st.markdown(
-        render_kpi_compartment(
-            "Inbound Cancelled", "STANDALONE", "!", "inbound", "grid-1",
-            [("Inbound Cancelled", inbound_cancelled, f"{get_pct(inbound_cancelled, total_applications)} of apps · CRM", "#9a3412", "#fff7ed")],
-        ),
-        unsafe_allow_html=True,
-    )
-
-kpi_welcome_col, kpi_provisioning_col, kpi_live_col = st.columns(3, gap="small")
-with kpi_welcome_col:
-    st.markdown(
-        render_kpi_compartment(
-            "Welcome", "02 · WELCOME CALL", "02", "welcome", "grid-3",
-            [
-                ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} of apps", "#15803d", "#f0fdf4"),
-                ("WC Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
-                ("WC Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} of apps", "#a16207", "#fefce8"),
-            ],
-        ),
-        unsafe_allow_html=True,
-    )
-with kpi_provisioning_col:
-    st.markdown(
-        render_kpi_compartment(
-            "Provisioning", "03 · PROVISIONING", "03", "provisioning", "grid-3",
-            [
-                ("Completed", provisioning_completed, "CRM · Committed / Provisioned", "#15803d", "#f0fdf4"),
-                ("Pending", provisioning_pending, "CRM · Pending / Delayed / Rework", "#a16207", "#fefce8"),
-                ("Cancelled", provisioning_cancelled, "CRM · Cancelled orders", "#b91c1c", "#fef2f2"),
-            ],
-        ),
-        unsafe_allow_html=True,
-    )
-with kpi_live_col:
-    st.markdown(
-        render_kpi_compartment(
-            "Committed / Live", "04 · DOWNSTREAM PIPELINE", "04", "live", "grid-3",
-            [
-                ("Live", portal_live, f"{get_pct(portal_live, portal_total)} of portal", "#0f766e", "#f0fdfa"),
-                ("Committed", portal_committed, f"{get_pct(portal_committed, portal_total)} of portal", "#a16207", "#fefce8"),
-                ("Live Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} of portal", "#b91c1c", "#fef2f2"),
-            ],
-        ),
-        unsafe_allow_html=True,
-    )
-
-
 def _outcome_text(value) -> str:
     """Normalize a single source status for outcome classification."""
     if value is None:
@@ -2215,113 +2151,182 @@ def build_application_outcome_hierarchy(df: pd.DataFrame):
     return outcomes.reset_index(drop=True), bucket_table.reset_index(drop=True), summary
 
 
-# ==========================================================
-# INTERACTIVE APPLICATION OUTCOME BREAKDOWN — EXACT SOURCE VALUES
-# ==========================================================
-render_section_heading(
-    "APPLICATION OUTCOMES",
-    "Application outcome breakdown",
-    "Every application is counted once as Live, Pending or Cancelled. The chart shows the original source field and status value without renaming the CRM categories.",
-)
 
+# Build the outcome data once so the chart and its detailed table reconcile
+# exactly to the same filtered application population as the KPI cards.
 outcome_df, outcome_bucket_table, outcome_summary = build_application_outcome_hierarchy(master_df)
 outcome_total = len(outcome_df)
 
-summary_cards = []
-for outcome_name, accent, tint in [
-    ("Live", "#0f766e", "#f0fdfa"),
-    ("Pending", "#b45309", "#fffbeb"),
-    ("Cancelled", "#b91c1c", "#fef2f2"),
-]:
-    outcome_count = int(outcome_summary.get(outcome_name, 0))
-    outcome_pct = outcome_count / outcome_total * 100 if outcome_total else 0.0
-    summary_cards.append(
-        f"""<div class="sparta-outcome-summary" style="--outcome-accent:{accent};--outcome-tint:{tint};">
-            <div class="sparta-outcome-label">{escape(outcome_name)}</div>
-            <div class="sparta-outcome-value">{outcome_count:,}</div>
-            <div class="sparta-outcome-share">{outcome_pct:.1f}% of applications</div>
-        </div>"""
-    )
-st.markdown(
-    "<div class='sparta-outcome-summary-grid'>" + "".join(summary_cards) + "</div>",
-    unsafe_allow_html=True,
-)
+# Place the KPI compartments and the interactive hierarchy side by side.
+# The chart is deliberately compact; the expander below exposes every exact
+# source-field/status value and its count without renaming any source category.
+kpi_dashboard_col, outcome_chart_col = st.columns([2.15, 1.0], gap="medium")
 
-if outcome_total == 0:
-    st.info("No applications are available for the selected reporting period.")
-else:
-    if go is None:
-        st.warning("Plotly is not installed in this environment. The exact original status values and counts are shown in the table below.")
+with kpi_dashboard_col:
+    # First compact KPI row: applications, quality, and standalone inbound.
+    kpi_quality_col, kpi_inbound_col = st.columns([4.2, 1.0], gap="small")
+    with kpi_quality_col:
+        st.markdown(
+            render_kpi_compartment(
+                "Applications & Quality", "01 · APPLICATION FUNNEL", "01", "quality", "grid-5",
+                [
+                    ("Applications", total_applications, "100% of base", "#2563eb", "#eff6ff"),
+                    ("QA Approved", q_approved, f"{get_pct(q_approved, total_applications)} of apps", "#15803d", "#f0fdf4"),
+                    ("QA Rework · Legacy", q_rework, "Legacy only · CRM Rework is Pending", "#a16207", "#fefce8"),
+                    ("QA Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
+                    ("QA Pending", q_pending, f"{get_pct(q_pending, total_applications)} of apps · includes CRM Rework", "#c2410c", "#fff7ed"),
+                ],
+            ),
+            unsafe_allow_html=True,
+        )
+    with kpi_inbound_col:
+        st.markdown(
+            render_kpi_compartment(
+                "Inbound Cancelled", "STANDALONE", "!", "inbound", "grid-1",
+                [("Inbound Cancelled", inbound_cancelled, f"{get_pct(inbound_cancelled, total_applications)} of apps · CRM", "#9a3412", "#fff7ed")],
+            ),
+            unsafe_allow_html=True,
+        )
+
+    # Second compact KPI row: three adjacent stage compartments.
+    kpi_welcome_col, kpi_provisioning_col, kpi_live_col = st.columns(3, gap="small")
+    with kpi_welcome_col:
+        st.markdown(
+            render_kpi_compartment(
+                "Welcome", "02 · WELCOME CALL", "02", "welcome", "grid-3",
+                [
+                    ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} of apps", "#15803d", "#f0fdf4"),
+                    ("WC Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
+                    ("WC Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} of apps", "#a16207", "#fefce8"),
+                ],
+            ),
+            unsafe_allow_html=True,
+        )
+    with kpi_provisioning_col:
+        st.markdown(
+            render_kpi_compartment(
+                "Provisioning", "03 · PROVISIONING", "03", "provisioning", "grid-3",
+                [
+                    ("Completed", provisioning_completed, "CRM · Committed / Provisioned", "#15803d", "#f0fdf4"),
+                    ("Pending", provisioning_pending, "CRM · Pending / Delayed / Rework", "#a16207", "#fefce8"),
+                    ("Cancelled", provisioning_cancelled, "CRM · Cancelled orders", "#b91c1c", "#fef2f2"),
+                ],
+            ),
+            unsafe_allow_html=True,
+        )
+    with kpi_live_col:
+        st.markdown(
+            render_kpi_compartment(
+                "Committed / Live", "04 · DOWNSTREAM PIPELINE", "04", "live", "grid-3",
+                [
+                    ("Live", portal_live, f"{get_pct(portal_live, portal_total)} of portal", "#0f766e", "#f0fdfa"),
+                    ("Committed", portal_committed, f"{get_pct(portal_committed, portal_total)} of portal", "#a16207", "#fefce8"),
+                    ("Live Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} of portal", "#b91c1c", "#fef2f2"),
+                ],
+            ),
+            unsafe_allow_html=True,
+        )
+
+with outcome_chart_col:
+    st.markdown(
+        """<div style="padding:.2rem .15rem .35rem;">
+        <div style="color:#0f9f91;font-size:.62rem;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">APPLICATION OUTCOMES</div>
+        <div style="color:#14233b;font-size:1rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled</div>
+        <div style="color:#718096;font-size:.68rem;line-height:1.35;margin-top:.2rem;">Select a segment or hover to inspect the original source values.</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+    # Small outcome totals remain visible even where a sunburst segment is too
+    # narrow to fit its original status label.
+    compact_outcome_html = []
+    for name, color in [("Live", "#0f766e"), ("Pending", "#b45309"), ("Cancelled", "#b91c1c")]:
+        value = int(outcome_summary.get(name, 0))
+        share = value / outcome_total * 100 if outcome_total else 0.0
+        compact_outcome_html.append(
+            f'<span style="display:inline-flex;align-items:center;gap:.22rem;margin:0 .45rem .25rem 0;'
+            f'font-size:.69rem;color:#40516a;"><span style="width:7px;height:7px;border-radius:50%;background:{color};display:inline-block;"></span>'
+            f'<b style="color:#172942;">{name} {value:,}</b> <span style="color:#8491a3;">({share:.1f}%)</span></span>'
+        )
+    st.markdown("<div style='margin:.1rem 0 .15rem;'>" + "".join(compact_outcome_html) + "</div>", unsafe_allow_html=True)
+
+    if outcome_total == 0:
+        st.info("No applications are available for the selected reporting period.")
+    elif go is None:
+        st.warning("Plotly is not installed. Use the exact values table below to inspect every source status.")
     else:
         outcome_colors = {
-            "Live": "#0f766e",
-            "Pending": "#d97706",
-            "Cancelled": "#dc2626",
+            "Live": {"parent": "#0f766e", "leaf": "#8edbd0"},
+            "Pending": {"parent": "#b45309", "leaf": "#f3ce82"},
+            "Cancelled": {"parent": "#b91c1c", "leaf": "#f1a3a3"},
         }
-        chart_data = outcome_bucket_table.copy()
-        chart_data["Chart Label"] = chart_data.apply(
-            lambda r: f"{r['Source']} · {r['Stage']}: {r['Status']}", axis=1
-        )
-        chart_labels = chart_data["Chart Label"].astype(str).tolist()
-        chart_height = max(560, min(1500, 105 + 38 * len(chart_data)))
-        fig = go.Figure()
+        labels = ["All Applications"]
+        ids = ["all-applications"]
+        parents = [""]
+        values = [int(outcome_total)]
+        colors = ["#eaf0f6"]
+        customdata = [["All Applications", "All", "All Applications", int(outcome_total), "100.0%"]]
+
+        # Three outcome sectors, with each original source field/status value
+        # retained as a separate leaf. Labels are never translated or renamed.
         for outcome_name in ["Live", "Pending", "Cancelled"]:
-            subset = chart_data[chart_data["Outcome"] == outcome_name].copy()
-            if subset.empty:
-                continue
-            fig.add_trace(
-                go.Bar(
-                    name=outcome_name,
-                    x=subset["Applications"].astype(int).tolist(),
-                    y=subset["Chart Label"].astype(str).tolist(),
-                    orientation="h",
-                    marker=dict(color=outcome_colors[outcome_name], line=dict(color="#ffffff", width=1)),
-                    text=subset["Applications"].map(lambda value: f"{int(value):,}").tolist(),
-                    textposition="outside",
-                    cliponaxis=False,
-                    customdata=subset[["Source", "Stage", "Status", "% of Total"]].astype(str).values,
-                    hovertemplate=(
-                        "<b>%{customdata[2]}</b><br>"
-                        "Outcome: %{fullData.name}<br>"
-                        "Source: %{customdata[0]}<br>"
-                        "Field: %{customdata[1]}<br>"
-                        "Applications: %{x:,}<br>"
-                        "Share of all applications: %{customdata[3]}"
-                        "<extra></extra>"
-                    ),
-                )
+            outcome_id = f"outcome::{outcome_name}"
+            outcome_count = int(outcome_summary.get(outcome_name, 0))
+            labels.append(outcome_name)
+            ids.append(outcome_id)
+            parents.append("all-applications")
+            values.append(outcome_count)
+            colors.append(outcome_colors[outcome_name]["parent"])
+            category_share = outcome_count / outcome_total * 100 if outcome_total else 0.0
+            customdata.append([outcome_name, "All", "All", outcome_count, f"{category_share:.1f}%"])
+
+            leaves = outcome_bucket_table[outcome_bucket_table["Outcome"] == outcome_name]
+            for leaf_index, row in leaves.reset_index(drop=True).iterrows():
+                leaf_id = f"leaf::{outcome_name}::{leaf_index}"
+                original_status = str(row["Status"])
+                count = int(row["Applications"])
+                labels.append(original_status)
+                ids.append(leaf_id)
+                parents.append(outcome_id)
+                values.append(count)
+                colors.append(outcome_colors[outcome_name]["leaf"])
+                customdata.append([
+                    outcome_name,
+                    str(row["Source"]),
+                    str(row["Stage"]),
+                    original_status,
+                    f"{count / outcome_total * 100:.1f}%",
+                ])
+
+        fig = go.Figure(
+            go.Sunburst(
+                ids=ids,
+                labels=labels,
+                parents=parents,
+                values=values,
+                branchvalues="total",
+                sort=False,
+                maxdepth=2,
+                marker=dict(colors=colors, line=dict(color="#ffffff", width=2)),
+                customdata=customdata,
+                textinfo="label+value",
+                insidetextorientation="radial",
+                insidetextfont=dict(size=10, color="#14233b"),
+                hovertemplate=(
+                    "<b>%{label}</b><br>Applications: %{value:,.0f}<br>"
+                    "Outcome: %{customdata[0]}<br>Source: %{customdata[1]}<br>"
+                    "Source field: %{customdata[2]}<br>Original status: %{customdata[3]}<br>"
+                    "Share of all applications: %{customdata[4]}<extra></extra>"
+                ),
             )
+        )
         fig.update_layout(
-            height=chart_height,
-            margin=dict(t=18, l=12, r=70, b=24),
+            height=420,
+            margin=dict(t=4, l=4, r=4, b=4),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=11, color="#172942"),
-            barmode="overlay",
-            bargap=0.28,
-            showlegend=True,
-            legend=dict(
-                title="Application category",
-                orientation="h",
-                yanchor="bottom", y=1.02,
-                xanchor="right", x=1,
-            ),
-            xaxis=dict(
-                title="Number of applications",
-                rangemode="tozero",
-                gridcolor="#e8eef5",
-                zerolinecolor="#cbd5e1",
-            ),
-            yaxis=dict(
-                title="Original source field and status value",
-                categoryorder="array",
-                categoryarray=chart_labels,
-                autorange="reversed",
-                tickfont=dict(size=10),
-                automargin=True,
-                gridcolor="rgba(0,0,0,0)",
-            ),
-            uniformtext=dict(minsize=10, mode="show"),
+            font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=10, color="#172942"),
+            uniformtext=dict(minsize=8, mode="hide"),
         )
         with st.container(border=True):
             st.plotly_chart(
@@ -2330,10 +2335,12 @@ else:
                 config={"displayModeBar": False, "scrollZoom": False},
             )
             st.caption(
-                "Each bar is one original source-field/status combination. Colours show Live, Pending or Cancelled; hover for source, exact field, count and share. No CRM status labels are renamed."
+                "Click a Live, Pending or Cancelled sector to zoom into its original status values. Hover for source field, exact value and count."
             )
 
-    st.markdown("**Exact category values and counts**")
+# Complete source-value reconciliation stays available without occupying the
+# main dashboard: every distinct original status retains its Source and Stage.
+with st.expander("View all original source values and counts", expanded=False):
     display_outcome_table = outcome_bucket_table.rename(
         columns={"Stage": "Source field / stage", "Status": "Original status value"}
     )
