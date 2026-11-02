@@ -2374,7 +2374,7 @@ with outcome_chart_col:
                 bucket_share_outcome = bucket_count / outcome_count * 100 if outcome_count else 0.0
                 _add_hierarchy_node(
                     bucket_id, bucket_name, outcome_id, bucket_count,
-                    bucket_colors[bucket_name],
+                    outcome_colors[outcome_name],
                     [bucket_name, f"{bucket_share_all:.1f}%", f"{bucket_share_outcome:.1f}%", "100.0%", outcome_name, bucket_name, ""],
                     "bucket", outcome_name, bucket_name,
                 )
@@ -2394,7 +2394,7 @@ with outcome_chart_col:
                         part for part in [str(leaf["Source_Details"]), str(leaf["Source_Fields"])] if part
                     )
                     _add_hierarchy_node(
-                        leaf_id, status, bucket_id, count, bucket_light_colors[bucket_name],
+                        leaf_id, status, bucket_id, count, outcome_colors[outcome_name],
                         [status, f"{share_all:.1f}%", f"{share_outcome:.1f}%", f"{share_bucket:.1f}%", outcome_name, bucket_name, source_details],
                         "status", outcome_name, bucket_name, source_details,
                     )
@@ -2460,8 +2460,13 @@ with outcome_chart_col:
             share_current = count / active_parent_value if active_parent_value else 0.0
             midpoint_fraction = (cumulative_value + count / 2) / active_parent_value
             angle = -2 * math.pi * midpoint_fraction
-            anchor_x = 0.5 + 0.275 * math.cos(angle)
-            anchor_y = 0.5 + 0.395 * math.sin(angle)
+            ring_radius_x, ring_radius_y = {
+                "outcome": (0.19, 0.27),
+                "bucket": (0.34, 0.43),
+                "status": (0.46, 0.48),
+            }.get(child["kind"], (0.34, 0.43))
+            anchor_x = 0.5 + ring_radius_x * math.cos(angle)
+            anchor_y = 0.5 + ring_radius_y * math.sin(angle)
             label = child["label"]
             sector_arc_px = 2 * math.pi * estimated_outer_radius_px * share_current
             estimated_label_width_px = max(70.0, len(label) * 7.5 + 40.0)
@@ -2476,7 +2481,7 @@ with outcome_chart_col:
                     "count": count,
                     "anchor_x": anchor_x,
                     "anchor_y": anchor_y,
-                    "color": bucket_colors.get(child["bucket"], outcome_colors.get(child["outcome"], "#64748b")),
+                    "color": outcome_colors.get(child["outcome"], "#64748b"),
                 })
             cumulative_value += count
 
@@ -2503,6 +2508,11 @@ with outcome_chart_col:
                     "xanchor": "left" if side == "left" else "right", "yanchor": "middle",
                 })
 
+        # Keep the full path visible at every drill level. The active node only
+        # increases the number of outward rings; it never becomes a new root.
+        active_kind = node_lookup[active_level]["kind"]
+        visible_depth = {"root": 2, "outcome": 3, "bucket": 4}.get(active_kind, 2)
+
         fig = go.Figure(
             go.Sunburst(
                 ids=node_ids,
@@ -2512,11 +2522,10 @@ with outcome_chart_col:
                 branchvalues="total",
                 sort=False,
                 rotation=0,
-                # Plotly expects an empty level string to start from the root.
-                # Two rendered sectors means root + outcomes by default, then
-                # selected outcome + buckets, then selected bucket + statuses.
-                level="" if active_level == "all-applications" else active_level,
-                maxdepth=2,
+                # Always render from the root so All Applications and all
+                # previously opened inner rings remain visible during drill-down.
+                level="",
+                maxdepth=visible_depth,
                 domain=dict(x=[0.20, 0.80], y=[0.07, 0.93]),
                 marker=dict(colors=node_colors, line=dict(color="#ffffff", width=2)),
                 customdata=node_customdata,
@@ -2601,8 +2610,8 @@ with outcome_chart_col:
                     st.session_state[level_state_key] = clicked_id
                     st.rerun()
             st.caption(
-                "The default view shows All Applications and Live / Pending / Cancelled. Click an outcome to reveal its stage buckets; "
-                "click a bucket to reveal original status values. Small-sector arrows are recalculated for each drill-down. "
+                "The default view shows All Applications and Live / Pending / Cancelled. Click an outcome to add its stage-bucket ring while keeping the inner rings visible; "
+                "click a bucket to add original CRM status values as the outer ring. Each outcome branch keeps its own consistent colour. "
                 "Dispatch / Letter source fields are grouped under Confirmation without renaming the original values. Use Back or Reset to navigate."
             )
 
