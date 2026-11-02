@@ -10,7 +10,7 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
 - CRM Provisioning Status is reported separately as Completed, Pending, and Cancelled; provisioning cancellations do not enter Committed/Live.
 - CRM Connectivity: Committed counts in both Provisioning Completed and Committed Rem.; legacy rows remain unclassified for Provisioning.
 - Executive KPI cards use a compact two-row, multi-column layout.
-- Compact interactive sunburst sits beside the KPI cards; each leaf preserves its exact original source status and count, with a full detail table in an expander.
+- Static four-level sunburst sits beside the KPI cards; all hierarchy levels are visible by default, with outside arrow callouts for labels that do not fit inside their sectors.
 """
 
 import logging
@@ -2252,7 +2252,7 @@ with outcome_chart_col:
         """<div style="padding:.2rem .15rem .35rem;">
         <div style="color:#0f9f91;font-size:.62rem;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">APPLICATION OUTCOMES</div>
         <div style="color:#14233b;font-size:1.05rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled</div>
-        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">Default view shows All Applications and Live / Pending / Cancelled. Click an outcome to reveal its stage buckets, then click a bucket to reveal exact original status values. Small-sector arrows are recalculated for the level currently on screen. Dispatch / Letter fields appear under Confirmation, with their original field names retained.</div>
+        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">All levels are shown together: All Applications → Live / Pending / Cancelled → stage buckets → exact original CRM status values. Small sectors use arrow callouts so their labels remain readable. Dispatch / Letter fields appear under Confirmation, with their original field names retained.</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -2273,9 +2273,8 @@ with outcome_chart_col:
     elif go is None:
         st.warning("Plotly is not installed. Use the exact values table below to inspect every source status.")
     else:
-        # Four hierarchy levels: All Applications -> Outcome -> Stage Bucket ->
-        # exact original status. The default shows the root plus outcomes; each
-        # click reveals exactly one additional ring for the selected branch.
+        # Four fixed hierarchy levels: All Applications -> Outcome -> Stage Bucket ->
+        # exact original status. Every level is rendered together in this static view.
         outcome_colors = {
             "Live": "#0f766e",
             "Pending": "#b45309",
@@ -2412,128 +2411,126 @@ with outcome_chart_col:
                 if leaves_total != meta["value"]:
                     raise ValueError(f"Sunburst {meta['bucket']} status ring does not reconcile.")
 
-        # Streamlit captures direct Sunburst clicks (id + parent). Store the
-        # selected node and rebuild the visible chart level so labels and arrows
-        # are recalculated for the currently visible sectors, not left static.
-        level_state_key = "sparta_outcome_sunburst_level_v2"
-        chart_state_key = "sparta_outcome_sunburst_clicks_v2"
-        if level_state_key not in st.session_state:
-            st.session_state[level_state_key] = "all-applications"
-        active_level = st.session_state.get(level_state_key, "all-applications")
-        if active_level not in node_lookup:
-            active_level = "all-applications"
-            st.session_state[level_state_key] = active_level
-
-        # Breadcrumb and direct navigation are helpful after drilling into a
-        # branch, while clicking the central parent segment also resets it.
-        path = []
-        path_cursor = active_level
-        while path_cursor and path_cursor in node_lookup:
-            path.append(node_lookup[path_cursor]["label"])
-            path_cursor = node_lookup[path_cursor]["parent"]
-        path.reverse()
-        nav_left, nav_mid, nav_right = st.columns([1, 4, 1])
-        with nav_left:
-            if active_level != "all-applications" and st.button("← Back", key="outcome_sunburst_back", use_container_width=True):
-                st.session_state[level_state_key] = node_lookup[active_level]["parent"] or "all-applications"
-                st.rerun()
-        with nav_mid:
-            st.markdown(
-                "<div style='padding:.42rem .2rem;color:#64748b;font-size:.78rem;'>Viewing: "
-                + " <span style='color:#0f766e;font-weight:750;'>›</span> ".join(escape(x) for x in path)
-                + "</div>", unsafe_allow_html=True,
-            )
-        with nav_right:
-            if active_level != "all-applications" and st.button("Reset", key="outcome_sunburst_reset", use_container_width=True):
-                st.session_state[level_state_key] = "all-applications"
-                st.rerun()
-
-        visible_child_ids = node_children.get(active_level, [])
-        active_parent_value = max(1, int(node_lookup[active_level]["value"]))
+        # Render every hierarchy level at once. No chart selection events,
+        # session-state navigation, or reruns are needed for this static view.
+        # Labels that cannot comfortably fit in their sector are moved into
+        # outside text boxes connected to the relevant sector with an arrow.
+        root_total = max(1, int(outcome_total))
+        sector_starts = {"all-applications": 0.0}
+        sector_positions = {}
         callouts_by_side = {"left": [], "right": []}
-        cumulative_value = 0
-        small_sector_threshold = 0.055
-        estimated_outer_radius_px = 320.0
-        for child_id in visible_child_ids:
-            child = node_lookup[child_id]
+        display_labels = list(node_labels)
+        node_index_by_id = {node_id: i for i, node_id in enumerate(node_ids)}
+
+        # Assign each node its midpoint around the full circle. Since every
+        # parent reconciles to the sum of its children, absolute application
+        # counts can be used to calculate each child sector's angular position.
+        for parent_id in node_ids:
+            parent_start = sector_starts.get(parent_id, 0.0)
+            cumulative_count = 0
+            for child_id in node_children.get(parent_id, []):
+                child = node_lookup[child_id]
+                child_count = int(child["value"])
+                child_start = parent_start + cumulative_count / root_total
+                midpoint_fraction = child_start + child_count / (2 * root_total)
+                sector_starts[child_id] = child_start
+                sector_positions[child_id] = midpoint_fraction
+                cumulative_count += child_count
+
+        # Approximate the usable arc at each ring's radius. Long labels and
+        # narrow sectors become external callouts; all remaining labels stay
+        # directly on their sectors. The original status text is never changed.
+        ring_settings = {
+            "outcome": {"radius_x": 0.105, "radius_y": 0.14, "radius_px": 135.0},
+            "bucket":  {"radius_x": 0.195, "radius_y": 0.26, "radius_px": 245.0},
+            "status":  {"radius_x": 0.27, "radius_y": 0.35, "radius_px": 345.0},
+        }
+        estimated_chart_width_px = 1250.0
+        callout_counts = {"left": 0, "right": 0}
+
+        for node_id in node_ids[1:]:
+            child = node_lookup[node_id]
+            settings = ring_settings.get(child["kind"])
+            if not settings:
+                continue
             count = int(child["value"])
-            share_current = count / active_parent_value if active_parent_value else 0.0
-            midpoint_fraction = (cumulative_value + count / 2) / active_parent_value
-            angle = -2 * math.pi * midpoint_fraction
-            ring_radius_x, ring_radius_y = {
-                "outcome": (0.19, 0.27),
-                "bucket": (0.34, 0.43),
-                "status": (0.46, 0.48),
-            }.get(child["kind"], (0.34, 0.43))
-            anchor_x = 0.5 + ring_radius_x * math.cos(angle)
-            anchor_y = 0.5 + ring_radius_y * math.sin(angle)
-            label = child["label"]
-            sector_arc_px = 2 * math.pi * estimated_outer_radius_px * share_current
-            estimated_label_width_px = max(70.0, len(label) * 7.5 + 40.0)
-            needs_callout = (
-                active_level != "all-applications"
-                and (share_current < small_sector_threshold or sector_arc_px < estimated_label_width_px)
-            )
-            if needs_callout:
-                side = "right" if math.cos(angle) >= 0 else "left"
-                callouts_by_side[side].append({
-                    "label": label,
-                    "count": count,
-                    "anchor_x": anchor_x,
-                    "anchor_y": anchor_y,
-                    "color": outcome_colors.get(child["outcome"], "#64748b"),
-                })
-            cumulative_value += count
+            share_of_total = count / root_total
+            label = str(child["label"])
+            # The text itself is shown inside the sector; the count is already
+            # available in the hover. Callout boxes include both label and count.
+            estimated_label_width_px = max(44.0, len(label) * 7.4 + 24.0)
+            sector_arc_px = 2 * math.pi * settings["radius_px"] * share_of_total
+            needs_callout = sector_arc_px < estimated_label_width_px + 12.0 or len(label) > 24
+            if not needs_callout:
+                continue
+
+            midpoint_fraction = sector_positions.get(node_id, 0.0)
+            angle = math.pi / 2 - 2 * math.pi * midpoint_fraction
+            anchor_x = 0.5 + settings["radius_x"] * math.cos(angle)
+            anchor_y = 0.5 + settings["radius_y"] * math.sin(angle)
+            side = "right" if math.cos(angle) >= 0 else "left"
+            callouts_by_side[side].append({
+                "label": label,
+                "count": count,
+                "anchor_x": anchor_x,
+                "anchor_y": anchor_y,
+                "color": outcome_colors.get(child["outcome"], "#64748b"),
+            })
+            # Blank only the plotted label for this node; the exact original
+            # label remains in node_lookup/customdata and is printed in its box.
+            display_labels[node_index_by_id[node_id]] = ""
+            callout_counts[side] += 1
 
         callout_annotations = []
+        max_side_callouts = max(callout_counts.values()) if callout_counts else 0
+        chart_height = max(920, 180 + max_side_callouts * 52)
         for side, callouts in callouts_by_side.items():
             callouts.sort(key=lambda item: item["anchor_y"], reverse=True)
             if not callouts:
                 continue
-            slot_positions = [0.5] if len(callouts) == 1 else np.linspace(0.94, 0.06, len(callouts)).tolist()
+            slot_positions = (
+                [0.5] if len(callouts) == 1
+                else np.linspace(0.97, 0.03, len(callouts)).tolist()
+            )
             label_x = 0.012 if side == "left" else 0.988
             for item, label_y in zip(callouts, slot_positions):
                 callout_annotations.append({
                     "x": item["anchor_x"], "y": item["anchor_y"],
                     "xref": "paper", "yref": "paper",
-                    "ax": (label_x - item["anchor_x"]) * 1200,
-                    "ay": (item["anchor_y"] - float(label_y)) * 760,
-                    "text": f"<b>{escape(item['label'])}</b><br><span style='font-size:12px'>{item['count']:,} applications</span>",
+                    "ax": (label_x - item["anchor_x"]) * estimated_chart_width_px,
+                    "ay": (item["anchor_y"] - float(label_y)) * chart_height,
+                    "text": (
+                        f"<b>{escape(item['label'])}</b><br>"
+                        f"<span style='font-size:12px'>{item['count']:,} applications</span>"
+                    ),
                     "showarrow": True, "arrowhead": 2, "arrowsize": 0.9,
                     "arrowwidth": 1.25, "arrowcolor": item["color"], "standoff": 3,
-                    "bgcolor": "rgba(255,255,255,0.97)", "bordercolor": item["color"],
-                    "borderwidth": 1, "borderpad": 4,
-                    "font": {"family": "Inter, Segoe UI, Arial, sans-serif", "size": 14, "color": "#172942"},
+                    "bgcolor": "rgba(255,255,255,0.98)", "bordercolor": item["color"],
+                    "borderwidth": 1, "borderpad": 4, "width": 265,
+                    "font": {"family": "Inter, Segoe UI, Arial, sans-serif", "size": 13, "color": "#172942"},
                     "align": "left" if side == "left" else "right",
                     "xanchor": "left" if side == "left" else "right", "yanchor": "middle",
                 })
 
-        # Keep the full path visible at every drill level. The active node only
-        # increases the number of outward rings; it never becomes a new root.
-        active_kind = node_lookup[active_level]["kind"]
-        visible_depth = {"root": 2, "outcome": 3, "bucket": 4}.get(active_kind, 2)
-
         fig = go.Figure(
             go.Sunburst(
                 ids=node_ids,
-                labels=node_labels,
+                labels=display_labels,
                 parents=node_parents,
                 values=node_values,
                 branchvalues="total",
                 sort=False,
                 rotation=0,
-                # Always render from the root so All Applications and all
-                # previously opened inner rings remain visible during drill-down.
                 level="",
-                maxdepth=visible_depth,
-                domain=dict(x=[0.20, 0.80], y=[0.07, 0.93]),
+                maxdepth=4,
+                domain=dict(x=[0.20, 0.80], y=[0.05, 0.95]),
                 marker=dict(colors=node_colors, line=dict(color="#ffffff", width=2)),
                 customdata=node_customdata,
-                textinfo="label+value",
+                textinfo="label",
                 insidetextorientation="auto",
-                textfont=dict(size=18, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
-                insidetextfont=dict(size=18, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
-                outsidetextfont=dict(size=16, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
+                textfont=dict(size=17, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
+                insidetextfont=dict(size=17, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
+                outsidetextfont=dict(size=14, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
                 hovertemplate=(
                     "<b>%{customdata[0]}</b><br>"
                     "Applications: %{value:,.0f}<br>"
@@ -2550,70 +2547,27 @@ with outcome_chart_col:
             )
         )
         fig.update_layout(
-            height=800,
-            margin=dict(t=14, l=8, r=8, b=14),
+            height=chart_height,
+            margin=dict(t=20, l=8, r=8, b=20),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=14, color="#172942"),
             annotations=callout_annotations,
-            uniformtext=dict(minsize=14, mode="hide"),
+            uniformtext=dict(minsize=12, mode="hide"),
         )
         with st.container(border=True):
-            click_events_supported = True
-            try:
-                chart_event = st.plotly_chart(
-                    fig,
-                    use_container_width=True,
-                    key=chart_state_key,
-                    on_select="rerun",
-                    selection_mode="points",
-                    config={"displayModeBar": False, "scrollZoom": False},
-                )
-            except TypeError:
-                # Older Streamlit versions still display the chart, but do not
-                # expose hierarchical point-click selections to Python.
-                click_events_supported = False
-                chart_event = st.plotly_chart(
-                    fig,
-                    use_container_width=True,
-                    key=chart_state_key,
-                    config={"displayModeBar": False, "scrollZoom": False},
-                )
-                st.info("For dynamic drill-down arrows, update Streamlit to a version that supports Plotly chart selection events.")
-
-            selected_points = []
-            if click_events_supported:
-                try:
-                    selected_points = list(chart_event.selection.points)
-                except Exception:
-                    try:
-                        selected_points = list(chart_event.get("selection", {}).get("points", []))
-                    except Exception:
-                        selected_points = []
-            if selected_points:
-                selected_point = selected_points[-1]
-                clicked_id = selected_point.get("id") if isinstance(selected_point, dict) else None
-                if not clicked_id and isinstance(selected_point, dict):
-                    point_index = selected_point.get("point_number", selected_point.get("point_index"))
-                    if point_index is not None:
-                        try:
-                            clicked_id = node_ids[int(point_index)]
-                        except (IndexError, TypeError, ValueError):
-                            clicked_id = None
-                # Status leaves are terminal values, not drill targets. Only
-                # the root, outcome, and stage-bucket nodes open another level.
-                if (
-                    clicked_id in node_lookup
-                    and node_lookup[clicked_id]["kind"] in {"root", "outcome", "bucket"}
-                    and clicked_id != active_level
-                ):
-                    st.session_state[level_state_key] = clicked_id
-                    st.rerun()
-            st.caption(
-                "The default view shows All Applications and Live / Pending / Cancelled. Click an outcome to add its stage-bucket ring while keeping the inner rings visible; "
-                "click a bucket to add original CRM status values as the outer ring. Each outcome branch keeps its own consistent colour. "
-                "Dispatch / Letter source fields are grouped under Confirmation without renaming the original values. Use Back or Reset to navigate."
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                config={"displayModeBar": False, "scrollZoom": False},
             )
+            st.caption(
+                "All four levels are visible by default: All Applications → Live / Pending / Cancelled → "
+                "stage buckets → exact original CRM status values. Labels that do not fit inside a "
+                "sector are shown in arrow-connected text boxes. Outcome colours remain consistent "
+                "through every outer ring; hover over any sector for its count, percentages and source field."
+            )
+
 
 # Complete source-value reconciliation stays available without occupying the
 # main dashboard: every distinct original status retains its Source and Stage.
