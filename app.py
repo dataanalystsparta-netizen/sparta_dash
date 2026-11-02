@@ -2487,11 +2487,11 @@ with outcome_chart_col:
                 # Use virtually the whole plot area for the circular hierarchy.
                 domain=dict(x=[0.01, 0.99], y=[0.01, 0.99]),
                 # Solid opaque fills prevent any apparent depth-based tinting.
-                # A slimmer divider keeps small outer sectors from looking paler
-                # simply because white borders occupy more of their visible area.
+                # A thicker white divider creates crisp, consistent boundaries between
+                # every sector and ring while preserving the pastel fills.
                 marker=dict(
                     colors=node_colors,
-                    line=dict(color="#ffffff", width=1),
+                    line=dict(color="#ffffff", width=2.5),
                 ),
                 customdata=node_customdata,
                 textinfo="label",
