@@ -2491,7 +2491,6 @@ with outcome_chart_col:
                 # simply because white borders occupy more of their visible area.
                 marker=dict(
                     colors=node_colors,
-                    opacity=1,
                     line=dict(color="#ffffff", width=1),
                 ),
                 customdata=node_customdata,
