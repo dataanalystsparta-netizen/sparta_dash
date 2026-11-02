@@ -2449,6 +2449,22 @@ with outcome_chart_col:
                 if leaves_total != meta["value"]:
                     raise ValueError(f"Sunburst {meta['bucket']} status ring does not reconcile.")
 
+        # Rebuild the final colour array directly from the outcome lookup.
+        # This is deliberately done after the hierarchy is complete so every
+        # outcome, bucket and status sector receives the exact same solid fill.
+        # Only the centre/root uses a neutral colour.
+        root_colour = "#eaf0f6"
+        node_colors = [
+            root_colour if node_id == "all-applications"
+            else outcome_colors[node_lookup[node_id]["outcome"]]
+            for node_id in node_ids
+        ]
+        for node_id, colour in zip(node_ids, node_colors):
+            if node_id != "all-applications":
+                expected_colour = outcome_colors[node_lookup[node_id]["outcome"]]
+                if colour != expected_colour:
+                    raise ValueError(f"Sunburst colour mismatch for {node_id}: {colour} != {expected_colour}")
+
         # Render every hierarchy level at once. No chart selection events,
         # session-state navigation, external callouts, or chart-triggered reruns.
         # The full sunburst domain is used so the rings can occupy the maximum
@@ -2470,7 +2486,14 @@ with outcome_chart_col:
                 maxdepth=4,
                 # Use virtually the whole plot area for the circular hierarchy.
                 domain=dict(x=[0.01, 0.99], y=[0.01, 0.99]),
-                marker=dict(colors=node_colors, line=dict(color="#ffffff", width=2)),
+                # Solid opaque fills prevent any apparent depth-based tinting.
+                # A slimmer divider keeps small outer sectors from looking paler
+                # simply because white borders occupy more of their visible area.
+                marker=dict(
+                    colors=node_colors,
+                    opacity=1,
+                    line=dict(color="#ffffff", width=1),
+                ),
                 customdata=node_customdata,
                 textinfo="label",
                 texttemplate="<b>%{label}</b><br>%{value:,.0f}",
