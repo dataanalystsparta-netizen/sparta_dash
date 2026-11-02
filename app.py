@@ -2256,7 +2256,7 @@ with outcome_chart_col:
     )
 
     compact_outcome_html = []
-    for name, color in [("Live", "#0f766e"), ("Pending", "#b45309"), ("Cancelled", "#b91c1c")]:
+    for name, color in [("Live", "#D9F2E3"), ("Pending", "#FFF2C2"), ("Cancelled", "#F8D7DA")]:
         value = int(outcome_summary.get(name, 0))
         share = value / outcome_total * 100 if outcome_total else 0.0
         compact_outcome_html.append(
@@ -2273,10 +2273,13 @@ with outcome_chart_col:
     else:
         # Four fixed hierarchy levels: All Applications -> Outcome -> Stage Bucket ->
         # exact original status. Every level is rendered together in this static view.
+        # A single soft colour is used for each outcome across all three
+        # sunburst rings (outcome, stage bucket and exact CRM status).
+        # The neutral centre remains separate so the hierarchy is easy to read.
         outcome_colors = {
-            "Live": "#0f766e",
-            "Pending": "#b45309",
-            "Cancelled": "#b91c1c",
+            "Live": "#D9F2E3",       # Light green
+            "Pending": "#FFF2C2",    # Light yellow
+            "Cancelled": "#F8D7DA",  # Light red
         }
         bucket_colors = {
             "Inbound": "#c2410c",
