@@ -10,11 +10,10 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
 - CRM Provisioning Status is reported separately as Completed, Pending, and Cancelled; provisioning cancellations do not enter Committed/Live.
 - CRM Connectivity: Committed counts in both Provisioning Completed and Committed Rem.; legacy rows remain unclassified for Provisioning.
 - Executive KPI cards use a compact two-row, multi-column layout.
-- Static four-level sunburst sits beside the KPI cards; all hierarchy levels are visible by default, with outside arrow callouts for labels that do not fit inside their sectors.
+- Static four-level sunburst sits beside the KPI cards; all hierarchy levels are visible by default, with labels placed directly on their sectors and no external callouts.
 """
 
 import logging
-import math
 import re
 import time
 from datetime import datetime
@@ -2183,10 +2182,9 @@ def build_application_outcome_hierarchy(df: pd.DataFrame):
 outcome_df, outcome_bucket_table, outcome_summary = build_application_outcome_hierarchy(master_df)
 outcome_total = len(outcome_df)
 
-# Place a narrow, vertically stacked KPI rail beside the larger interactive chart.
-# KPI groups are intentionally stacked down the left; the sunburst receives most
-# of the horizontal space so original status values have more room to display.
-kpi_dashboard_col, outcome_chart_col = st.columns([0.96, 2.34], gap="medium")
+# Keep the KPI rail compact and give the static sunburst most of the available
+# dashboard width. The sunburst itself uses the full chart domain (no callout lanes).
+kpi_dashboard_col, outcome_chart_col = st.columns([0.84, 2.76], gap="medium")
 
 with kpi_dashboard_col:
     st.markdown(
@@ -2252,7 +2250,7 @@ with outcome_chart_col:
         """<div style="padding:.2rem .15rem .35rem;">
         <div style="color:#0f9f91;font-size:.62rem;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">APPLICATION OUTCOMES</div>
         <div style="color:#14233b;font-size:1.05rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled</div>
-        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">All levels are shown together: All Applications → Live / Pending / Cancelled → stage buckets → exact original CRM status values. Small sectors use arrow callouts so their labels remain readable. Dispatch / Letter fields appear under Confirmation, with their original field names retained.</div>
+        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">All levels are shown together: All Applications → Live / Pending / Cancelled → stage buckets → exact original CRM status values. Labels sit directly on the sectors; hover over any segment for its exact value, count and source field. Dispatch / Letter fields appear under Confirmation, with their original field names retained.</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -2412,118 +2410,12 @@ with outcome_chart_col:
                     raise ValueError(f"Sunburst {meta['bucket']} status ring does not reconcile.")
 
         # Render every hierarchy level at once. No chart selection events,
-        # session-state navigation, or reruns are needed for this static view.
-        # Labels that cannot comfortably fit in their sector are moved into
-        # outside text boxes connected to the relevant sector with an arrow.
-        root_total = max(1, int(outcome_total))
-        sector_starts = {"all-applications": 0.0}
-        sector_positions = {}
-        callouts_by_side = {"left": [], "right": []}
+        # session-state navigation, external callouts, or chart-triggered reruns.
+        # The full sunburst domain is used so the rings can occupy the maximum
+        # available chart area. Small labels are reduced rather than moved outside.
         display_labels = list(node_labels)
-        node_index_by_id = {node_id: i for i, node_id in enumerate(node_ids)}
-
-        # Assign each node its midpoint around the full circle. Since every
-        # parent reconciles to the sum of its children, absolute application
-        # counts calculate each child sector's angular position. Plotly starts
-        # at 3 o'clock and proceeds counter-clockwise (rotation=0).
-        for parent_id in node_ids:
-            parent_start = sector_starts.get(parent_id, 0.0)
-            cumulative_count = 0
-            for child_id in node_children.get(parent_id, []):
-                child = node_lookup[child_id]
-                child_count = int(child["value"])
-                child_start = parent_start + cumulative_count / root_total
-                midpoint_fraction = child_start + child_count / (2 * root_total)
-                sector_starts[child_id] = child_start
-                sector_positions[child_id] = midpoint_fraction
-                cumulative_count += child_count
-
-        # Approximate the usable arc at each ring's radius. Long labels and
-        # narrow sectors become external callouts; all remaining labels stay
-        # directly on their sectors. The original status text is never changed.
-        # The sunburst is kept in a central circular lane so the two callout
-        # columns sit outside it. These are paper-coordinate radii (not guessed
-        # screen pixels), measured near the middle of each hierarchy ring.
-        ring_settings = {
-            "outcome": {"radius_x": 0.090, "radius_y": 0.085, "radius_px": 85.0},
-            "bucket":  {"radius_x": 0.155, "radius_y": 0.145, "radius_px": 140.0},
-            "status":  {"radius_x": 0.215, "radius_y": 0.200, "radius_px": 195.0},
-        }
-        callout_counts = {"left": 0, "right": 0}
-
-        for node_id in node_ids[1:]:
-            child = node_lookup[node_id]
-            settings = ring_settings.get(child["kind"])
-            if not settings:
-                continue
-            count = int(child["value"])
-            share_of_total = count / root_total
-            label = str(child["label"])
-            # The text itself is shown inside the sector; the count is already
-            # available in the hover. Callout boxes include both label and count.
-            estimated_label_width_px = max(44.0, len(label) * 7.4 + 24.0)
-            sector_arc_px = 2 * math.pi * settings["radius_px"] * share_of_total
-            needs_callout = sector_arc_px < estimated_label_width_px + 12.0 or len(label) > 24
-            if not needs_callout:
-                continue
-
-            midpoint_fraction = sector_positions.get(node_id, 0.0)
-            # Plotly Sunburst starts its first sector at 3 o'clock and lays
-            # subsequent sectors counter-clockwise. Match that exact convention
-            # so every arrow lands on the sector that owns its label.
-            angle = 2 * math.pi * midpoint_fraction
-            anchor_x = 0.5 + settings["radius_x"] * math.cos(angle)
-            anchor_y = 0.5 + settings["radius_y"] * math.sin(angle)
-            side = "right" if math.cos(angle) >= 0 else "left"
-            callouts_by_side[side].append({
-                "label": label,
-                "count": count,
-                "anchor_x": anchor_x,
-                "anchor_y": anchor_y,
-                "color": outcome_colors.get(child["outcome"], "#64748b"),
-            })
-            # Blank only the plotted label for this node; the exact original
-            # label remains in node_lookup/customdata and is printed in its box.
-            display_labels[node_index_by_id[node_id]] = ""
-            callout_counts[side] += 1
-
-        callout_annotations = []
-        max_side_callouts = max(callout_counts.values()) if callout_counts else 0
-        chart_width = 900
-        chart_height = max(920, 180 + max_side_callouts * 52)
-        # Plotly arrow tails use pixel offsets. Keep the chart canvas fixed so
-        # those offsets are calculated against the actual rendered dimensions.
-        plot_width_px = chart_width - 16  # 8 px left + right margins
-        plot_height_px = chart_height - 40  # 20 px top + bottom margins
-        for side, callouts in callouts_by_side.items():
-            callouts.sort(key=lambda item: item["anchor_y"], reverse=True)
-            if not callouts:
-                continue
-            slot_positions = (
-                [0.5] if len(callouts) == 1
-                else np.linspace(0.965, 0.035, len(callouts)).tolist()
-            )
-            label_x = 0.008 if side == "left" else 0.992
-            for item, label_y in zip(callouts, slot_positions):
-                callout_annotations.append({
-                    "x": item["anchor_x"], "y": item["anchor_y"],
-                    "xref": "paper", "yref": "paper",
-                    # Plotly annotations use pixel offsets for arrow tails.
-                    # The fixed chart canvas makes these offsets predictable.
-                    "ax": (label_x - item["anchor_x"]) * plot_width_px,
-                    "ay": (item["anchor_y"] - float(label_y)) * plot_height_px,
-                    "text": (
-                        f"<b>{escape(item['label'])}</b><br>"
-                        f"<span style='font-size:11px'>{item['count']:,} applications</span>"
-                    ),
-                    "showarrow": True, "arrowhead": 2, "arrowsize": 0.9,
-                    "arrowwidth": 1.2, "arrowcolor": item["color"], "standoff": 3,
-                    "bgcolor": "rgba(255,255,255,0.98)", "bordercolor": item["color"],
-                    "borderwidth": 1, "borderpad": 4, "width": 205,
-                    "font": {"family": "Inter, Segoe UI, Arial, sans-serif", "size": 12, "color": "#172942"},
-                    "align": "left" if side == "left" else "right",
-                    "xanchor": "left" if side == "left" else "right", "yanchor": "middle",
-                })
+        chart_width = 1200
+        chart_height = 980
 
         fig = go.Figure(
             go.Sunburst(
@@ -2536,15 +2428,14 @@ with outcome_chart_col:
                 rotation=0,
                 level="",
                 maxdepth=4,
-                # Reserve left/right lanes for the outside label boxes.
-                domain=dict(x=[0.25, 0.75], y=[0.05, 0.95]),
+                # Use virtually the whole plot area for the circular hierarchy.
+                domain=dict(x=[0.01, 0.99], y=[0.01, 0.99]),
                 marker=dict(colors=node_colors, line=dict(color="#ffffff", width=2)),
                 customdata=node_customdata,
                 textinfo="label",
                 insidetextorientation="auto",
-                textfont=dict(size=17, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
-                insidetextfont=dict(size=17, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
-                outsidetextfont=dict(size=14, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
+                textfont=dict(size=12, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
+                insidetextfont=dict(size=12, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
                 hovertemplate=(
                     "<b>%{customdata[0]}</b><br>"
                     "Applications: %{value:,.0f}<br>"
@@ -2563,24 +2454,23 @@ with outcome_chart_col:
         fig.update_layout(
             width=chart_width,
             height=chart_height,
-            margin=dict(t=20, l=8, r=8, b=20),
+            margin=dict(t=4, l=4, r=4, b=4),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=14, color="#172942"),
-            annotations=callout_annotations,
-            uniformtext=dict(minsize=12, mode="hide"),
+            uniformtext=dict(minsize=8, mode="show"),
         )
         with st.container(border=True):
             st.plotly_chart(
                 fig,
-                use_container_width=False,
-                config={"displayModeBar": False, "scrollZoom": False},
+                use_container_width=True,
+                config={"displayModeBar": False, "scrollZoom": False, "responsive": True},
             )
             st.caption(
-                "All four levels are visible by default: All Applications → Live / Pending / Cancelled → "
-                "stage buckets → exact original CRM status values. Small labels are shown in side "
-                "callouts with arrows anchored to their own sectors. Outcome colours remain consistent "
-                "through every outer ring; hover over any sector for its count, percentages and source field."
+                "All four levels are visible by default, with labels placed directly on their sectors. "
+                "The chart expands to the available column width; smaller labels are reduced to fit. "
+                "Outcome colours remain consistent through every outer ring. Hover over any sector for "
+                "its exact count, percentages and source field; the complete value list remains below."
             )
 
 
