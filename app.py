@@ -2082,6 +2082,10 @@ def classify_application_outcome(row: pd.Series):
         ("Provisioning Status", provisioning_raw, provisioning_source_raw),
         (welcome_stage, welcome_raw, welcome_source_raw),
         ("Quality Status", quality_raw, quality_source_raw),
+        # Non-cancellation inbound statuses (for example Inbound Hold or
+        # Inbound To Be Extended) remain visible in the dedicated Inbound bucket
+        # when no later stage has a status yet.
+        ("Inbound Status", inbound_status_norm, row.get("Inbound Status", "")),
     ]
     for stage_name, normalized_value, original_value in pending_candidates:
         if normalized_value:
@@ -2095,9 +2099,32 @@ def classify_application_outcome(row: pd.Series):
     return "Pending", "Application Status", "(blank)"
 
 
+def outcome_stage_bucket(stage_name: str) -> str:
+    """Map source fields into the six requested hierarchy buckets.
+
+    Dispatch/Letter fields are grouped with Confirmation in the chart, while
+    their exact original field names remain visible in the reconciliation table
+    and hover source details.
+    """
+    stage = _outcome_text(stage_name).lower()
+    if stage == "inbound status":
+        return "Inbound"
+    if "quality" in stage:
+        return "Quality"
+    if "welcome" in stage:
+        return "Welcome"
+    if "provision" in stage:
+        return "Provisioning"
+    if "dispatch" in stage or "letter" in stage or "confirmation" in stage or stage == "call status":
+        return "Confirmation"
+    # Portal / onboarding and the final blank fallback are shown under the
+    # requested Onboarding bucket so that every application remains visible.
+    return "Onboarding"
+
+
 def build_application_outcome_hierarchy(df: pd.DataFrame):
-    """Return exclusive outcomes grouped by source field and original status."""
-    columns = ["Outcome", "Source", "Stage", "Status"]
+    """Return exclusive outcomes grouped by the requested stage buckets."""
+    columns = ["Outcome", "Bucket", "Source", "Stage", "Status"]
     if df is None or df.empty:
         empty = pd.DataFrame(columns=columns)
         table = pd.DataFrame(columns=columns + ["Applications", "% of Total"])
@@ -2105,6 +2132,7 @@ def build_application_outcome_hierarchy(df: pd.DataFrame):
 
     outcomes = df.apply(classify_application_outcome, axis=1, result_type="expand")
     outcomes.columns = ["Outcome", "Stage", "Status"]
+    outcomes["Bucket"] = outcomes["Stage"].apply(outcome_stage_bucket)
     outcomes["Source"] = (
         df.get("Source", pd.Series("Unknown", index=df.index))
         .fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
@@ -2116,34 +2144,31 @@ def build_application_outcome_hierarchy(df: pd.DataFrame):
         .reindex(outcome_order, fill_value=0).astype(int).to_dict()
     )
     bucket_table = (
-        outcomes.groupby(["Outcome", "Source", "Stage", "Status"], dropna=False)
+        outcomes.groupby(["Outcome", "Bucket", "Source", "Stage", "Status"], dropna=False)
         .size().rename("Applications").reset_index()
     )
     stage_order = {
-        "Inbound Status": 0,
-        "Quality Status": 1,
-        "Welcome Call Status": 2,
-        "Welcome Status": 2,
-        "Provisioning Status": 3,
-        "LetterStatus (Dispatch Status)": 4,
-        "Letter Status": 4,
-        "Confirmation Status": 5,
-        "Call Status": 5,
-        "Committed (Live) Status (Onboarding Status)": 6,
-        "Portal Status": 6,
-        "Application Status": 7,
+        "Inbound": 0,
+        "Quality": 1,
+        "Welcome": 2,
+        "Provisioning": 3,
+        "Confirmation": 4,
+        "Onboarding": 5,
     }
+    bucket_order = {name: i for i, name in enumerate(
+        ["Inbound", "Quality", "Welcome", "Provisioning", "Confirmation", "Onboarding"]
+    )}
     bucket_table["Outcome Order"] = bucket_table["Outcome"].map(
         {name: i for i, name in enumerate(outcome_order)}
     )
+    bucket_table["Bucket Order"] = bucket_table["Bucket"].map(bucket_order).fillna(99)
     bucket_table["Source Order"] = bucket_table["Source"].map(
         {"CRM": 0, "Excel / Legacy": 1}
     ).fillna(2)
-    bucket_table["Stage Order"] = bucket_table["Stage"].map(stage_order).fillna(99)
     bucket_table = bucket_table.sort_values(
-        ["Outcome Order", "Source Order", "Stage Order", "Applications", "Status"],
+        ["Outcome Order", "Bucket Order", "Source Order", "Applications", "Status"],
         ascending=[True, True, True, False, True],
-    ).drop(columns=["Outcome Order", "Source Order", "Stage Order"])
+    ).drop(columns=["Outcome Order", "Bucket Order", "Source Order"])
     bucket_table["% of Total"] = (
         bucket_table["Applications"] / total * 100
     ).map(lambda value: f"{value:.1f}%")
@@ -2151,7 +2176,6 @@ def build_application_outcome_hierarchy(df: pd.DataFrame):
     if sum(summary.values()) != total or int(bucket_table["Applications"].sum()) != total:
         raise ValueError("Application outcome hierarchy does not reconcile to total applications.")
     return outcomes.reset_index(drop=True), bucket_table.reset_index(drop=True), summary
-
 
 
 # Build the outcome data once so the chart and its detailed table reconcile
@@ -2228,7 +2252,7 @@ with outcome_chart_col:
         """<div style="padding:.2rem .15rem .35rem;">
         <div style="color:#0f9f91;font-size:.62rem;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">APPLICATION OUTCOMES</div>
         <div style="color:#14233b;font-size:1.05rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled</div>
-        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">Original status names stay unchanged. Small sectors use outside labels with leader arrows; hover for application count and both percentages.</div>
+        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">Explore outcomes, then stage buckets, then exact original status values. Small-sector arrows are recalculated for the level currently on screen. Dispatch / Letter fields appear under Confirmation, with their original field names retained.</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -2249,163 +2273,251 @@ with outcome_chart_col:
     elif go is None:
         st.warning("Plotly is not installed. Use the exact values table below to inspect every source status.")
     else:
+        # Four hierarchy levels: All Applications -> Outcome -> Stage Bucket ->
+        # exact original status. Only one child ring is rendered at a time; each
+        # click re-roots the chart and reveals the next level.
         outcome_colors = {
-            "Live": {"parent": "#0f766e", "leaf": "#8edbd0"},
-            "Pending": {"parent": "#b45309", "leaf": "#f3ce82"},
-            "Cancelled": {"parent": "#b91c1c", "leaf": "#f1a3a3"},
+            "Live": "#0f766e",
+            "Pending": "#b45309",
+            "Cancelled": "#b91c1c",
         }
-        labels = ["All Applications"]
-        display_text = ["All Applications"]
-        ids = ["all-applications"]
-        parents = [""]
-        values = [int(outcome_total)]
-        colors = ["#eaf0f6"]
-        # Each node carries the original display name, share of all applications,
-        # share within its parent outcome, and parent outcome label.
-        customdata = [["All Applications", "100.0%", "100.0%", "All Applications"]]
+        bucket_colors = {
+            "Inbound": "#c2410c",
+            "Quality": "#2563eb",
+            "Welcome": "#7c3aed",
+            "Provisioning": "#0891b2",
+            "Confirmation": "#4f46e5",
+            "Onboarding": "#0f766e",
+        }
+        bucket_light_colors = {
+            "Inbound": "#fed7aa",
+            "Quality": "#bfdbfe",
+            "Welcome": "#ddd6fe",
+            "Provisioning": "#a5f3fc",
+            "Confirmation": "#c7d2fe",
+            "Onboarding": "#99f6e4",
+        }
+        ordered_outcomes = ["Live", "Pending", "Cancelled"]
+        ordered_buckets = ["Inbound", "Quality", "Welcome", "Provisioning", "Confirmation", "Onboarding"]
 
-        # A little breathing room is reserved on both sides of the circle for
-        # leader-line labels when an individual status sector is too narrow.
-        # Plotly's sunburst trace does not automatically place leaf labels outside
-        # with leader lines, so those callouts are positioned explicitly.
-        callouts_by_side = {"left": [], "right": []}
-        small_sector_threshold = 0.025  # Never keep sectors below 2.5% labelled only inside.
-        estimated_outer_radius_px = 300.0
-        cumulative_count = 0
+        # Merge identical original status text within the same Outcome + Bucket
+        # for a clear chart leaf. The detailed table below keeps the individual
+        # Source and Source field values separately reconcilable.
+        chart_status_table = (
+            outcome_bucket_table.groupby(["Outcome", "Bucket", "Status"], dropna=False)
+            .agg(
+                Applications=("Applications", "sum"),
+                Source_Details=(
+                    "Source",
+                    lambda values: "; ".join(sorted(set(str(v) for v in values if str(v).strip()))),
+                ),
+                Source_Fields=(
+                    "Stage",
+                    lambda values: "; ".join(sorted(set(str(v) for v in values if str(v).strip()))),
+                ),
+            )
+            .reset_index()
+        )
 
-        for outcome_name in ["Live", "Pending", "Cancelled"]:
+        node_ids = ["all-applications"]
+        node_labels = ["All Applications"]
+        node_parents = [""]
+        node_values = [int(outcome_total)]
+        node_colors = ["#eaf0f6"]
+        node_customdata = [["All Applications", "100.0%", "100.0%", "100.0%", "All Applications", "All Applications", ""]]
+        node_lookup = {
+            "all-applications": {
+                "id": "all-applications", "label": "All Applications", "parent": "",
+                "value": int(outcome_total), "kind": "root", "outcome": "All Applications",
+                "bucket": "All Applications",
+            }
+        }
+        node_children = {"all-applications": []}
+        outcome_counts = {name: int(outcome_summary.get(name, 0)) for name in ordered_outcomes}
+        bucket_counts = (
+            outcome_bucket_table.groupby(["Outcome", "Bucket"])["Applications"].sum().to_dict()
+            if not outcome_bucket_table.empty else {}
+        )
+
+        def _add_hierarchy_node(node_id, label, parent_id, value, color, custom, kind, outcome, bucket, source_details=""):
+            node_ids.append(node_id)
+            node_labels.append(str(label))
+            node_parents.append(parent_id)
+            node_values.append(int(value))
+            node_colors.append(color)
+            node_customdata.append(custom)
+            node_lookup[node_id] = {
+                "id": node_id, "label": str(label), "parent": parent_id,
+                "value": int(value), "kind": kind, "outcome": outcome,
+                "bucket": bucket, "source_details": source_details,
+            }
+            node_children.setdefault(parent_id, []).append(node_id)
+            node_children.setdefault(node_id, [])
+
+        for outcome_name in ordered_outcomes:
             outcome_id = f"outcome::{outcome_name}"
-            outcome_count = int(outcome_summary.get(outcome_name, 0))
-            labels.append(outcome_name)
-            display_text.append(outcome_name)
-            ids.append(outcome_id)
-            parents.append("all-applications")
-            values.append(outcome_count)
-            colors.append(outcome_colors[outcome_name]["parent"])
-            category_share = outcome_count / outcome_total * 100 if outcome_total else 0.0
-            customdata.append([outcome_name, f"{category_share:.1f}%", "100.0%", outcome_name])
+            outcome_count = outcome_counts[outcome_name]
+            outcome_share = outcome_count / outcome_total * 100 if outcome_total else 0.0
+            _add_hierarchy_node(
+                outcome_id, outcome_name, "all-applications", outcome_count,
+                outcome_colors[outcome_name],
+                [outcome_name, f"{outcome_share:.1f}%", "100.0%", "100.0%", outcome_name, "All Applications", ""],
+                "outcome", outcome_name, "All Applications",
+            )
 
-            leaves = outcome_bucket_table[outcome_bucket_table["Outcome"] == outcome_name]
-            for leaf_index, row in leaves.reset_index(drop=True).iterrows():
-                leaf_id = f"leaf::{outcome_name}::{leaf_index}"
-                original_status = str(row["Status"])
-                count = int(row["Applications"])
-                leaf_share_all = count / outcome_total * 100 if outcome_total else 0.0
-                leaf_share_category = count / outcome_count * 100 if outcome_count else 0.0
-
-                # Plotly starts the first root sector at 3 o'clock and proceeds
-                # clockwise. This midpoint locates the outer edge of each leaf
-                # sector for its outside callout arrow.
-                midpoint_fraction = (cumulative_count + count / 2) / outcome_total
-                angle = -2 * math.pi * midpoint_fraction
-                anchor_x = 0.5 + 0.265 * math.cos(angle)
-                anchor_y = 0.5 + 0.405 * math.sin(angle)
-                # Estimate whether the exact status text plus its count can fit
-                # along this leaf's outer arc. Long CRM values receive callouts
-                # even when their sector is larger than the minimum threshold.
-                sector_arc_px = (
-                    2 * math.pi * estimated_outer_radius_px * (count / outcome_total)
-                    if outcome_total else 0.0
-                )
-                estimated_label_width_px = max(66.0, len(original_status) * 7.2 + 30.0)
-                needs_callout = (
-                    leaf_share_all < small_sector_threshold
-                    or sector_arc_px < estimated_label_width_px
+            for bucket_name in ordered_buckets:
+                bucket_count = int(bucket_counts.get((outcome_name, bucket_name), 0))
+                if bucket_count <= 0:
+                    continue
+                bucket_id = f"bucket::{outcome_name}::{bucket_name}"
+                bucket_share_all = bucket_count / outcome_total * 100 if outcome_total else 0.0
+                bucket_share_outcome = bucket_count / outcome_count * 100 if outcome_count else 0.0
+                _add_hierarchy_node(
+                    bucket_id, bucket_name, outcome_id, bucket_count,
+                    bucket_colors[bucket_name],
+                    [bucket_name, f"{bucket_share_all:.1f}%", f"{bucket_share_outcome:.1f}%", "100.0%", outcome_name, bucket_name, ""],
+                    "bucket", outcome_name, bucket_name,
                 )
 
-                labels.append(original_status)
-                # The name for a small sector is moved outside the ring. Keep its
-                # count visible in the sector where possible, and show both name
-                # and count in the callout if the wedge itself is very narrow.
-                display_text.append("" if needs_callout else original_status)
-                ids.append(leaf_id)
-                parents.append(outcome_id)
-                values.append(count)
-                colors.append(outcome_colors[outcome_name]["leaf"])
-                customdata.append([
-                    original_status,
-                    f"{leaf_share_all:.1f}%",
-                    f"{leaf_share_category:.1f}%",
-                    outcome_name,
-                ])
+                leaves = chart_status_table[
+                    (chart_status_table["Outcome"] == outcome_name)
+                    & (chart_status_table["Bucket"] == bucket_name)
+                ].sort_values(["Applications", "Status"], ascending=[False, True])
+                for leaf_index, leaf in leaves.reset_index(drop=True).iterrows():
+                    status = str(leaf["Status"])
+                    count = int(leaf["Applications"])
+                    leaf_id = f"leaf::{outcome_name}::{bucket_name}::{leaf_index}"
+                    share_all = count / outcome_total * 100 if outcome_total else 0.0
+                    share_outcome = count / outcome_count * 100 if outcome_count else 0.0
+                    share_bucket = count / bucket_count * 100 if bucket_count else 0.0
+                    source_details = "; ".join(
+                        part for part in [str(leaf["Source_Details"]), str(leaf["Source_Fields"])] if part
+                    )
+                    _add_hierarchy_node(
+                        leaf_id, status, bucket_id, count, bucket_light_colors[bucket_name],
+                        [status, f"{share_all:.1f}%", f"{share_outcome:.1f}%", f"{share_bucket:.1f}%", outcome_name, bucket_name, source_details],
+                        "status", outcome_name, bucket_name, source_details,
+                    )
 
-                if needs_callout:
-                    side = "right" if math.cos(angle) >= 0 else "left"
-                    callouts_by_side[side].append({
-                        "status": original_status,
-                        "count": count,
-                        "anchor_x": anchor_x,
-                        "anchor_y": anchor_y,
-                        "color": outcome_colors[outcome_name]["parent"],
-                    })
-                cumulative_count += count
+        if sum(node_values[i] for i, parent_id in enumerate(node_parents) if parent_id == "all-applications") != outcome_total:
+            raise ValueError("Sunburst outcome ring does not reconcile to total applications.")
+        for outcome_name in ordered_outcomes:
+            outcome_id = f"outcome::{outcome_name}"
+            children_total = sum(node_lookup[nid]["value"] for nid in node_children.get(outcome_id, []))
+            if children_total != outcome_counts[outcome_name]:
+                raise ValueError(f"Sunburst {outcome_name} bucket ring does not reconcile.")
+        for node_id, meta in list(node_lookup.items()):
+            if meta["kind"] == "bucket":
+                leaves_total = sum(node_lookup[nid]["value"] for nid in node_children.get(node_id, []))
+                if leaves_total != meta["value"]:
+                    raise ValueError(f"Sunburst {meta['bucket']} status ring does not reconcile.")
+
+        # Streamlit captures direct Sunburst clicks (id + parent). Store the
+        # selected node and rebuild the visible chart level so labels and arrows
+        # are recalculated for the currently visible sectors, not left static.
+        level_state_key = "sparta_outcome_sunburst_level"
+        chart_state_key = "sparta_outcome_sunburst_clicks"
+        if level_state_key not in st.session_state:
+            st.session_state[level_state_key] = "all-applications"
+        active_level = st.session_state.get(level_state_key, "all-applications")
+        if active_level not in node_lookup:
+            active_level = "all-applications"
+            st.session_state[level_state_key] = active_level
+
+        # Breadcrumb and direct navigation are helpful after drilling into a
+        # branch, while clicking the central parent segment also resets it.
+        path = []
+        path_cursor = active_level
+        while path_cursor and path_cursor in node_lookup:
+            path.append(node_lookup[path_cursor]["label"])
+            path_cursor = node_lookup[path_cursor]["parent"]
+        path.reverse()
+        nav_left, nav_mid, nav_right = st.columns([1, 4, 1])
+        with nav_left:
+            if active_level != "all-applications" and st.button("← Back", key="outcome_sunburst_back", use_container_width=True):
+                st.session_state[level_state_key] = node_lookup[active_level]["parent"] or "all-applications"
+                st.rerun()
+        with nav_mid:
+            st.markdown(
+                "<div style='padding:.42rem .2rem;color:#64748b;font-size:.78rem;'>Viewing: "
+                + " <span style='color:#0f766e;font-weight:750;'>›</span> ".join(escape(x) for x in path)
+                + "</div>", unsafe_allow_html=True,
+            )
+        with nav_right:
+            if active_level != "all-applications" and st.button("Reset", key="outcome_sunburst_reset", use_container_width=True):
+                st.session_state[level_state_key] = "all-applications"
+                st.rerun()
+
+        visible_child_ids = node_children.get(active_level, [])
+        active_parent_value = max(1, int(node_lookup[active_level]["value"]))
+        callouts_by_side = {"left": [], "right": []}
+        cumulative_value = 0
+        small_sector_threshold = 0.055
+        estimated_outer_radius_px = 320.0
+        for child_id in visible_child_ids:
+            child = node_lookup[child_id]
+            count = int(child["value"])
+            share_current = count / active_parent_value if active_parent_value else 0.0
+            midpoint_fraction = (cumulative_value + count / 2) / active_parent_value
+            angle = -2 * math.pi * midpoint_fraction
+            anchor_x = 0.5 + 0.275 * math.cos(angle)
+            anchor_y = 0.5 + 0.395 * math.sin(angle)
+            label = child["label"]
+            sector_arc_px = 2 * math.pi * estimated_outer_radius_px * share_current
+            estimated_label_width_px = max(70.0, len(label) * 7.5 + 40.0)
+            needs_callout = (
+                active_level != "all-applications"
+                and (share_current < small_sector_threshold or sector_arc_px < estimated_label_width_px)
+            )
+            if needs_callout:
+                side = "right" if math.cos(angle) >= 0 else "left"
+                callouts_by_side[side].append({
+                    "label": label,
+                    "count": count,
+                    "anchor_x": anchor_x,
+                    "anchor_y": anchor_y,
+                    "color": bucket_colors.get(child["bucket"], outcome_colors.get(child["outcome"], "#64748b")),
+                })
+            cumulative_value += count
 
         callout_annotations = []
         for side, callouts in callouts_by_side.items():
-            # Evenly distribute labels vertically on each side to reduce overlap.
-            # The arrowhead remains attached to the precise sector midpoint.
             callouts.sort(key=lambda item: item["anchor_y"], reverse=True)
             if not callouts:
                 continue
-            top_y, bottom_y = 0.93, 0.07
-            if len(callouts) == 1:
-                slot_positions = [0.5]
-            else:
-                slot_positions = np.linspace(top_y, bottom_y, len(callouts)).tolist()
-
+            slot_positions = [0.5] if len(callouts) == 1 else np.linspace(0.94, 0.06, len(callouts)).tolist()
             label_x = 0.012 if side == "left" else 0.988
             for item, label_y in zip(callouts, slot_positions):
-                label_html = (
-                    f'<b>{escape(item["status"])}</b>'
-                    f'<br><span style="font-size:12px">{item["count"]:,} applications</span>'
-                )
                 callout_annotations.append({
-                    "x": item["anchor_x"],
-                    "y": item["anchor_y"],
-                    "xref": "paper",
-                    "yref": "paper",
-                    # Arrow tails use pixel offsets (Plotly annotations do not
-                    # support paper coordinates for ax/ay). Estimate the chart
-                    # plot area's desktop width/height so labels sit in the
-                    # reserved side bands while remaining anchored to the wedge.
+                    "x": item["anchor_x"], "y": item["anchor_y"],
+                    "xref": "paper", "yref": "paper",
                     "ax": (label_x - item["anchor_x"]) * 1200,
                     "ay": (item["anchor_y"] - float(label_y)) * 760,
-                    "text": label_html,
-                    "showarrow": True,
-                    "arrowhead": 2,
-                    "arrowsize": 0.9,
-                    "arrowwidth": 1.2,
-                    "arrowcolor": item["color"],
-                    "standoff": 3,
-                    "bgcolor": "rgba(255,255,255,0.96)",
-                    "bordercolor": item["color"],
-                    "borderwidth": 1,
-                    "borderpad": 4,
-                    "font": {
-                        "family": "Inter, Segoe UI, Arial, sans-serif",
-                        "size": 15,
-                        "color": "#172942",
-                    },
+                    "text": f"<b>{escape(item['label'])}</b><br><span style='font-size:12px'>{item['count']:,} applications</span>",
+                    "showarrow": True, "arrowhead": 2, "arrowsize": 0.9,
+                    "arrowwidth": 1.25, "arrowcolor": item["color"], "standoff": 3,
+                    "bgcolor": "rgba(255,255,255,0.97)", "bordercolor": item["color"],
+                    "borderwidth": 1, "borderpad": 4,
+                    "font": {"family": "Inter, Segoe UI, Arial, sans-serif", "size": 14, "color": "#172942"},
                     "align": "left" if side == "left" else "right",
-                    "xanchor": "left" if side == "left" else "right",
-                    "yanchor": "middle",
+                    "xanchor": "left" if side == "left" else "right", "yanchor": "middle",
                 })
 
         fig = go.Figure(
             go.Sunburst(
-                ids=ids,
-                labels=labels,
-                parents=parents,
-                values=values,
+                ids=node_ids,
+                labels=node_labels,
+                parents=node_parents,
+                values=node_values,
                 branchvalues="total",
                 sort=False,
                 rotation=0,
-                maxdepth=-1,
-                domain=dict(x=[0.22, 0.78], y=[0.07, 0.93]),
-                marker=dict(colors=colors, line=dict(color="#ffffff", width=2)),
-                customdata=customdata,
-                text=display_text,
-                textinfo="text+value",
+                level=active_level,
+                maxdepth=1,
+                domain=dict(x=[0.20, 0.80], y=[0.07, 0.93]),
+                marker=dict(colors=node_colors, line=dict(color="#ffffff", width=2)),
+                customdata=node_customdata,
+                textinfo="label+value",
                 insidetextorientation="auto",
                 textfont=dict(size=18, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
                 insidetextfont=dict(size=18, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
@@ -2414,11 +2526,12 @@ with outcome_chart_col:
                     "<b>%{customdata[0]}</b><br>"
                     "Applications: %{value:,.0f}<br>"
                     "% of all applications: %{customdata[1]}<br>"
-                    "% within %{customdata[3]}: %{customdata[2]}<extra></extra>"
+                    "% within %{customdata[4]}: %{customdata[2]}<br>"
+                    "% within %{customdata[5]}: %{customdata[3]}<br>"
+                    "Source / original field: %{customdata[6]}<extra></extra>"
                 ),
                 hoverlabel=dict(
-                    bgcolor="#ffffff",
-                    bordercolor="#d7e1ec",
+                    bgcolor="#ffffff", bordercolor="#d7e1ec",
                     font=dict(size=15, color="#172942", family="Inter, Segoe UI, Arial, sans-serif"),
                     namelength=-1,
                 ),
@@ -2426,30 +2539,75 @@ with outcome_chart_col:
         )
         fig.update_layout(
             height=800,
-            margin=dict(t=16, l=8, r=8, b=16),
+            margin=dict(t=14, l=8, r=8, b=14),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=14, color="#172942"),
             annotations=callout_annotations,
-            # Increase minimum readable text size. Text that cannot fit inside
-            # a small sector is moved to a labelled callout with a leader arrow.
-            uniformtext=dict(minsize=15, mode="hide"),
+            uniformtext=dict(minsize=14, mode="hide"),
         )
         with st.container(border=True):
-            st.plotly_chart(
-                fig,
-                use_container_width=True,
-                config={"displayModeBar": False, "scrollZoom": False},
-            )
+            click_events_supported = True
+            try:
+                chart_event = st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                    key=chart_state_key,
+                    on_select="rerun",
+                    selection_mode="points",
+                    config={"displayModeBar": False, "scrollZoom": False},
+                )
+            except TypeError:
+                # Older Streamlit versions still display the chart, but do not
+                # expose hierarchical point-click selections to Python.
+                click_events_supported = False
+                chart_event = st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                    key=chart_state_key,
+                    config={"displayModeBar": False, "scrollZoom": False},
+                )
+                st.info("For dynamic drill-down arrows, update Streamlit to a version that supports Plotly chart selection events.")
+
+            selected_points = []
+            if click_events_supported:
+                try:
+                    selected_points = list(chart_event.selection.points)
+                except Exception:
+                    try:
+                        selected_points = list(chart_event.get("selection", {}).get("points", []))
+                    except Exception:
+                        selected_points = []
+            if selected_points:
+                selected_point = selected_points[-1]
+                clicked_id = selected_point.get("id") if isinstance(selected_point, dict) else None
+                if not clicked_id and isinstance(selected_point, dict):
+                    point_index = selected_point.get("point_number", selected_point.get("point_index"))
+                    if point_index is not None:
+                        try:
+                            clicked_id = node_ids[int(point_index)]
+                        except (IndexError, TypeError, ValueError):
+                            clicked_id = None
+                # Status leaves are terminal values, not drill targets. Only
+                # the root, outcome, and stage-bucket nodes open another level.
+                if (
+                    clicked_id in node_lookup
+                    and node_lookup[clicked_id]["kind"] in {"root", "outcome", "bucket"}
+                    and clicked_id != active_level
+                ):
+                    st.session_state[level_state_key] = clicked_id
+                    st.rerun()
             st.caption(
-                "All status names remain unchanged. Small sectors are labelled outside the circle with arrows. Hover shows count, % of all applications and % within the outcome; click any ring to focus on its branch."
+                "Click Live, Pending or Cancelled to reveal Quality, Welcome, Provisioning, Confirmation, Onboarding or Inbound buckets; "
+                "click a bucket to reveal original status values. Small-sector arrows are recalculated for each drill-down. "
+                "Dispatch / Letter source fields are grouped under Confirmation without renaming the original values. Use Back or Reset to navigate."
             )
 
 # Complete source-value reconciliation stays available without occupying the
 # main dashboard: every distinct original status retains its Source and Stage.
 with st.expander("View all original source values and counts", expanded=False):
     display_outcome_table = outcome_bucket_table.rename(
-        columns={"Stage": "Source field / stage", "Status": "Original status value"}
+        columns={"Bucket": "Stage bucket", "Stage": "Original source field", "Status": "Original status value"}
     )
     st.dataframe(
         display_outcome_table,
@@ -2458,7 +2616,8 @@ with st.expander("View all original source values and counts", expanded=False):
         column_config={
             "Outcome": st.column_config.TextColumn("Outcome", width="small"),
             "Source": st.column_config.TextColumn("Source", width="small"),
-            "Source field / stage": st.column_config.TextColumn("Source field / stage", width="medium"),
+            "Stage bucket": st.column_config.TextColumn("Stage bucket", width="small"),
+            "Original source field": st.column_config.TextColumn("Original source field", width="medium"),
             "Original status value": st.column_config.TextColumn("Original status value", width="large"),
             "Applications": st.column_config.NumberColumn("Applications", format="%d"),
             "% of Total": st.column_config.TextColumn("% of Total", width="small"),
