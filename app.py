@@ -9,7 +9,8 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
 - CRM Quality Rework is included in Quality Pending; Potential Opportunity Rejected is included in Quality Cancelled.
 - CRM Provisioning Status is reported separately as Completed, Pending, and Cancelled; provisioning cancellations do not enter Committed/Live.
 - CRM Connectivity: Committed counts in both Provisioning Completed and Committed Rem.; legacy rows remain unclassified for Provisioning.
-- Executive KPI cards use a tighter, more compact layout.
+- Executive KPI cards use a compact two-row, multi-column layout.
+- Interactive sunburst hierarchy classifies every filtered application once as Live, Pending, or Cancelled, with stage-level buckets and counts.
 """
 
 import logging
@@ -22,6 +23,10 @@ from typing import List
 import numpy as np
 import pandas as pd
 import streamlit as st
+try:
+    import plotly.graph_objects as go
+except Exception:  # Keep the dashboard usable if Plotly is unavailable.
+    go = None
 import streamlit.components.v1 as components
 import gspread
 from google.oauth2.service_account import Credentials
@@ -196,6 +201,12 @@ hr { border-color: #dce5f0 !important; opacity: 0.9; }
 .sparta-kpi-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.35rem; }
 .sparta-kpi-grid.grid-3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .sparta-kpi-grid.grid-1 { grid-template-columns:minmax(0,220px); }
+.sparta-kpi-grid.grid-5 { grid-template-columns:repeat(5,minmax(0,1fr)); }
+.sparta-outcome-summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem; margin:.4rem 0 .75rem; }
+.sparta-outcome-summary { min-width:0; padding:.65rem .85rem; border:1px solid #e3eaf3; border-left:3px solid var(--outcome-accent); border-radius:11px; background:var(--outcome-tint); }
+.sparta-outcome-label { color:#5f6f84; font-size:.65rem; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+.sparta-outcome-value { color:#14233b; margin-top:.12rem; font-size:1.35rem; line-height:1.05; font-weight:900; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
+.sparta-outcome-share { color:var(--outcome-accent); margin-top:.14rem; font-size:.65rem; font-weight:750; }
 .sparta-kpi-tile { min-width:0; padding:.4rem .5rem .38rem; border:1px solid #e6edf5; border-left:2px solid var(--tile-accent,#94a3b8); border-radius:8px; background:var(--tile-tint,#f8fafc); transition:border-color 140ms ease; }
 .sparta-kpi-tile:hover { border-color:#cdd9e8; }
 .sparta-kpi-label { color:#66758a; font-size:.56rem; line-height:1.18; font-weight:800; letter-spacing:.025em; text-transform:uppercase; white-space:normal; }
@@ -205,8 +216,9 @@ hr { border-color: #dce5f0 !important; opacity: 0.9; }
 [data-testid="stRadio"] [role="radiogroup"] { gap:.42rem; }
 [data-testid="stRadio"] [role="radiogroup"] label { border:1px solid #dce5f0; border-radius:10px; padding:.43rem .7rem; background:#fff; }
 [data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) { border-color:#7bcfc5; background:#effdfa; }
-@media (max-width:1100px) { .sparta-kpi-grid,.sparta-kpi-grid.grid-3 { grid-template-columns:repeat(3,minmax(0,1fr)); } }
-@media (max-width:640px) { .sparta-kpi-group { padding:.45rem; border-radius:10px; } .sparta-kpi-grid,.sparta-kpi-grid.grid-3 { grid-template-columns:repeat(2,minmax(0,1fr)); }
+@media (max-width:1100px) { .sparta-kpi-grid,.sparta-kpi-grid.grid-3,.sparta-kpi-grid.grid-5 { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (max-width:640px) { .sparta-kpi-group { padding:.45rem; border-radius:10px; } .sparta-kpi-grid,.sparta-kpi-grid.grid-3,.sparta-kpi-grid.grid-5 { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.sparta-outcome-summary-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:.35rem; } .sparta-outcome-summary { padding:.55rem; } .sparta-outcome-value { font-size:1.1rem; }
 .sparta-kpi-grid.grid-1 { grid-template-columns:minmax(0,220px); } .sparta-kpi-tile { padding:.38rem .42rem; } .sparta-kpi-value { font-size:1.05rem; } .sparta-section-heading { margin-top:1rem; } }
 
 /* Dashboard hero */
@@ -1901,6 +1913,7 @@ portal_cancelled = count_status(filtered_portal_df, "Portal Status Clean", "Canc
 
 
 def render_kpi_compartment(title, subtitle, icon, theme, grid_class, metrics):
+    """Return compact KPI group HTML for placement inside Streamlit columns."""
     tiles = []
     for label, value, detail, accent, tint in metrics:
         tiles.append(
@@ -1910,7 +1923,7 @@ def render_kpi_compartment(title, subtitle, icon, theme, grid_class, metrics):
                 <div class="sparta-kpi-detail">{escape(str(detail))}</div>
             </div>"""
         )
-    st.markdown(
+    return (
         f"""<section class="sparta-kpi-group {theme}">
           <div class="sparta-kpi-group-head">
             <div class="sparta-kpi-group-mark">{escape(icon)}</div>
@@ -1920,51 +1933,350 @@ def render_kpi_compartment(title, subtitle, icon, theme, grid_class, metrics):
             </div>
           </div>
           <div class="sparta-kpi-grid {grid_class}">{''.join(tiles)}</div>
-        </section>""",
+        </section>"""
+    )
+
+
+# Two compact rows instead of five full-width KPI rows.
+kpi_quality_col, kpi_inbound_col = st.columns([4.2, 1.0], gap="small")
+with kpi_quality_col:
+    st.markdown(
+        render_kpi_compartment(
+            "Applications & Quality", "01 · APPLICATION FUNNEL", "01", "quality", "grid-5",
+            [
+                ("Applications", total_applications, "100% of base", "#2563eb", "#eff6ff"),
+                ("QA Approved", q_approved, f"{get_pct(q_approved, total_applications)} of apps", "#15803d", "#f0fdf4"),
+                ("QA Rework · Legacy", q_rework, "Legacy only · CRM Rework is Pending", "#a16207", "#fefce8"),
+                ("QA Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
+                ("QA Pending", q_pending, f"{get_pct(q_pending, total_applications)} of apps · includes CRM Rework", "#c2410c", "#fff7ed"),
+            ],
+        ),
+        unsafe_allow_html=True,
+    )
+with kpi_inbound_col:
+    st.markdown(
+        render_kpi_compartment(
+            "Inbound Cancelled", "STANDALONE", "!", "inbound", "grid-1",
+            [("Inbound Cancelled", inbound_cancelled, f"{get_pct(inbound_cancelled, total_applications)} of apps · CRM", "#9a3412", "#fff7ed")],
+        ),
+        unsafe_allow_html=True,
+    )
+
+kpi_welcome_col, kpi_provisioning_col, kpi_live_col = st.columns(3, gap="small")
+with kpi_welcome_col:
+    st.markdown(
+        render_kpi_compartment(
+            "Welcome", "02 · WELCOME CALL", "02", "welcome", "grid-3",
+            [
+                ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} of apps", "#15803d", "#f0fdf4"),
+                ("WC Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
+                ("WC Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} of apps", "#a16207", "#fefce8"),
+            ],
+        ),
+        unsafe_allow_html=True,
+    )
+with kpi_provisioning_col:
+    st.markdown(
+        render_kpi_compartment(
+            "Provisioning", "03 · PROVISIONING", "03", "provisioning", "grid-3",
+            [
+                ("Completed", provisioning_completed, "CRM · Committed / Provisioned", "#15803d", "#f0fdf4"),
+                ("Pending", provisioning_pending, "CRM · Pending / Delayed / Rework", "#a16207", "#fefce8"),
+                ("Cancelled", provisioning_cancelled, "CRM · Cancelled orders", "#b91c1c", "#fef2f2"),
+            ],
+        ),
+        unsafe_allow_html=True,
+    )
+with kpi_live_col:
+    st.markdown(
+        render_kpi_compartment(
+            "Committed / Live", "04 · DOWNSTREAM PIPELINE", "04", "live", "grid-3",
+            [
+                ("Live", portal_live, f"{get_pct(portal_live, portal_total)} of portal", "#0f766e", "#f0fdfa"),
+                ("Committed", portal_committed, f"{get_pct(portal_committed, portal_total)} of portal", "#a16207", "#fefce8"),
+                ("Live Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} of portal", "#b91c1c", "#fef2f2"),
+            ],
+        ),
         unsafe_allow_html=True,
     )
 
 
-render_kpi_compartment(
-    "Applications & Quality", "01 · APPLICATION FUNNEL", "01", "quality", "grid-3",
-    [
-        ("Applications", total_applications, "100% of base", "#2563eb", "#eff6ff"),
-        ("QA Approved", q_approved, f"{get_pct(q_approved, total_applications)} of apps", "#15803d", "#f0fdf4"),
-        ("QA Rework · Legacy", q_rework, f"{get_pct(q_rework, total_applications)} of apps · CRM Rework is in Pending", "#a16207", "#fefce8"),
-        ("QA Cancelled", q_cancelled, f"{get_pct(q_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
-        ("QA Pending", q_pending, f"{get_pct(q_pending, total_applications)} of apps · includes CRM Rework", "#c2410c", "#fff7ed"),
-    ],
+def _outcome_text(value) -> str:
+    """Normalize a single source status for outcome classification."""
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    if text.lower() in {"", "nan", "none", "null", "nat", "(blank)"}:
+        return ""
+    text = text.replace("–", "-").replace("—", "-")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _is_cancel_status(raw_value: str, clean_value: str = "") -> bool:
+    """Recognize explicit cancellation/rejection statuses, not free-text reasons."""
+    raw = _outcome_text(raw_value).lower()
+    clean = _outcome_text(clean_value).lower()
+    if clean == "cancelled":
+        return True
+    return bool(re.search(
+        r"cancel|canceled|reject|rejected|rejection|declin|duplicate|\bhold\b|\bn/a\b|rec in accessible",
+        raw,
+        re.IGNORECASE,
+    ))
+
+
+def classify_application_outcome(row: pd.Series):
+    """Assign each application once to Live, Pending, or Cancelled plus a stage bucket.
+
+    Cancellation is checked first, in stage order. A provisioning cancellation
+    therefore remains under Provisioning Cancelled and cannot be counted again
+    as a downstream committed/live cancellation.
+    """
+    inbound_value = row.get("Inbound Cancelled", False)
+    inbound = False if pd.isna(inbound_value) else str(inbound_value).strip().lower() in {"true", "1", "yes"}
+    inbound_status = _outcome_text(row.get("Inbound Status", "")).lower()
+    inbound_clean = _outcome_text(row.get("Inbound Status Clean", "")).lower()
+    if inbound or inbound_clean == "inbound cancelled" or inbound_status in {
+        "inbound cancel", "inbound cancelled", "inbound canceled"
+    }:
+        return "Cancelled", "Inbound Cancelled"
+
+    quality_raw = _outcome_text(row.get("Quality Status", ""))
+    quality_clean = _outcome_text(row.get("Quality Status Clean", ""))
+    welcome_raw = _outcome_text(row.get("Welcome Status", ""))
+    welcome_clean = _outcome_text(row.get("Welcome Status Clean", ""))
+    provisioning_raw = _outcome_text(row.get("Provisioning Status", ""))
+    provisioning_clean = _outcome_text(row.get("Provisioning Status Clean", ""))
+    dispatch_raw = _outcome_text(row.get("Letter Status", row.get("LetterStatus", "")))
+    confirmation_raw = _outcome_text(row.get("Confirmation Status", ""))
+    if not confirmation_raw:
+        confirmation_raw = _outcome_text(row.get("Call Status", ""))
+    onboarding_raw = _outcome_text(row.get("Final Status", ""))
+    if not onboarding_raw:
+        onboarding_raw = _outcome_text(row.get("Portal Status", ""))
+    portal_clean = _outcome_text(row.get("Portal Status Clean", ""))
+
+    # The first stage containing an explicit cancellation owns the outcome.
+    cancellation_stages = [
+        ("Quality Cancelled", quality_raw, quality_clean),
+        ("Welcome Cancelled", welcome_raw, welcome_clean),
+        ("Provisioning Cancelled", provisioning_raw, provisioning_clean),
+        ("Dispatch Cancelled", dispatch_raw, ""),
+        ("Confirmation Cancelled", confirmation_raw, ""),
+        ("Onboarding / Live Cancelled", onboarding_raw, ""),
+    ]
+    for bucket, raw, clean in cancellation_stages:
+        if _is_cancel_status(raw, clean):
+            return "Cancelled", bucket
+
+    # Portal status is a final safety net for legacy portal-specific cancellations.
+    if portal_clean.lower() == "cancelled":
+        return "Cancelled", "Committed / Live Cancelled"
+
+    onboarding_norm = onboarding_raw.lower()
+    if re.search(r"\bonboarding\s+approved\b", onboarding_norm):
+        return "Live", "Onboarding Approved"
+    if re.search(r"\bport\s*[- ]\s*pending\b", onboarding_norm):
+        return "Live", "Port Pending"
+    # Preserve historical legacy records whose final portal value was simply Live.
+    if re.fullmatch(r"live|active", onboarding_norm):
+        return "Live", "Live (Legacy Status)"
+
+    # Everything not explicitly live or cancelled is Pending. The leaf is the
+    # furthest identifiable stage/status reached by the application.
+    if onboarding_raw:
+        return "Pending", "Onboarding Pending"
+
+    confirmation_norm = confirmation_raw.lower()
+    if confirmation_norm:
+        return "Pending", "Committed / Awaiting Live"
+
+    if portal_clean.lower() == "committed":
+        return "Pending", "Committed / Awaiting Live"
+
+    dispatch_norm = dispatch_raw.lower()
+    if dispatch_norm:
+        if "pending" in dispatch_norm:
+            return "Pending", "Dispatch Pending"
+        return "Pending", "Dispatch Approved / Awaiting Confirmation"
+
+    provisioning_norm = provisioning_raw.lower()
+    if provisioning_clean.lower() == "pending":
+        return "Pending", "Provisioning Pending"
+    if provisioning_clean.lower() == "completed":
+        if "committed" in provisioning_norm:
+            return "Pending", "Committed / Awaiting Live"
+        return "Pending", "Provisioning Completed / Awaiting Dispatch"
+
+    if welcome_clean.lower() == "pending":
+        return "Pending", "Welcome Pending"
+    if welcome_clean.lower() == "done":
+        return "Pending", "Welcome Done / Awaiting Provisioning"
+
+    if quality_clean.lower() == "pending":
+        return "Pending", "Quality Pending"
+    if quality_clean.lower() == "approved":
+        return "Pending", "Quality Approved / Awaiting Welcome"
+
+    return "Pending", "Awaiting First Stage / Other Pending"
+
+
+def build_application_outcome_hierarchy(df: pd.DataFrame):
+    """Return exclusive outcomes and a grouped bucket-count table."""
+    if df is None or df.empty:
+        empty = pd.DataFrame(columns=["Outcome", "Bucket"])
+        table = pd.DataFrame(columns=["Outcome", "Bucket", "Applications", "% of Total"])
+        return empty, table, {"Live": 0, "Pending": 0, "Cancelled": 0}
+
+    outcomes = df.apply(classify_application_outcome, axis=1, result_type="expand")
+    outcomes.columns = ["Outcome", "Bucket"]
+    outcome_df = outcomes
+    total = len(outcome_df)
+    order = ["Live", "Pending", "Cancelled"]
+    summary = outcome_df["Outcome"].value_counts().reindex(order, fill_value=0).astype(int).to_dict()
+    bucket_table = (
+        outcome_df.groupby(["Outcome", "Bucket"], dropna=False)
+        .size()
+        .rename("Applications")
+        .reset_index()
+    )
+    bucket_table["Outcome Order"] = bucket_table["Outcome"].map({name: i for i, name in enumerate(order)})
+    bucket_table = bucket_table.sort_values(
+        ["Outcome Order", "Applications", "Bucket"],
+        ascending=[True, False, True],
+    ).drop(columns="Outcome Order")
+    bucket_table["% of Total"] = (
+        bucket_table["Applications"] / total * 100
+    ).map(lambda value: f"{value:.1f}%")
+    # Each application must belong to exactly one top-level outcome and one leaf bucket.
+    if sum(summary.values()) != total or int(bucket_table["Applications"].sum()) != total:
+        raise ValueError("Application outcome hierarchy does not reconcile to total applications.")
+    return outcome_df, bucket_table.reset_index(drop=True), summary
+
+
+# ==========================================================
+# INTERACTIVE APPLICATION OUTCOME HIERARCHY
+# ==========================================================
+render_section_heading(
+    "APPLICATION OUTCOMES",
+    "Application outcome hierarchy",
+    "Every application is counted once: Live, Pending or Cancelled. Select a segment to drill into its stage bucket; hover for exact counts and share.",
 )
-render_kpi_compartment(
-    "Inbound Cancelled", "SEPARATE CATEGORY · EXCLUDED FROM OTHER STAGES", "!", "inbound", "grid-1",
-    [
-        ("Inbound Cancelled", inbound_cancelled, f"{get_pct(inbound_cancelled, total_applications)} of apps · CRM only", "#9a3412", "#fff7ed"),
-    ],
+
+outcome_df, outcome_bucket_table, outcome_summary = build_application_outcome_hierarchy(master_df)
+outcome_total = len(outcome_df)
+
+summary_cards = []
+for outcome_name, accent, tint in [
+    ("Live", "#0f766e", "#f0fdfa"),
+    ("Pending", "#b45309", "#fffbeb"),
+    ("Cancelled", "#b91c1c", "#fef2f2"),
+]:
+    outcome_count = int(outcome_summary.get(outcome_name, 0))
+    outcome_pct = outcome_count / outcome_total * 100 if outcome_total else 0.0
+    summary_cards.append(
+        f"""<div class="sparta-outcome-summary" style="--outcome-accent:{accent};--outcome-tint:{tint};">
+            <div class="sparta-outcome-label">{escape(outcome_name)}</div>
+            <div class="sparta-outcome-value">{outcome_count:,}</div>
+            <div class="sparta-outcome-share">{outcome_pct:.1f}% of applications</div>
+        </div>"""
+    )
+st.markdown(
+    "<div class='sparta-outcome-summary-grid'>" + "".join(summary_cards) + "</div>",
+    unsafe_allow_html=True,
 )
-render_kpi_compartment(
-    "Welcome", "02 · WELCOME CALL", "02", "welcome", "grid-3",
-    [
-        ("Welcome Done", wc_done, f"{get_pct(wc_done, total_applications)} of apps", "#15803d", "#f0fdf4"),
-        ("WC Cancelled", wc_cancelled, f"{get_pct(wc_cancelled, total_applications)} of apps", "#b91c1c", "#fef2f2"),
-        ("WC Pending", wc_pending, f"{get_pct(wc_pending, total_applications)} of apps", "#a16207", "#fefce8"),
-    ],
-)
-render_kpi_compartment(
-    "Provisioning", "03 · PROVISIONING", "03", "provisioning", "grid-3",
-    [
-        ("Provisioning Completed", provisioning_completed, "CRM · Committed / Provisioned", "#15803d", "#f0fdf4"),
-        ("Provisioning Pending", provisioning_pending, "CRM · Pending / Delayed / Rework", "#a16207", "#fefce8"),
-        ("Provisioning Cancelled", provisioning_cancelled, "CRM · Cancelled orders", "#b91c1c", "#fef2f2"),
-    ],
-)
-render_kpi_compartment(
-    "Committed / Live", "04 · DOWNSTREAM PIPELINE", "04", "live", "grid-3",
-    [
-        ("Live", portal_live, f"{get_pct(portal_live, portal_total)} of portal", "#0f766e", "#f0fdfa"),
-        ("Committed", portal_committed, f"{get_pct(portal_committed, portal_total)} of portal", "#a16207", "#fefce8"),
-        ("Live Cancelled", portal_cancelled, f"{get_pct(portal_cancelled, portal_total)} of portal", "#b91c1c", "#fef2f2"),
-    ],
-)
+
+if outcome_total == 0:
+    st.info("No applications are available for the selected reporting period.")
+elif go is None:
+    st.warning("Plotly is not installed in this environment. The exact outcome bucket counts are shown below instead.")
+else:
+    outcome_colors = {
+        "Live": ["#0f766e", "#14b8a6", "#5eead4", "#99f6e4"],
+        "Pending": ["#b45309", "#d97706", "#f59e0b", "#fbbf24", "#fde68a", "#ffedd5", "#fed7aa", "#fef3c7"],
+        "Cancelled": ["#b91c1c", "#dc2626", "#ef4444", "#f87171", "#fca5a5", "#fecaca", "#fee2e2"],
+    }
+    labels = ["All Applications"]
+    ids = ["all-applications"]
+    parents = [""]
+    values = [outcome_total]
+    colors = ["#172942"]
+
+    for outcome_name in ["Live", "Pending", "Cancelled"]:
+        count = int(outcome_summary.get(outcome_name, 0))
+        if count <= 0:
+            continue
+        labels.append(outcome_name)
+        ids.append(f"outcome-{outcome_name.lower()}")
+        parents.append("all-applications")
+        values.append(count)
+        palette = outcome_colors[outcome_name]
+        colors.append(palette[0])
+
+        leaves = outcome_bucket_table[outcome_bucket_table["Outcome"] == outcome_name]
+        for leaf_index, leaf in enumerate(leaves.itertuples(index=False)):
+            bucket = str(leaf.Bucket)
+            leaf_count = int(leaf.Applications)
+            labels.append(bucket)
+            ids.append(f"{outcome_name.lower()}-{leaf_index}-{re.sub(r'[^a-z0-9]+', '-', bucket.lower()).strip('-')}")
+            parents.append(f"outcome-{outcome_name.lower()}")
+            values.append(leaf_count)
+            colors.append(palette[(leaf_index + 1) % len(palette)])
+
+    hierarchy_fig = go.Figure(
+        go.Sunburst(
+            labels=labels,
+            ids=ids,
+            parents=parents,
+            values=values,
+            branchvalues="total",
+            marker=dict(colors=colors, line=dict(color="#ffffff", width=2)),
+            insidetextorientation="radial",
+            textinfo="label+value",
+            hovertemplate=(
+                "<b>%{label}</b><br>"
+                "Applications: %{value:,}<br>"
+                "Share of total: %{percentRoot:.1%}"
+                "<extra></extra>"
+            ),
+            sort=False,
+            maxdepth=-1,
+        )
+    )
+    hierarchy_fig.update_layout(
+        height=540,
+        margin=dict(t=16, l=12, r=12, b=12),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=12, color="#172942"),
+        uniformtext=dict(minsize=10, mode="hide"),
+        showlegend=False,
+    )
+    with st.container(border=True):
+        st.plotly_chart(
+            hierarchy_fig,
+            use_container_width=True,
+            config={"displayModeBar": False, "scrollZoom": False},
+        )
+        st.caption("Tip: click Live, Pending or Cancelled to zoom into its buckets. Click the centre of the chart to return to the full hierarchy.")
+
+with st.expander("View exact counts by outcome bucket", expanded=False):
+    st.dataframe(
+        outcome_bucket_table,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Outcome": st.column_config.TextColumn("Outcome", width="small"),
+            "Bucket": st.column_config.TextColumn("Stage / status bucket", width="large"),
+            "Applications": st.column_config.NumberColumn("Applications", format="%d"),
+            "% of Total": st.column_config.TextColumn("% of Total", width="small"),
+        },
+    )
 
 # ==========================================================
 # MONTHLY KPI BREAKDOWN (SELECTABLE YEAR)
