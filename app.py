@@ -10,7 +10,8 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
 - CRM Provisioning Status is reported separately as Completed, Pending, and Cancelled; provisioning cancellations do not enter Committed/Live.
 - CRM Connectivity: Committed counts in both Provisioning Completed and Committed Rem.; legacy rows remain unclassified for Provisioning.
 - Executive KPI cards use a compact two-row, multi-column layout.
-- Static four-level sunburst sits beside the KPI cards; all hierarchy levels are visible by default, with labels placed directly on their sectors and no external callouts.
+- Static four-level sunburst sits beside the KPI cards; all hierarchy levels are visible by default.
+- Monthly KPI and Performance Breakdown each default to a concise Applications / Pending / Cancelled / Live view, with a radio switch to the original detailed table.
 """
 
 import logging
@@ -2177,6 +2178,272 @@ def build_application_outcome_hierarchy(df: pd.DataFrame):
     return outcomes.reset_index(drop=True), bucket_table.reset_index(drop=True), summary
 
 
+def classify_application_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Classify each application using exactly the same rules as the sunburst."""
+    columns = ["Outcome", "Stage", "Status", "Bucket", "Source"]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=columns)
+
+    classified = df.apply(classify_application_outcome, axis=1, result_type="expand")
+    classified.columns = ["Outcome", "Stage", "Status"]
+    classified["Bucket"] = classified["Stage"].apply(outcome_stage_bucket)
+    classified["Source"] = (
+        df.get("Source", pd.Series("Unknown", index=df.index))
+        .fillna("Unknown").astype(str).str.strip().replace("", "Unknown").to_numpy()
+    )
+    return classified.reset_index(drop=True)
+
+
+def get_sunburst_outcome_counts(classified: pd.DataFrame) -> dict:
+    """Return the four concise metrics from the exclusive sunburst outcome data."""
+    counts = (
+        classified["Outcome"].value_counts()
+        if classified is not None and not classified.empty and "Outcome" in classified.columns
+        else pd.Series(dtype=int)
+    )
+    return {
+        "Applications": int(len(classified)) if classified is not None else 0,
+        "Pending": int(counts.get("Pending", 0)),
+        "Cancelled": int(counts.get("Cancelled", 0)),
+        "Live": int(counts.get("Live", 0)),
+    }
+
+
+def build_sunburst_category_tooltips(classified: pd.DataFrame) -> dict:
+    """Build one tooltip per concise metric from one grouped pass."""
+    outcomes_order = ["Live", "Pending", "Cancelled"]
+    result = {
+        "Applications": "No applications in this category",
+        "Pending": "No Pending applications",
+        "Cancelled": "No Cancelled applications",
+        "Live": "No Live applications",
+    }
+    if classified is None or classified.empty:
+        return result
+
+    bucket_order = {name: i for i, name in enumerate(
+        ["Inbound", "Quality", "Welcome", "Provisioning", "Confirmation", "Onboarding"]
+    )}
+    source_order = {"CRM": 0, "Excel / Legacy": 1}
+    grouped = (
+        classified.groupby(["Outcome", "Bucket", "Source", "Stage", "Status"], dropna=False)
+        .size().rename("Applications").reset_index()
+    )
+    grouped["_OutcomeOrder"] = grouped["Outcome"].map(
+        {name: i for i, name in enumerate(outcomes_order)}
+    ).fillna(99)
+    grouped["_BucketOrder"] = grouped["Bucket"].map(bucket_order).fillna(99)
+    grouped["_SourceOrder"] = grouped["Source"].map(source_order).fillna(2)
+    grouped = grouped.sort_values(
+        ["_OutcomeOrder", "_BucketOrder", "_SourceOrder", "Applications", "Status"],
+        ascending=[True, True, True, False, True],
+    )
+
+    detail_lines = {name: [f"{name}: {int((classified['Outcome'] == name).sum()):,}"] for name in outcomes_order}
+    for item in grouped.itertuples(index=False):
+        detail_lines.setdefault(item.Outcome, [f"{item.Outcome}: 0"])
+        detail_lines[item.Outcome].append(
+            f"  {item.Bucket} · {item.Source} · {item.Stage}: {item.Status} — {int(item.Applications):,}"
+        )
+
+    for outcome_name in outcomes_order:
+        if len(detail_lines[outcome_name]) > 1:
+            result[outcome_name] = "\n".join(detail_lines[outcome_name])
+    all_lines = []
+    for outcome_name in outcomes_order:
+        if len(detail_lines[outcome_name]) > 1:
+            all_lines.extend(detail_lines[outcome_name])
+    result["Applications"] = "\n".join(all_lines) if all_lines else "No applications"
+    return result
+
+
+def format_sunburst_category_tooltip(classified: pd.DataFrame, outcome: str = "") -> str:
+    """Compatibility wrapper for a single outcome or all outcome categories."""
+    tooltips = build_sunburst_category_tooltips(classified)
+    return tooltips.get(outcome, tooltips["Applications"]) if outcome else tooltips["Applications"]
+
+
+def _compact_tooltip_attribute(value: str) -> str:
+    """Escape a multiline tooltip for a native HTML title attribute."""
+    return escape(str(value), quote=True).replace("\n", "&#10;")
+
+
+def render_compact_performance_table_html(
+    source_df: pd.DataFrame, entity_column: str, display_labels, table_id: str
+) -> tuple[str, int]:
+    """Build a short performance table, retaining sunburst category details on hover."""
+    if source_df is None or source_df.empty or entity_column not in source_df.columns:
+        return "<div class='compact-outcome-empty'>No application records available.</div>", 160
+
+    source = source_df.copy()
+    entity_labels = (
+        source[entity_column].fillna("").astype(str).str.strip()
+        .replace("", "Unassigned").to_numpy()
+    )
+    classified = classify_application_rows(source)
+    classified["_EntityLabel"] = entity_labels
+    classified["_EntityKey"] = [normalize_person_key(v) for v in entity_labels]
+
+    labels = []
+    seen_keys = set()
+    for value in display_labels:
+        label = str(value).strip() or "Unassigned"
+        key = normalize_person_key(label)
+        if key not in seen_keys:
+            labels.append(label)
+            seen_keys.add(key)
+    visible = classified[classified["_EntityKey"].isin(seen_keys)].copy()
+
+    def render_cells(group: pd.DataFrame) -> str:
+        values = get_sunburst_outcome_counts(group)
+        tooltips = build_sunburst_category_tooltips(group)
+        cells = [
+            f'<td class="compact-number" data-sort="{values["Applications"]}" title="{_compact_tooltip_attribute(tooltips["Applications"])}">{values["Applications"]:,}</td>'
+        ]
+        for outcome_name in ["Pending", "Cancelled", "Live"]:
+            tip = tooltips[outcome_name]
+            value = values[outcome_name]
+            cells.append(
+                f'<td class="compact-number" data-sort="{value}" title="{_compact_tooltip_attribute(tip)}">{value:,}</td>'
+            )
+        return "".join(cells)
+
+    html = f"""
+    <style>
+      .compact-outcome-wrap {{ width:100%; overflow:auto; border:1px solid #dbe5f0; border-radius:14px; box-shadow:0 8px 24px rgba(15,23,42,.05); background:#fff; }}
+      table.compact-outcome-table {{ width:100%; border-collapse:collapse; font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; font-size:.9rem; color:#1e293b; font-variant-numeric:tabular-nums; }}
+      table.compact-outcome-table th {{ padding:13px 16px; text-align:center; font-size:.75rem; font-weight:850; letter-spacing:.045em; text-transform:uppercase; border-bottom:1px solid #dce5f0; white-space:nowrap; }}
+      table.compact-outcome-table th:first-child, table.compact-outcome-table td:first-child {{ text-align:left; }}
+      table.compact-outcome-table th:first-child {{ background:#f1f5f9; color:#334155; }}
+      table.compact-outcome-table th:nth-child(2) {{ background:#eff6ff; color:#1e40af; }}
+      table.compact-outcome-table th:nth-child(3) {{ background:#fff7d6; color:#8a6500; }}
+      table.compact-outcome-table th:nth-child(4) {{ background:#fee2e2; color:#b91c1c; }}
+      table.compact-outcome-table th:nth-child(5) {{ background:#dcfce7; color:#166534; }}
+      table.compact-outcome-table td {{ padding:12px 16px; text-align:center; border-bottom:1px solid #edf1f7; }}
+      table.compact-outcome-table td:first-child {{ font-weight:700; color:#172942; }}
+      table.compact-outcome-table td[title] {{ cursor:help; text-decoration:underline dotted #94a3b8; text-underline-offset:3px; }}
+      table.compact-outcome-table tbody tr:hover td {{ background:#f8fafc; }}
+      table.compact-outcome-table tr.compact-total td {{ font-weight:850; background:#f1f5f9; border-top:2px solid #cbd5e1; }}
+      .compact-outcome-empty {{ padding:1rem; color:#64748b; }}
+    </style>
+    <div class="compact-outcome-wrap">
+      <table id="{escape(table_id)}" class="compact-outcome-table">
+        <thead><tr><th>{escape(entity_column)}</th><th>Applications</th><th>Pending</th><th>Cancelled</th><th>Live</th></tr></thead>
+        <tbody>
+    """
+    for label in labels:
+        key = normalize_person_key(label)
+        group = visible[visible["_EntityKey"] == key]
+        html += f'<tr><td>{escape(label)}</td>{render_cells(group)}</tr>'
+    html += f'<tr class="compact-total"><td>Total</td>{render_cells(visible)}</tr>'
+    html += "</tbody></table></div>"
+    height = min(760, max(190, 78 + (len(labels) + 1) * 48))
+    return html, height
+
+
+def render_compact_monthly_table_html(
+    monthly_summary_df: pd.DataFrame, daily_rows_by_period: dict, classified: pd.DataFrame, table_id: str
+) -> tuple[str, int]:
+    """Build a concise month/day table with the same exclusive sunburst classifications."""
+    def group_for_month(period_key: int) -> pd.DataFrame:
+        if classified.empty:
+            return classified
+        return classified[classified["_MonthKey"] == int(period_key)]
+
+    def group_for_day(day_key: int) -> pd.DataFrame:
+        if classified.empty:
+            return classified
+        return classified[classified["_DayKey"] == str(int(day_key))]
+
+    def render_cells(group: pd.DataFrame) -> str:
+        values = get_sunburst_outcome_counts(group)
+        tooltips = build_sunburst_category_tooltips(group)
+        result = [
+            f'<td class="compact-number" data-sort="{values["Applications"]}" title="{_compact_tooltip_attribute(tooltips["Applications"])}">{values["Applications"]:,}</td>'
+        ]
+        for outcome_name in ["Pending", "Cancelled", "Live"]:
+            value = values[outcome_name]
+            tip = tooltips[outcome_name]
+            result.append(
+                f'<td class="compact-number" data-sort="{value}" title="{_compact_tooltip_attribute(tip)}">{value:,}</td>'
+            )
+        return "".join(result)
+
+    html = f"""
+    <style>
+      .compact-monthly-wrap {{ width:100%; border:1px solid #dbe5f0; border-radius:14px; overflow:auto; box-shadow:0 8px 24px rgba(15,23,42,.05); background:#fff; }}
+      table.compact-monthly-table {{ width:100%; border-collapse:collapse; font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; font-size:.9rem; color:#1e293b; font-variant-numeric:tabular-nums; }}
+      table.compact-monthly-table th {{ padding:13px 16px; text-align:center; font-size:.75rem; font-weight:850; letter-spacing:.045em; text-transform:uppercase; border-bottom:1px solid #dce5f0; white-space:nowrap; position:sticky;top:0;z-index:2; }}
+      table.compact-monthly-table th:first-child, table.compact-monthly-table td:first-child {{ text-align:left; }}
+      table.compact-monthly-table th:first-child {{ background:#f1f5f9;color:#334155; }}
+      table.compact-monthly-table th:nth-child(2) {{ background:#eff6ff;color:#1e40af; }}
+      table.compact-monthly-table th:nth-child(3) {{ background:#fff7d6;color:#8a6500; }}
+      table.compact-monthly-table th:nth-child(4) {{ background:#fee2e2;color:#b91c1c; }}
+      table.compact-monthly-table th:nth-child(5) {{ background:#dcfce7;color:#166534; }}
+      table.compact-monthly-table td {{ padding:11px 16px;text-align:center;border-bottom:1px solid #edf1f7; }}
+      table.compact-monthly-table td:first-child {{ font-weight:700;color:#172942;white-space:nowrap; }}
+      table.compact-monthly-table td[title] {{ cursor:help;text-decoration:underline dotted #94a3b8;text-underline-offset:3px; }}
+      table.compact-monthly-table tbody tr.month-row:hover td, table.compact-monthly-table tbody tr.daily-row:hover td {{ background:#f8fafc; }}
+      table.compact-monthly-table tr.daily-row {{ display:none;background:#f8fafc; }}
+      table.compact-monthly-table tr.daily-row.shown {{ display:table-row; }}
+      table.compact-monthly-table tr.daily-row td:first-child {{ padding-left:42px;font-size:.84rem;font-weight:600;color:#526176; }}
+      table.compact-monthly-table tr.compact-total td {{ font-weight:850;background:#f1f5f9;border-top:2px solid #cbd5e1; }}
+      .compact-month-toggle {{ width:24px;height:24px;margin-right:9px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155;font-size:15px;font-weight:800;line-height:20px;cursor:pointer;vertical-align:middle; }}
+      .compact-month-toggle:hover {{ background:#eff6ff;border-color:#93c5fd; }}
+      .compact-day-indent {{ display:inline-block;width:7px;height:14px;margin-right:8px;border-left:2px solid #cbd5e1;vertical-align:-2px; }}
+    </style>
+    <div class="compact-monthly-wrap">
+      <table id="{escape(table_id)}" class="compact-monthly-table">
+        <thead><tr><th>Month / Day</th><th>Applications</th><th>Pending</th><th>Cancelled</th><th>Live</th></tr></thead>
+        <tbody>
+    """
+
+    for _, row in monthly_summary_df.iterrows():
+        label = str(row.get("MONTH", ""))
+        if label.strip().lower() == "total":
+            html += f'<tr class="compact-total"><td>Total</td>{render_cells(classified)}</tr>'
+            continue
+        period_key = int(row.get("PERIOD_KEY", 0) or 0)
+        group_id = f"compact-month-{period_key}"
+        month_group = group_for_month(period_key)
+        html += (
+            f'<tr class="month-row" data-group="{group_id}">'
+            f'<td><button type="button" class="compact-month-toggle" aria-expanded="false" '
+            f'onclick="toggleCompactMonth(\'{group_id}\', this)" title="Show daily details">+</button>{escape(label)}</td>'
+            f'{render_cells(month_group)}</tr>'
+        )
+        for daily_row in daily_rows_by_period.get(period_key, []):
+            day_key = int(daily_row.get("PERIOD_KEY", 0) or 0)
+            day_group = group_for_day(day_key)
+            day_label = escape(str(daily_row.get("MONTH", "")))
+            html += (
+                f'<tr class="daily-row" data-parent="{group_id}">'
+                f'<td><span class="compact-day-indent"></span>{day_label}</td>'
+                f'{render_cells(day_group)}</tr>'
+            )
+
+    html += "</tbody></table></div>"
+    html += f"""
+    <script>
+    (function() {{
+      const table = document.getElementById("{table_id}");
+      if (!table) return;
+      window.toggleCompactMonth = function(groupId, button) {{
+        const rows = Array.from(table.querySelectorAll('tr.daily-row[data-parent="' + groupId + '"]'));
+        const expand = button.getAttribute('aria-expanded') !== 'true';
+        rows.forEach(row => row.classList.toggle('shown', expand));
+        button.setAttribute('aria-expanded', expand ? 'true' : 'false');
+        button.textContent = expand ? '−' : '+';
+        button.title = expand ? 'Hide daily details' : 'Show daily details';
+      }};
+    }})();
+    </script>
+    """
+    visible_months = int((monthly_summary_df.get("MONTH", pd.Series(dtype=object)).astype(str).str.lower() != "total").sum())
+    height = min(720, max(205, 92 + visible_months * 48))
+    return html, height
+
+
 # Build the outcome data once so the chart and its detailed table reconcile
 # exactly to the same filtered application population as the KPI cards.
 outcome_df, outcome_bucket_table, outcome_summary = build_application_outcome_hierarchy(master_df)
@@ -2575,6 +2842,13 @@ if "Advisor" in master_raw_df.columns:
     agent_list = sorted(master_raw_df["Advisor"].dropna().astype(str).unique(), key=lambda s: s.lower())
 agent_options = ["All Agents"] + agent_list
 selected_agent = st.selectbox("Select Agent (Monthly table)", options=agent_options, index=0)
+monthly_table_view = st.radio(
+    "Monthly table format",
+    options=["Concise outcome view", "Full KPI breakdown"],
+    index=0,
+    horizontal=True,
+    key="monthly_kpi_table_view",
+)
 
 # Build monthly application and portal frames for the selected year
 monthly_app_df = master_raw_df.dropna(subset=["Period_Sort"]).copy()
@@ -2873,6 +3147,34 @@ else:
         daily_rows_by_period[period_key] = day_rows
 
     monthly_summary_df = pd.DataFrame(monthly_rows)
+
+    # One classification pass for the concise monthly view. The resulting
+    # Pending / Cancelled / Live counts and tooltips use the exact sunburst rules.
+    monthly_outcome_classified = classify_application_rows(monthly_app_df)
+    def _safe_period_month_key(value):
+        try:
+            if pd.isna(value):
+                return -1
+        except (TypeError, ValueError):
+            pass
+        try:
+            return int(value.year) * 100 + int(value.month)
+        except Exception:
+            parsed = pd.to_datetime(value, errors="coerce")
+            return int(parsed.year) * 100 + int(parsed.month) if pd.notna(parsed) else -1
+
+    if not monthly_app_df.empty:
+        monthly_outcome_classified["_MonthKey"] = [
+            _safe_period_month_key(value) for value in monthly_app_df["Period_Sort"]
+        ]
+        _monthly_sale_dates = pd.to_datetime(
+            monthly_app_df.get("Sale Date Clean", pd.Series(pd.NaT, index=monthly_app_df.index)),
+            errors="coerce",
+        )
+        monthly_outcome_classified["_DayKey"] = _monthly_sale_dates.dt.strftime("%Y%m%d").fillna("").to_numpy()
+    else:
+        monthly_outcome_classified["_MonthKey"] = pd.Series(dtype=int)
+        monthly_outcome_classified["_DayKey"] = pd.Series(dtype=object)
 
     # ----------------------------------------------------------
     # Totals row — kept exactly on the monthly view and always
@@ -3411,7 +3713,16 @@ else:
     </script>
     """
 
-    components.html(m_html, height=table_height, scrolling=False)
+    if monthly_table_view == "Concise outcome view":
+        compact_monthly_html, compact_monthly_height = render_compact_monthly_table_html(
+            monthly_summary_df,
+            daily_rows_by_period,
+            monthly_outcome_classified,
+            table_id="monthly-kpi-compact-table",
+        )
+        components.html(compact_monthly_html, height=compact_monthly_height, scrolling=False)
+    else:
+        components.html(m_html, height=table_height, scrolling=False)
 
 # ==========================================================
 # PERFORMANCE TABLE SELECTOR
@@ -3429,6 +3740,13 @@ selected_performance_table = st.radio(
     options=performance_table_options,
     index=0,
     horizontal=True,
+)
+performance_table_view = st.radio(
+    "Performance table format",
+    options=["Concise outcome view", "Full KPI breakdown"],
+    index=0,
+    horizontal=True,
+    key="performance_breakdown_table_view",
 )
 
 # Rate denominators are based on individual application rows so overlapping
@@ -4147,7 +4465,13 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         }})();
         </script>
         """
-        components.html(adv_html, height=advisor_table_height, scrolling=False)
+        if performance_table_view == "Concise outcome view":
+            compact_perf_html, compact_perf_height = render_compact_performance_table_html(
+                master_df, "Advisor", advisor_summary["SALES EXECUTIVE"].tolist(), "advisor-compact-outcome-table"
+            )
+            components.html(compact_perf_html, height=compact_perf_height, scrolling=False)
+        else:
+            components.html(adv_html, height=advisor_table_height, scrolling=False)
 elif selected_performance_table == "👥 Sales Executive Performance Breakdown":
     st.info("No sales records available for the selected date or month filter.")
 
@@ -4650,7 +4974,13 @@ if selected_performance_table == "🧪 Quality Officer Performance" and "Quality
         }})();
         </script>
         """
-        components.html(adv_html, height=advisor_table_height, scrolling=False)
+        if performance_table_view == "Concise outcome view":
+            compact_perf_html, compact_perf_height = render_compact_performance_table_html(
+                master_df, "Quality Officer", advisor_summary["Quality Officer"].tolist(), "quality-compact-outcome-table"
+            )
+            components.html(compact_perf_html, height=compact_perf_height, scrolling=False)
+        else:
+            components.html(adv_html, height=advisor_table_height, scrolling=False)
 elif selected_performance_table == "🧪 Quality Officer Performance":
     st.info("No sales records available for the selected date or month filter.")
 
@@ -5153,7 +5483,13 @@ if selected_performance_table == "📞 Welcome Caller Performance" and "Welcome 
         }})();
         </script>
         """
-        components.html(adv_html, height=advisor_table_height, scrolling=False)
+        if performance_table_view == "Concise outcome view":
+            compact_perf_html, compact_perf_height = render_compact_performance_table_html(
+                master_df, "Welcome Call By", advisor_summary["Welcome Call By"].tolist(), "welcome-compact-outcome-table"
+            )
+            components.html(compact_perf_html, height=compact_perf_height, scrolling=False)
+        else:
+            components.html(adv_html, height=advisor_table_height, scrolling=False)
 elif selected_performance_table == "📞 Welcome Caller Performance":
     st.info("No sales records available for the selected date or month filter.")
 
