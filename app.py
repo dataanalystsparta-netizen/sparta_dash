@@ -12,6 +12,8 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
 - Executive KPI cards use a compact two-row, multi-column layout.
 - Static four-level sunburst sits beside the KPI cards; all hierarchy levels are visible by default.
 - Monthly KPI and Performance Breakdown each default to a concise Applications / Pending / Cancelled / Live view, with a radio switch to the original detailed table.
+- Hybrid record keys are filled per row, so legacy Sparta / Sparta2 records still reconcile when CRM rows already contain _RecordKey.
+- Authoritative downstream Portal Live / Committed status takes precedence over earlier QA / Welcome status markers in concise outcomes.
 """
 
 import logging
@@ -1637,44 +1639,48 @@ def build_master_dataframe(app_df: pd.DataFrame, portal_df: pd.DataFrame) -> pd.
     """
     Merge application and portal records on Sale Date + Telephone No.
 
-    This prevents a later sale using the same phone number from receiving the
-    downstream portal status of an earlier sale.
+    IMPORTANT HYBRID-SOURCE DETAIL:
+    CRM rows already arrive with _RecordKey. After concatenating CRM and
+    legacy rows, the column therefore exists even though legacy rows have
+    blank/NaN values. Fill missing keys row-by-row for BOTH frames; checking
+    only whether the column exists silently prevents all legacy Sparta/Sparta2
+    matching and causes legacy Live counts to disappear from the concise view.
     """
     apps = app_df.copy()
     portal = portal_df.copy()
 
-    if "_RecordKey" not in apps.columns:
-        apps["_RecordKey"] = [
-            make_source_record_key(d, p)
-            for d, p in zip(
-                apps.get(
-                    "Sale Date Clean",
-                    pd.Series(index=apps.index, dtype="datetime64[ns]"),
-                ),
-                apps.get(
-                    "Telephone No.",
-                    pd.Series([""] * len(apps), index=apps.index),
-                ),
-            )
-        ]
+    def ensure_record_keys(frame: pd.DataFrame) -> pd.DataFrame:
+        frame = frame.copy()
+        if "_RecordKey" not in frame.columns:
+            frame["_RecordKey"] = ""
 
-    if "_RecordKey" not in portal.columns:
-        portal["_RecordKey"] = [
-            make_source_record_key(d, p)
-            for d, p in zip(
-                portal.get(
-                    "Sale Date Clean",
-                    pd.Series(index=portal.index, dtype="datetime64[ns]"),
-                ),
-                portal.get(
-                    "Telephone No.",
-                    pd.Series([""] * len(portal), index=portal.index),
-                ),
+        existing = frame["_RecordKey"].fillna("").astype(str).str.strip()
+        missing_mask = existing.eq("")
+        if missing_mask.any():
+            sale_dates = frame.get(
+                "Sale Date Clean",
+                pd.Series(index=frame.index, dtype="datetime64[ns]"),
             )
-        ]
+            phone_values = frame.get(
+                "Telephone No.",
+                pd.Series([""] * len(frame), index=frame.index, dtype=object),
+            )
+            generated_keys = [
+                make_source_record_key(date_value, phone_value)
+                for date_value, phone_value in zip(
+                    sale_dates.loc[missing_mask], phone_values.loc[missing_mask]
+                )
+            ]
+            frame.loc[missing_mask, "_RecordKey"] = generated_keys
+
+        frame["_RecordKey"] = frame["_RecordKey"].fillna("").astype(str).str.strip()
+        return frame
+
+    apps = ensure_record_keys(apps)
+    portal = ensure_record_keys(portal)
 
     portal_valid = portal[
-        portal["_RecordKey"].fillna("").astype(str).str.strip() != ""
+        portal["_RecordKey"] != ""
     ].copy()
 
     if not portal_valid.empty:
@@ -2040,23 +2046,38 @@ def classify_application_outcome(row: pd.Series):
     portal_clean = _outcome_text(row.get("Portal Status Clean", ""))
 
     # ------------------------------------------------------------------
-    # LEGACY / EXCEL RECONCILIATION
+    # AUTHORITATIVE DOWNSTREAM OUTCOME RECONCILIATION
     # ------------------------------------------------------------------
-    # The concise view must use the same normalized categories as the
-    # existing Full KPI Breakdown. In particular, the legacy portal
-    # categorizer deliberately maps raw Portal Status values such as
-    # "Pending", "Active", and "Completed" into Portal Status Clean =
-    # "Live". Reading the raw word "Pending" directly here would make the
-    # concise table disagree with the established KPI table.
+    # The Full KPI Breakdown calculates Live / Committed / Live Cancelled
+    # from the normalized Portal Status Clean field. That downstream result
+    # must take precedence over earlier QA or Welcome statuses. For example,
+    # an application can have an earlier Welcome cancellation marker and
+    # still have subsequently progressed to Live in Sparta2 / CRM onboarding.
     #
-    # Exclusive outcome precedence for legacy records:
-    #   1. Quality Cancelled
-    #   2. Welcome Cancelled
-    #   3. Portal Status Clean = Cancelled
-    #   4. Portal Status Clean = Live
-    #   5. Everything else (including Committed / no portal record) = Pending
-    # Provisioning, Letter and Call text is not used to override the legacy
-    # KPI taxonomy; those fields are not the legacy Full KPI outcome source.
+    # Priority for every source:
+    #   1. Inbound Cancelled (handled above; standalone cancellation)
+    #   2. Portal Status Clean = Live       -> Live
+    #   3. Portal Status Clean = Committed  -> Pending
+    #   4. Otherwise, use the existing stage-by-stage cancellation rules
+    #      and pending fallback below.
+    #
+    # Legacy Portal Status Clean is produced by the exact same categorizer
+    # used in the Full KPI table (raw Pending / Active / Completed / Live
+    # becomes Live; Commit / In Progress / Processing becomes Committed).
+    # CRM Portal Status Clean is produced by derive_crm_portal_status.
+    if portal_clean.lower() == "live":
+        return "Live", "Portal Status", _original_status_value(
+            portal_source_raw, portal_clean
+        )
+
+    if portal_clean.lower() == "committed":
+        return "Pending", "Portal Status", _original_status_value(
+            portal_source_raw, portal_clean
+        )
+
+    # Legacy / Excel does not have CRM's Provisioning / Dispatch / Confirmation
+    # ownership rules. If no active downstream Portal result exists, retain
+    # the established QA -> Welcome -> Portal cancellation precedence.
     if not is_crm:
         if quality_clean.lower() == "cancelled":
             return "Cancelled", "Quality Status", _original_status_value(
@@ -2070,16 +2091,6 @@ def classify_application_outcome(row: pd.Series):
 
         if portal_clean.lower() == "cancelled":
             return "Cancelled", "Portal Status", _original_status_value(
-                portal_source_raw, portal_clean
-            )
-
-        if portal_clean.lower() == "live":
-            return "Live", "Portal Status", _original_status_value(
-                portal_source_raw, portal_clean
-            )
-
-        if portal_clean.lower() == "committed":
-            return "Pending", "Portal Status", _original_status_value(
                 portal_source_raw, portal_clean
             )
 
