@@ -2039,8 +2039,64 @@ def classify_application_outcome(row: pd.Series):
     portal_raw = _outcome_text(portal_source_raw)
     portal_clean = _outcome_text(row.get("Portal Status Clean", ""))
 
-    # Use original source field names for each population where the CRM and
-    # legacy worksheets use different headings.
+    # ------------------------------------------------------------------
+    # LEGACY / EXCEL RECONCILIATION
+    # ------------------------------------------------------------------
+    # The concise view must use the same normalized categories as the
+    # existing Full KPI Breakdown. In particular, the legacy portal
+    # categorizer deliberately maps raw Portal Status values such as
+    # "Pending", "Active", and "Completed" into Portal Status Clean =
+    # "Live". Reading the raw word "Pending" directly here would make the
+    # concise table disagree with the established KPI table.
+    #
+    # Exclusive outcome precedence for legacy records:
+    #   1. Quality Cancelled
+    #   2. Welcome Cancelled
+    #   3. Portal Status Clean = Cancelled
+    #   4. Portal Status Clean = Live
+    #   5. Everything else (including Committed / no portal record) = Pending
+    # Provisioning, Letter and Call text is not used to override the legacy
+    # KPI taxonomy; those fields are not the legacy Full KPI outcome source.
+    if not is_crm:
+        if quality_clean.lower() == "cancelled":
+            return "Cancelled", "Quality Status", _original_status_value(
+                quality_source_raw, quality_clean
+            )
+
+        if welcome_clean.lower() == "cancelled":
+            return "Cancelled", "Welcome Status", _original_status_value(
+                welcome_source_raw, welcome_clean
+            )
+
+        if portal_clean.lower() == "cancelled":
+            return "Cancelled", "Portal Status", _original_status_value(
+                portal_source_raw, portal_clean
+            )
+
+        if portal_clean.lower() == "live":
+            return "Live", "Portal Status", _original_status_value(
+                portal_source_raw, portal_clean
+            )
+
+        if portal_clean.lower() == "committed":
+            return "Pending", "Portal Status", _original_status_value(
+                portal_source_raw, portal_clean
+            )
+
+        # There may be no matching Sparta2 row for an application yet. Keep
+        # the most advanced populated application-stage value for the exact
+        # status tooltip, but classify the overall application as Pending.
+        for stage_name, raw_value in [
+            ("Welcome Status", welcome_source_raw),
+            ("Quality Status", quality_source_raw),
+        ]:
+            if _outcome_text(raw_value):
+                return "Pending", stage_name, _original_status_value(raw_value)
+
+        return "Pending", "Application Status", "(blank)"
+
+    # Use original source field names for CRM records. CRM retains its own
+    # stage-by-stage cancellation precedence and onboarding classification.
     welcome_stage = "Welcome Call Status" if is_crm else "Welcome Status"
     dispatch_stage = "LetterStatus (Dispatch Status)" if is_crm else "Letter Status"
     confirmation_stage = "Confirmation Status" if is_crm else "Call Status"
@@ -2300,11 +2356,13 @@ def render_compact_performance_table_html(
         cells = [
             f'<td class="compact-number" data-sort="{values["Applications"]}" title="{_compact_tooltip_attribute(tooltips["Applications"])}">{values["Applications"]:,}</td>'
         ]
+        application_count = int(values["Applications"])
         for outcome_name in ["Pending", "Cancelled", "Live"]:
             tip = tooltips[outcome_name]
-            value = values[outcome_name]
+            value = int(values[outcome_name])
+            share = value / application_count * 100 if application_count else 0.0
             cells.append(
-                f'<td class="compact-number" data-sort="{value}" title="{_compact_tooltip_attribute(tip)}">{value:,}</td>'
+                f'<td class="compact-number" data-sort="{value}" title="{_compact_tooltip_attribute(tip)}">{value:,} ({share:.1f}%)</td>'
             )
         return "".join(cells)
 
@@ -2361,11 +2419,13 @@ def render_compact_monthly_table_html(
         result = [
             f'<td class="compact-number" data-sort="{values["Applications"]}" title="{_compact_tooltip_attribute(tooltips["Applications"])}">{values["Applications"]:,}</td>'
         ]
+        application_count = int(values["Applications"])
         for outcome_name in ["Pending", "Cancelled", "Live"]:
-            value = values[outcome_name]
+            value = int(values[outcome_name])
             tip = tooltips[outcome_name]
+            share = value / application_count * 100 if application_count else 0.0
             result.append(
-                f'<td class="compact-number" data-sort="{value}" title="{_compact_tooltip_attribute(tip)}">{value:,}</td>'
+                f'<td class="compact-number" data-sort="{value}" title="{_compact_tooltip_attribute(tip)}">{value:,} ({share:.1f}%)</td>'
             )
         return "".join(result)
 
