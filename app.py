@@ -13,12 +13,13 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
 - Static four-level sunburst sits beside the KPI cards; all hierarchy levels are visible by default.
 - Monthly KPI and Performance Breakdown each default to a concise Applications / Pending / Cancelled / Live view, with a radio switch to the original detailed table.
 - Hybrid record keys are filled per row, so legacy Sparta / Sparta2 records still reconcile when CRM rows already contain _RecordKey.
-- Authoritative downstream Portal Live / Committed status takes precedence over earlier QA / Welcome status markers in concise outcomes.
+- Concise outcome tables use the sunburst classifier for CRM and the Full KPI Sparta2 Portal Status Clean categories (Live / Committed / Cancelled) for Excel / Legacy.
 """
 
 import logging
 import re
 import time
+from collections import Counter
 from datetime import datetime
 from html import escape
 from typing import List
@@ -2418,6 +2419,254 @@ def classify_application_rows(df: pd.DataFrame) -> pd.DataFrame:
     return classified.reset_index(drop=True)
 
 
+def reconcile_legacy_portal_outcomes_with_full_kpi(
+    classified: pd.DataFrame,
+    application_df: pd.DataFrame,
+    portal_df: pd.DataFrame,
+    group_columns: List[str],
+) -> pd.DataFrame:
+    """Apply the Full KPI legacy Portal Status logic in the concise tables.
+
+    CRM rows are untouched and continue to use the exact sunburst classifier.
+    For Excel / Legacy rows, the Full KPI breakdown's Sparta2 source is
+    authoritative for these three portal states:
+
+        Portal Status Clean = Live       -> concise Live
+        Portal Status Clean = Committed  -> concise Pending
+        Portal Status Clean = Cancelled  -> concise Cancelled
+
+    Legacy applications without a corresponding Sparta2 portal state retain
+    their application-stage outcome: QA / Welcome cancellations are Cancelled;
+    all other such records are Pending. The reconciliation is performed on a
+    copy used only by the concise view. It never changes the Full KPI data, its
+    source frames, or the CRM / sunburst classification.
+    """
+    if classified is None or classified.empty:
+        return classified.copy() if classified is not None else pd.DataFrame()
+    if application_df is None or application_df.empty:
+        return classified.copy()
+    if len(classified) != len(application_df):
+        raise ValueError(
+            "Concise outcome reconciliation requires one classified row per application row "
+            f"(classified={len(classified)}, applications={len(application_df)})."
+        )
+    if portal_df is None:
+        return classified.copy()
+
+    out = classified.copy().reset_index(drop=True)
+    app = application_df.copy().reset_index(drop=True)
+    portal = portal_df.copy().reset_index(drop=True)
+
+    missing_groups = [
+        column for column in group_columns
+        if column not in app.columns or column not in portal.columns
+    ]
+    if missing_groups:
+        logger.warning(
+            "Concise legacy reconciliation skipped; group columns are missing: %s",
+            ", ".join(missing_groups),
+        )
+        return out
+
+    def _source_mask(frame: pd.DataFrame) -> pd.Series:
+        source = frame.get("Source", pd.Series("", index=frame.index))
+        source = source.fillna("").astype(str).str.strip().str.lower()
+        return source.isin({"excel / legacy", "excel/legacy", "legacy", "excel"})
+
+    def _key_component(value):
+        try:
+            if pd.isna(value):
+                return "<NA>"
+        except (TypeError, ValueError):
+            pass
+        return str(value)
+
+    def _make_group_key(frame: pd.DataFrame) -> pd.Series:
+        return pd.Series(
+            [
+                tuple(_key_component(row[column]) for column in group_columns)
+                for _, row in frame[group_columns].iterrows()
+            ],
+            index=frame.index,
+            dtype=object,
+        )
+
+    def _restore_application_stage(index: int) -> None:
+        """Restore QA / Welcome outcome when a merged Portal row is excess."""
+        app_row = app.iloc[index]
+        quality_clean = _outcome_text(app_row.get("Quality Status Clean", "")).lower()
+        welcome_clean = _outcome_text(app_row.get("Welcome Status Clean", "")).lower()
+        quality_raw = app_row.get("Quality Status", "")
+        welcome_raw = app_row.get("Welcome Status", "")
+
+        if quality_clean == "cancelled":
+            out.at[index, "Outcome"] = "Cancelled"
+            out.at[index, "Stage"] = "Quality Status"
+            out.at[index, "Bucket"] = "Quality"
+            out.at[index, "Status"] = _original_status_value(quality_raw, "Cancelled")
+        elif welcome_clean == "cancelled":
+            out.at[index, "Outcome"] = "Cancelled"
+            out.at[index, "Stage"] = "Welcome Status"
+            out.at[index, "Bucket"] = "Welcome"
+            out.at[index, "Status"] = _original_status_value(welcome_raw, "Cancelled")
+        else:
+            out.at[index, "Outcome"] = "Pending"
+            if _outcome_text(welcome_raw):
+                out.at[index, "Stage"] = "Welcome Status"
+                out.at[index, "Bucket"] = "Welcome"
+                out.at[index, "Status"] = _original_status_value(welcome_raw)
+            elif _outcome_text(quality_raw):
+                out.at[index, "Stage"] = "Quality Status"
+                out.at[index, "Bucket"] = "Quality"
+                out.at[index, "Status"] = _original_status_value(quality_raw)
+            else:
+                out.at[index, "Stage"] = "Application Status"
+                out.at[index, "Bucket"] = "Onboarding"
+                out.at[index, "Status"] = "(blank)"
+
+    out["__ConciseGroupKey"] = _make_group_key(app)
+    legacy_app_mask = _source_mask(out)
+    if not legacy_app_mask.any():
+        return out.drop(columns=["__ConciseGroupKey"], errors="ignore")
+
+    # Count the raw legacy portal rows exactly as the Full KPI table does.
+    # The raw Portal Status is retained for the concise hover breakdown.
+    portal_live_mask = pd.Series(False, index=portal.index, dtype=bool)
+    if "Portal Status Clean" in portal.columns:
+        portal_clean = portal["Portal Status Clean"].fillna("").astype(str).str.strip().str.lower()
+        portal_live_mask = _source_mask(portal) & portal_clean.isin({"live", "committed", "cancelled"})
+
+    portal_status_by_group = {}
+    for index in portal.index[portal_live_mask]:
+        group_key = tuple(
+            _key_component(portal.at[index, column]) for column in group_columns
+        )
+        clean_status = _outcome_text(portal.at[index, "Portal Status Clean"]).lower()
+        raw_status = _original_status_value(
+            portal.at[index, "Portal Status"] if "Portal Status" in portal.columns else "",
+            clean_status.title(),
+        )
+        category_rows = portal_status_by_group.setdefault(
+            group_key, {"live": [], "committed": [], "cancelled": []}
+        )
+        category_rows[clean_status].append(raw_status)
+
+    # Category allocation order is intentional: preserve Live first, then
+    # Portal Cancelled, then Committed. Every portal category takes precedence
+    # over earlier QA / Welcome markers, as it does in the Full KPI funnel.
+    portal_categories = [
+        ("live", "Live"),
+        ("cancelled", "Cancelled"),
+        ("committed", "Pending"),
+    ]
+
+    total_assigned = {name: 0 for name, _ in portal_categories}
+    total_restored = 0
+    groups_over_capacity = 0
+
+    for group_key in out.loc[legacy_app_mask, "__ConciseGroupKey"].drop_duplicates().tolist():
+        group_match = out["__ConciseGroupKey"].map(lambda value: value == group_key)
+        group_indices = out.index[legacy_app_mask & group_match].tolist()
+        if not group_indices:
+            continue
+
+        original_portal_indices = [
+            index for index in group_indices
+            if _outcome_text(out.at[index, "Stage"]).lower() == "portal status"
+        ]
+        group_portal_data = portal_status_by_group.get(
+            group_key, {"live": [], "committed": [], "cancelled": []}
+        )
+
+        # Retain already matched rows where their outcome agrees with the raw
+        # Full KPI category. Any excess merged rows are returned to the pool.
+        preserved_by_category = {}
+        preserved_indices = set()
+        for category, expected_outcome in portal_categories:
+            target_count = len(group_portal_data.get(category, []))
+            matched = [
+                index for index in original_portal_indices
+                if str(out.at[index, "Outcome"]).strip().lower() == expected_outcome.lower()
+            ]
+            keep = matched[:target_count]
+            preserved_by_category[category] = keep
+            preserved_indices.update(keep)
+
+        candidates = [index for index in group_indices if index not in preserved_indices]
+
+        def _candidate_priority(index: int):
+            outcome = _outcome_text(out.at[index, "Outcome"]).lower()
+            stage_is_portal = _outcome_text(out.at[index, "Stage"]).lower() == "portal status"
+            if not stage_is_portal and outcome == "pending":
+                return (0, index)
+            if stage_is_portal:
+                return (1, index)
+            if outcome == "cancelled":
+                return (2, index)
+            return (3, index)
+
+        candidates.sort(key=_candidate_priority)
+        assigned_indices = set(preserved_indices)
+
+        for category, expected_outcome in portal_categories:
+            raw_statuses = list(group_portal_data.get(category, []))
+            target_count = len(raw_statuses)
+            keep = preserved_by_category.get(category, [])
+            deficit = max(0, target_count - len(keep))
+            remaining_indices = [index for index in candidates if index not in assigned_indices]
+            chosen = remaining_indices[:deficit]
+
+            # Preserve the exact original Portal Status values in tooltips.
+            available_status_counts = Counter(raw_statuses)
+            for index in keep:
+                existing_status = _original_status_value(
+                    out.at[index, "Status"], expected_outcome
+                )
+                if available_status_counts.get(existing_status, 0) > 0:
+                    available_status_counts[existing_status] -= 1
+            available_statuses = [
+                status
+                for status, count in available_status_counts.items()
+                for _ in range(max(0, int(count)))
+            ]
+            if not available_statuses:
+                available_statuses = raw_statuses or [expected_outcome]
+
+            for offset, index in enumerate(chosen):
+                out.at[index, "Outcome"] = expected_outcome
+                out.at[index, "Stage"] = "Portal Status"
+                out.at[index, "Bucket"] = "Onboarding"
+                out.at[index, "Status"] = available_statuses[offset % len(available_statuses)]
+                assigned_indices.add(index)
+
+            total_assigned[category] += len(keep) + len(chosen)
+            if len(chosen) < deficit:
+                groups_over_capacity += 1
+                logger.warning(
+                    "Legacy Full KPI Portal Status %s count (%s) exceeds the remaining application "
+                    "capacity for group %s; %s row(s) could not be represented in the concise view.",
+                    category, target_count, group_key, deficit - len(chosen),
+                )
+
+        # Any merged Portal Status rows that were not retained by the raw Full
+        # KPI counts are restored to their QA / Welcome application-stage state.
+        for index in original_portal_indices:
+            if index not in assigned_indices:
+                _restore_application_stage(index)
+                total_restored += 1
+
+    out = out.drop(columns=["__ConciseGroupKey"], errors="ignore")
+    if any(total_assigned.values()) or total_restored or groups_over_capacity:
+        logger.info(
+            "Concise legacy outcomes reconciled to Full KPI Sparta2 statuses: "
+            "%s Live, %s Committed/Pending, %s Cancelled portal rows assigned; "
+            "%s excess merged portal rows restored; %s over-capacity groups.",
+            total_assigned["live"], total_assigned["committed"],
+            total_assigned["cancelled"], total_restored, groups_over_capacity,
+        )
+    return out
+
+
 def get_sunburst_outcome_counts(classified: pd.DataFrame) -> dict:
     """Return the four concise metrics from the exclusive sunburst outcome data."""
     counts = (
@@ -2493,9 +2742,14 @@ def _compact_tooltip_attribute(value: str) -> str:
 
 
 def render_compact_performance_table_html(
-    source_df: pd.DataFrame, entity_column: str, display_labels, table_id: str
+    source_df: pd.DataFrame,
+    entity_column: str,
+    display_labels,
+    table_id: str,
+    legacy_portal_df: pd.DataFrame | None = None,
+    legacy_portal_entity_column: str = "",
 ) -> tuple[str, int]:
-    """Build a short performance table, retaining sunburst category details on hover."""
+    """Build a concise outcome table with source-specific CRM / legacy rules."""
     if source_df is None or source_df.empty or entity_column not in source_df.columns:
         return "<div class='compact-outcome-empty'>No application records available.</div>", 160
 
@@ -2507,6 +2761,26 @@ def render_compact_performance_table_html(
     classified = classify_application_rows(source)
     classified["_EntityLabel"] = entity_labels
     classified["_EntityKey"] = [normalize_person_key(v) for v in entity_labels]
+
+    # Sales Executive Full KPI uses the raw Sparta2 portal source for its Live
+    # total. Reconcile only the legacy portion of this concise table to that
+    # same portal count; CRM remains exactly the sunburst classifier result.
+    if (
+        legacy_portal_df is not None
+        and legacy_portal_entity_column
+        and legacy_portal_entity_column in legacy_portal_df.columns
+    ):
+        app_reconcile = source.copy().reset_index(drop=True)
+        app_reconcile["_OutcomeEntityKey"] = classified["_EntityKey"].to_numpy()
+        portal_reconcile = legacy_portal_df.copy().reset_index(drop=True)
+        portal_reconcile["_OutcomeEntityKey"] = portal_reconcile[
+            legacy_portal_entity_column
+        ].fillna("").astype(str).apply(normalize_person_key)
+        classified = reconcile_legacy_portal_outcomes_with_full_kpi(
+            classified, app_reconcile, portal_reconcile, ["_OutcomeEntityKey"]
+        )
+        classified["_EntityLabel"] = entity_labels
+        classified["_EntityKey"] = [normalize_person_key(v) for v in entity_labels]
 
     labels = []
     seen_keys = set()
@@ -3419,6 +3693,45 @@ else:
     else:
         monthly_outcome_classified["_MonthKey"] = pd.Series(dtype=int)
         monthly_outcome_classified["_DayKey"] = pd.Series(dtype=object)
+
+    # The Monthly Full KPI table computes Live from the selected portal frame
+    # (m_portal) using Portal Status Clean == "Live". Reuse that exact legacy
+    # source for the concise view, while leaving CRM rows on the sunburst rules.
+    # Group on both month and sale day so month totals and expanded daily rows
+    # reconcile to the Full KPI breakdown without modifying its calculations.
+    monthly_app_reconcile = monthly_app_df.copy().reset_index(drop=True)
+    monthly_portal_reconcile = monthly_portal_df.copy().reset_index(drop=True)
+
+    def _attach_concise_month_day_keys(frame: pd.DataFrame) -> pd.DataFrame:
+        frame = frame.copy()
+        if "Period_Sort" in frame.columns:
+            frame["_MonthKey"] = [
+                _safe_period_month_key(value) for value in frame["Period_Sort"]
+            ]
+        else:
+            sale_dates = pd.to_datetime(
+                frame.get("Sale Date Clean", pd.Series(pd.NaT, index=frame.index)),
+                errors="coerce",
+            )
+            frame["_MonthKey"] = [
+                int(value.year) * 100 + int(value.month) if pd.notna(value) else -1
+                for value in sale_dates
+            ]
+        sale_dates = pd.to_datetime(
+            frame.get("Sale Date Clean", pd.Series(pd.NaT, index=frame.index)),
+            errors="coerce",
+        )
+        frame["_DayKey"] = sale_dates.dt.strftime("%Y%m%d").fillna("")
+        return frame
+
+    monthly_app_reconcile = _attach_concise_month_day_keys(monthly_app_reconcile)
+    monthly_portal_reconcile = _attach_concise_month_day_keys(monthly_portal_reconcile)
+    monthly_outcome_classified = reconcile_legacy_portal_outcomes_with_full_kpi(
+        monthly_outcome_classified,
+        monthly_app_reconcile,
+        monthly_portal_reconcile,
+        ["_MonthKey", "_DayKey"],
+    )
 
     # ----------------------------------------------------------
     # Totals row — kept exactly on the monthly view and always
@@ -4711,7 +5024,12 @@ if selected_performance_table == "👥 Sales Executive Performance Breakdown" an
         """
         if performance_table_view == "Concise outcome view":
             compact_perf_html, compact_perf_height = render_compact_performance_table_html(
-                master_df, "Advisor", advisor_summary["SALES EXECUTIVE"].tolist(), "advisor-compact-outcome-table"
+                master_df,
+                "Advisor",
+                advisor_summary["SALES EXECUTIVE"].tolist(),
+                "advisor-compact-outcome-table",
+                legacy_portal_df=portal_perf_df,
+                legacy_portal_entity_column="_AdvisorKey",
             )
             components.html(compact_perf_html, height=compact_perf_height, scrolling=False)
         else:
