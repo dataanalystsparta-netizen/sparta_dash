@@ -1637,14 +1637,19 @@ with st.spinner("Loading historical + CRM data..."):
 @st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
 def build_master_dataframe(app_df: pd.DataFrame, portal_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Merge application and portal records on Sale Date + Telephone No.
+    Merge application and portal records on Sale Date + normalized phone.
 
-    IMPORTANT HYBRID-SOURCE DETAIL:
-    CRM rows already arrive with _RecordKey. After concatenating CRM and
-    legacy rows, the column therefore exists even though legacy rows have
-    blank/NaN values. Fill missing keys row-by-row for BOTH frames; checking
-    only whether the column exists silently prevents all legacy Sparta/Sparta2
-    matching and causes legacy Live counts to disappear from the concise view.
+    Exact composite-key matching remains the primary rule. Two safe legacy-only
+    reconciliation safeguards are applied before the merge:
+      1. If a legacy phone appears exactly once in Sparta and exactly once in
+         Sparta2, allow a phone-only fallback when the Sale Date differs.
+         Ambiguous/reused phone numbers are never matched this way.
+      2. If Sparta2 contains duplicate composite keys, retain the most advanced
+         downstream status for the application (Live > Committed > Cancelled >
+         other), rather than arbitrarily keeping the last row and potentially
+         discarding a valid Live status.
+
+    CRM records remain strictly matched on Sale Date + normalized phone.
     """
     apps = app_df.copy()
     portal = portal_df.copy()
@@ -1679,25 +1684,162 @@ def build_master_dataframe(app_df: pd.DataFrame, portal_df: pd.DataFrame) -> pd.
     apps = ensure_record_keys(apps)
     portal = ensure_record_keys(portal)
 
-    portal_valid = portal[
-        portal["_RecordKey"] != ""
-    ].copy()
+    # Conservative fallback for legacy-only records where the phone number is
+    # unique in BOTH source datasets but the Sale Date differs. A phone used for
+    # more than one application or portal record is deliberately not remapped.
+    app_source = apps.get("Source", pd.Series("", index=apps.index)).fillna("").astype(str).str.strip().str.lower()
+    portal_source = portal.get("Source", pd.Series("", index=portal.index)).fillna("").astype(str).str.strip().str.lower()
+    legacy_app_mask = app_source.eq("excel / legacy")
+    legacy_portal_mask = portal_source.eq("excel / legacy")
 
+    apps["__PhoneJoinKey"] = apps.get(
+        "Telephone No.", pd.Series("", index=apps.index)
+    ).apply(normalized_phone_value)
+    portal["__PhoneJoinKey"] = portal.get(
+        "Telephone No.", pd.Series("", index=portal.index)
+    ).apply(normalized_phone_value)
+
+    app_phone_counts = apps.loc[
+        legacy_app_mask & apps["__PhoneJoinKey"].ne("") & apps["_RecordKey"].ne("")
+    ].groupby("__PhoneJoinKey").size()
+    portal_phone_counts = portal.loc[
+        legacy_portal_mask & portal["__PhoneJoinKey"].ne("") & portal["_RecordKey"].ne("")
+    ].groupby("__PhoneJoinKey").size()
+
+    unique_legacy_phones = set(
+        app_phone_counts[app_phone_counts.eq(1)].index
+    ).intersection(
+        set(portal_phone_counts[portal_phone_counts.eq(1)].index)
+    )
+    app_key_by_unique_phone = (
+        apps.loc[legacy_app_mask & apps["__PhoneJoinKey"].isin(unique_legacy_phones)]
+        .set_index("__PhoneJoinKey")["_RecordKey"]
+        .to_dict()
+    )
+
+    fallback_candidate_mask = (
+        legacy_portal_mask
+        & portal["__PhoneJoinKey"].isin(unique_legacy_phones)
+        & portal["_RecordKey"].ne("")
+    )
+    fallback_new_keys = portal.loc[fallback_candidate_mask, "__PhoneJoinKey"].map(app_key_by_unique_phone)
+    fallback_remap_mask = pd.Series(False, index=portal.index, dtype=bool)
+    fallback_candidate_index = portal.index[fallback_candidate_mask]
+    if len(fallback_candidate_index):
+        fallback_valid = fallback_new_keys.notna() & portal.loc[
+            fallback_candidate_index, "_RecordKey"
+        ].ne(fallback_new_keys)
+        fallback_remap_mask.loc[fallback_candidate_index] = fallback_valid.to_numpy()
+    fallback_remap_count = int(fallback_remap_mask.sum())
+    if fallback_remap_count:
+        portal.loc[fallback_remap_mask, "_RecordKey"] = fallback_new_keys.loc[
+            fallback_remap_mask[fallback_remap_mask].index
+        ]
+
+    portal_valid = portal[portal["_RecordKey"].ne("")].copy()
+    duplicate_portal_key_rows = int(
+        portal_valid.duplicated("_RecordKey", keep=False).sum()
+    ) if not portal_valid.empty else 0
+    app_duplicate_key_rows = int(
+        apps.loc[apps["_RecordKey"].ne(""), "_RecordKey"].duplicated(keep=False).sum()
+    )
+
+    # Match repeated composite keys one-to-one instead of dropping every
+    # duplicate except the last. If Sparta2 has more rows for a key than Sparta
+    # has applications, retain the last N portal rows (the source's latest row
+    # order) for the N available application rows. This avoids a cartesian join
+    # while preserving distinct same-day applications whenever both sheets
+    # contain corresponding duplicate keys.
+    apps["__JoinOccurrence"] = apps.groupby("_RecordKey", sort=False).cumcount()
     if not portal_valid.empty:
-        portal_valid = (
-            portal_valid.sort_values("Sale Date Clean")
-            .drop_duplicates(subset="_RecordKey", keep="last")
+        portal_valid["__PortalOriginalOrder"] = np.arange(len(portal_valid))
+        app_key_counts = apps.loc[apps["_RecordKey"].ne("")].groupby("_RecordKey").size()
+        portal_valid["__ApplicationCountForKey"] = (
+            portal_valid["_RecordKey"].map(app_key_counts).fillna(0).astype(int)
+        )
+        portal_valid["__PortalRowsFromStart"] = portal_valid.groupby(
+            "_RecordKey", sort=False
+        ).cumcount()
+        portal_valid["__PortalRowsFromEnd"] = portal_valid.iloc[::-1].groupby(
+            "_RecordKey", sort=False
+        ).cumcount().iloc[::-1].to_numpy()
+        portal_valid = portal_valid[
+            portal_valid["__PortalRowsFromEnd"] < portal_valid["__ApplicationCountForKey"]
+        ].copy()
+        portal_valid["__JoinOccurrence"] = portal_valid.groupby(
+            "_RecordKey", sort=False
+        ).cumcount()
+        portal_valid = portal_valid.drop(
+            columns=[
+                "__PortalOriginalOrder", "__ApplicationCountForKey",
+                "__PortalRowsFromStart", "__PortalRowsFromEnd",
+            ]
         )
 
     if not portal_valid.empty:
         merged = apps.merge(
             portal_valid,
-            on="_RecordKey",
+            on=["_RecordKey", "__JoinOccurrence"],
             how="left",
             suffixes=("", "_portal"),
+            validate="one_to_one",
         )
     else:
         merged = apps.copy()
+
+
+    # Internal helper must not leak into dashboard display/performance tables.
+    merged = merged.drop(
+        columns=[
+            c for c in merged.columns
+            if c.startswith("__PhoneJoinKey") or c == "__JoinOccurrence"
+        ],
+        errors="ignore",
+    )
+
+    # Reconciliation diagnostics are written to Streamlit logs to make any
+    # remaining source-side mismatch visible instead of silently hiding it.
+    app_keys = set(apps.loc[apps["_RecordKey"].ne(""), "_RecordKey"])
+    portal_live_mask = (
+        portal_valid.get("Portal Status Clean", pd.Series("", index=portal_valid.index))
+        .fillna("").astype(str).str.strip().str.lower().eq("live")
+    ) if not portal_valid.empty else pd.Series(dtype=bool)
+    unmatched_live_portal_rows = int((portal_live_mask & ~portal_valid["_RecordKey"].isin(app_keys)).sum()) if not portal_valid.empty else 0
+    portal_live_raw_count = int(
+        portal.get("Portal Status Clean", pd.Series("", index=portal.index))
+        .fillna("").astype(str).str.strip().str.lower().eq("live").sum()
+    )
+    portal_live_resolved_count = int(portal_live_mask.sum()) if not portal_valid.empty else 0
+    portal_live_duplicate_excess = max(0, portal_live_raw_count - portal_live_resolved_count)
+    app_duplicate_key_rows = int(
+        apps.loc[apps["_RecordKey"].ne(""), "_RecordKey"].duplicated(keep=False).sum()
+    )
+    reconciliation_info = {
+        "portal_live_raw_rows": portal_live_raw_count,
+        "portal_live_unique_keys": portal_live_resolved_count,
+        "portal_live_duplicate_excess": portal_live_duplicate_excess,
+        "portal_duplicate_key_rows": duplicate_portal_key_rows,
+        "application_duplicate_key_rows": app_duplicate_key_rows,
+        "legacy_unique_phone_fallback_remaps": fallback_remap_count,
+        "portal_live_unmatched_application_keys": unmatched_live_portal_rows,
+    }
+    merged.attrs["portal_reconciliation"] = reconciliation_info
+    logger.info(
+        "Portal reconciliation: %s raw Live portal rows; %s unique Live portal keys; "
+        "%s duplicate Live row excess; %s duplicate portal-key rows resolved; "
+        "%s application duplicate-key rows; %s unique-phone legacy fallback remaps; "
+        "%s Live portal keys still unmatched to applications.",
+        portal_live_raw_count, portal_live_resolved_count,
+        portal_live_duplicate_excess, duplicate_portal_key_rows,
+        app_duplicate_key_rows, fallback_remap_count, unmatched_live_portal_rows,
+    )
+    if unmatched_live_portal_rows:
+        logger.warning(
+            "%s Live portal records could not be assigned to an application using exact Sale Date + phone "
+            "or a unique legacy phone fallback. They cannot be counted as distinct application outcomes "
+            "without an unambiguous application match.",
+            unmatched_live_portal_rows,
+        )
 
     return merged
 
@@ -1732,6 +1874,21 @@ source_status_text = (
     f"CRM from 17 Sep 2026 · {source_status['crm_app_rows']:,} application rows"
 )
 st.caption(source_status_text)
+
+portal_reconciliation_info = master_raw_df.attrs.get("portal_reconciliation", {})
+if portal_reconciliation_info:
+    unmatched_live = int(portal_reconciliation_info.get("portal_live_unmatched_application_keys", 0))
+    duplicate_live_excess = int(portal_reconciliation_info.get("portal_live_duplicate_excess", 0))
+    fallback_remaps = int(portal_reconciliation_info.get("legacy_unique_phone_fallback_remaps", 0))
+    if unmatched_live or duplicate_live_excess:
+        st.warning(
+            "Portal / application reconciliation needs attention: "
+            f"{unmatched_live:,} Live portal records have no unambiguous application match; "
+            f"{duplicate_live_excess:,} additional Live portal rows share duplicate Sale Date + phone keys. "
+            f"Unique-phone legacy fallback matches applied: {fallback_remaps:,}. "
+            "The concise outcome view counts each application once, so these portal-only/duplicate rows "
+            "cannot safely be added as separate Live applications. See the app logs for the detailed audit."
+        )
 
 if attendance_df.empty:
     st.warning(
@@ -2519,6 +2676,22 @@ def render_compact_monthly_table_html(
 # exactly to the same filtered application population as the KPI cards.
 outcome_df, outcome_bucket_table, outcome_summary = build_application_outcome_hierarchy(master_df)
 outcome_total = len(outcome_df)
+
+# Directly compare the concise/sunburst Live outcome with the same filtered
+# Sparta2/CRM portal population used by the Full KPI Breakdown. Any remaining
+# difference is surfaced on-screen rather than being silently overlooked.
+full_kpi_live_authority = count_status(filtered_portal_df, "Portal Status Clean", "Live")
+concise_live_count = int(outcome_summary.get("Live", 0))
+if concise_live_count != full_kpi_live_authority:
+    live_delta = full_kpi_live_authority - concise_live_count
+    st.warning(
+        "Live reconciliation check: the Full KPI portal source contains "
+        f"{full_kpi_live_authority:,} Live records, while the concise/sunburst "
+        f"application classification contains {concise_live_count:,}. "
+        f"Difference: {live_delta:+,}. Review the portal reconciliation diagnostic "
+        "above and the app logs; unresolved portal rows may have duplicate or "
+        "non-matching application keys."
+    )
 
 # Keep the KPI rail compact and give the static sunburst most of the available
 # dashboard width. The sunburst itself uses the full chart domain (no callout lanes).
