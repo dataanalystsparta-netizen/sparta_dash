@@ -2520,29 +2520,50 @@ def reconcile_legacy_portal_outcomes_with_full_kpi(
     )
     return out
 
-def get_sunburst_outcome_counts(classified: pd.DataFrame) -> dict:
-    """Return CRM-exclusive outcomes plus direct, potentially overlapping legacy totals."""
-    if classified is None:
-        return {"Applications": 0, "Pending": 0, "Cancelled": 0, "Live": 0}
-    if classified.empty:
-        return {"Applications": 0, "Pending": 0, "Cancelled": 0, "Live": 0}
+def get_sunburst_outcome_counts(
+    classified: pd.DataFrame,
+    legacy_counts_override: dict | None = None,
+) -> dict:
+    """Return CRM-exclusive outcomes plus direct, potentially overlapping legacy totals.
+
+    Monthly KPI tables pass exact legacy component counts from the same Full KPI
+    row builder. Other callers retain the existing source-group reconciliation.
+    """
+    if classified is None or classified.empty:
+        empty_result = {"Applications": 0, "Pending": 0, "Cancelled": 0, "Live": 0}
+        if legacy_counts_override is not None:
+            for outcome in ("Pending", "Cancelled", "Live"):
+                empty_result[outcome] = int(legacy_counts_override.get(outcome, 0) or 0)
+        return empty_result
 
     source = classified.get("Source", pd.Series("", index=classified.index)).fillna("").astype(str).str.strip().str.lower()
     legacy_mask = source.isin({"excel / legacy", "excel/legacy", "legacy", "excel"})
     crm_mask = ~legacy_mask
     result = {"Applications": int(len(classified))}
     for outcome in ("Pending", "Cancelled", "Live"):
-        legacy_col = f"_Legacy_Concise_{outcome}"
-        legacy_count = int(pd.to_numeric(classified.loc[legacy_mask, legacy_col], errors="coerce").fillna(0).sum()) if legacy_col in classified.columns else 0
+        if legacy_counts_override is not None:
+            legacy_count = int(legacy_counts_override.get(outcome, 0) or 0)
+        else:
+            legacy_col = f"_Legacy_Concise_{outcome}"
+            legacy_count = int(pd.to_numeric(classified.loc[legacy_mask, legacy_col], errors="coerce").fillna(0).sum()) if legacy_col in classified.columns else 0
         crm_count = int(classified.loc[crm_mask, "Outcome"].astype(str).eq(outcome).sum()) if "Outcome" in classified.columns else 0
         result[outcome] = legacy_count + crm_count
     return result
 
-def build_sunburst_category_tooltips(classified: pd.DataFrame) -> dict:
+def build_sunburst_category_tooltips(classified: pd.DataFrame, legacy_counts_override: dict | None = None) -> dict:
     """Build concise tooltips while keeping CRM detail and legacy component totals explicit."""
     outcomes_order = ["Live", "Pending", "Cancelled"]
     result = {"Applications": "No applications", "Pending": "No Pending applications", "Cancelled": "No Cancelled applications", "Live": "No Live applications"}
     if classified is None or classified.empty:
+        if legacy_counts_override is not None:
+            empty_details = []
+            for outcome in outcomes_order:
+                count = int(legacy_counts_override.get(outcome, 0) or 0)
+                if count:
+                    result[outcome] = f"{outcome}: {count:,}\n  Legacy Full KPI components: {count:,} (direct component total; may overlap)"
+                    empty_details.append(result[outcome])
+            if empty_details:
+                result["Applications"] = "\n".join(empty_details)
         return result
 
     source = classified.get("Source", pd.Series("", index=classified.index)).fillna("").astype(str).str.strip().str.lower()
@@ -2557,7 +2578,7 @@ def build_sunburst_category_tooltips(classified: pd.DataFrame) -> dict:
         grouped = grouped.sort_values(["_OutcomeOrder", "_BucketOrder", "Applications", "Status"], ascending=[True, True, False, True])
 
     detail_lines = {}
-    counts = get_sunburst_outcome_counts(classified)
+    counts = get_sunburst_outcome_counts(classified, legacy_counts_override)
     for name in outcomes_order:
         detail_lines[name] = [f"{name}: {counts[name]:,}"]
 
@@ -2565,11 +2586,18 @@ def build_sunburst_category_tooltips(classified: pd.DataFrame) -> dict:
         detail_lines.setdefault(item.Outcome, [f"{item.Outcome}: 0"])
         detail_lines[item.Outcome].append(f"  {item.Bucket} · {item.Source} · {item.Stage}: {item.Status} — {int(item.Applications):,}")
 
-    legacy_totals = {
-        "Live": int(pd.to_numeric(classified.get("_Legacy_Concise_Live", 0), errors="coerce").fillna(0).sum()) if "_Legacy_Concise_Live" in classified.columns else 0,
-        "Pending": int(pd.to_numeric(classified.get("_Legacy_Concise_Pending", 0), errors="coerce").fillna(0).sum()) if "_Legacy_Concise_Pending" in classified.columns else 0,
-        "Cancelled": int(pd.to_numeric(classified.get("_Legacy_Concise_Cancelled", 0), errors="coerce").fillna(0).sum()) if "_Legacy_Concise_Cancelled" in classified.columns else 0,
-    }
+    if legacy_counts_override is not None:
+        legacy_totals = {
+            outcome: int(legacy_counts_override.get(outcome, 0) or 0)
+            for outcome in ("Live", "Pending", "Cancelled")
+        }
+    else:
+        legacy_totals = {
+            "Live": int(pd.to_numeric(classified.get("_Legacy_Concise_Live", 0), errors="coerce").fillna(0).sum()) if "_Legacy_Concise_Live" in classified.columns else 0,
+            "Pending": int(pd.to_numeric(classified.get("_Legacy_Concise_Pending", 0), errors="coerce").fillna(0).sum()) if "_Legacy_Concise_Pending" in classified.columns else 0,
+            "Cancelled": int(pd.to_numeric(classified.get("_Legacy_Concise_Cancelled", 0), errors="coerce").fillna(0).sum()) if "_Legacy_Concise_Cancelled" in classified.columns else 0,
+        }
+
     for name in outcomes_order:
         if legacy_totals[name]:
             detail_lines[name].append(f"  Legacy Full KPI components: {legacy_totals[name]:,} (direct component total; may overlap)")
@@ -2694,9 +2722,16 @@ def render_compact_performance_table_html(
 
 
 def render_compact_monthly_table_html(
-    monthly_summary_df: pd.DataFrame, daily_rows_by_period: dict, classified: pd.DataFrame, table_id: str
+    monthly_summary_df: pd.DataFrame,
+    daily_rows_by_period: dict,
+    classified: pd.DataFrame,
+    table_id: str,
+    legacy_monthly_concise_counts: dict | None = None,
+    legacy_daily_concise_counts: dict | None = None,
 ) -> tuple[str, int]:
-    """Build concise month/day outcomes: CRM Sunburst rules + legacy Full KPI components."""
+    """Build concise outcomes from CRM Sunburst plus exact legacy Full KPI row counts."""
+    legacy_monthly_concise_counts = legacy_monthly_concise_counts or {}
+    legacy_daily_concise_counts = legacy_daily_concise_counts or {}
     def group_for_month(period_key: int) -> pd.DataFrame:
         if classified.empty:
             return classified
@@ -2707,9 +2742,9 @@ def render_compact_monthly_table_html(
             return classified
         return classified[classified["_DayKey"] == str(int(day_key))]
 
-    def render_cells(group: pd.DataFrame) -> str:
-        values = get_sunburst_outcome_counts(group)
-        tooltips = build_sunburst_category_tooltips(group)
+    def render_cells(group: pd.DataFrame, legacy_counts_override: dict | None = None) -> str:
+        values = get_sunburst_outcome_counts(group, legacy_counts_override)
+        tooltips = build_sunburst_category_tooltips(group, legacy_counts_override)
         result = [
             f'<td class="compact-number" data-sort="{values["Applications"]}" title="{_compact_tooltip_attribute(tooltips["Applications"])}">{values["Applications"]:,}</td>'
         ]
@@ -2752,30 +2787,35 @@ def render_compact_monthly_table_html(
         <tbody>
     """
 
+    total_legacy_counts = {
+        outcome: sum(int(month_counts.get(outcome, 0) or 0) for month_counts in legacy_monthly_concise_counts.values())
+        for outcome in ("Pending", "Cancelled", "Live")
+    }
     for _, row in monthly_summary_df.iterrows():
         label = str(row.get("MONTH", ""))
         if label.strip().lower() == "total":
-            html += f'<tr class="compact-total"><td>Total</td>{render_cells(classified)}</tr>'
+            html += f'<tr class="compact-total"><td>Total</td>{render_cells(classified, total_legacy_counts)}</tr>'
             continue
         period_key = int(row.get("PERIOD_KEY", 0) or 0)
         group_id = f"compact-month-{period_key}"
         month_group = group_for_month(period_key)
+        month_legacy_counts = legacy_monthly_concise_counts.get(period_key, {})
         html += (
             f'<tr class="month-row" data-group="{group_id}">'
             f'<td><button type="button" class="compact-month-toggle" aria-expanded="false" '
             f'onclick="toggleCompactMonth(\'{group_id}\', this)" title="Show daily details">+</button>{escape(label)}</td>'
-            f'{render_cells(month_group)}</tr>'
+            f'{render_cells(month_group, month_legacy_counts)}</tr>'
         )
         for daily_row in daily_rows_by_period.get(period_key, []):
             day_key = int(daily_row.get("PERIOD_KEY", 0) or 0)
             day_group = group_for_day(day_key)
             day_label = escape(str(daily_row.get("MONTH", "")))
+            day_legacy_counts = legacy_daily_concise_counts.get(day_key, {})
             html += (
                 f'<tr class="daily-row" data-parent="{group_id}">'
                 f'<td><span class="compact-day-indent"></span>{day_label}</td>'
-                f'{render_cells(day_group)}</tr>'
+                f'{render_cells(day_group, day_legacy_counts)}</tr>'
             )
-
     html += "</tbody></table></div>"
     html += f"""
     <script>
@@ -3467,8 +3507,25 @@ else:
     # Build monthly rows AND daily rows for every calendar day.
     # Daily rows are stored separately and rendered hidden by default.
     # ----------------------------------------------------------
+    def _legacy_source_rows(frame: pd.DataFrame) -> pd.DataFrame:
+        if frame is None or frame.empty or "Source" not in frame.columns:
+            return frame.iloc[0:0].copy() if frame is not None else pd.DataFrame()
+        source_values = frame["Source"].fillna("").astype(str).str.strip().str.lower()
+        return frame.loc[source_values.isin({"excel / legacy", "excel/legacy", "legacy", "excel"})].copy()
+
+    def _concise_components_from_full_kpi_row(kpi_row: dict) -> dict:
+        return {
+            "Pending": int(kpi_row.get("WELCOME PENDING", 0) or 0) + int(kpi_row.get("COMMITTED REM.", 0) or 0),
+            "Cancelled": int(kpi_row.get("WELCOME CANCELLED", 0) or 0) + int(kpi_row.get("LIVE CANCELLED", 0) or 0),
+            "Live": int(kpi_row.get("LIVE", 0) or 0),
+        }
+
     monthly_rows = []
     daily_rows_by_period = {}
+    # Legacy Concise components are copied from the same Full KPI row builder.
+    # CRM outcomes remain separate and use the existing Sunburst classification.
+    legacy_monthly_concise_counts = {}
+    legacy_daily_concise_counts = {}
 
     for period in all_periods:
         month_start = period.to_timestamp()
@@ -3484,6 +3541,16 @@ else:
                 month_portal,
                 period_key,
             )
+        )
+
+        legacy_month_kpi_row = build_kpi_row(
+            period.strftime("%B %Y"),
+            _legacy_source_rows(month_app),
+            _legacy_source_rows(month_portal),
+            period_key,
+        )
+        legacy_monthly_concise_counts[period_key] = _concise_components_from_full_kpi_row(
+            legacy_month_kpi_row
         )
 
         # Use the actual sale date as the day key. Include every calendar day in the month,
@@ -3511,6 +3578,16 @@ else:
                     day_key,
                     is_daily=True,
                 )
+            )
+            legacy_day_kpi_row = build_kpi_row(
+                day.strftime("%d %b %Y"),
+                _legacy_source_rows(day_app),
+                _legacy_source_rows(day_portal),
+                day_key,
+                is_daily=True,
+            )
+            legacy_daily_concise_counts[day_key] = _concise_components_from_full_kpi_row(
+                legacy_day_kpi_row
             )
             day += pd.Timedelta(days=1)
 
@@ -3546,44 +3623,8 @@ else:
         monthly_outcome_classified["_MonthKey"] = pd.Series(dtype=int)
         monthly_outcome_classified["_DayKey"] = pd.Series(dtype=object)
 
-    # Reconcile legacy concise outcomes using the exact Full KPI components:
-    # Live; Welcome Cancelled + Live Cancelled; Welcome Pending + Committed Rem.
-    # CRM rows continue to use the Sunburst classifier. The Full KPI calculations
-    # and source frames remain untouched. Group on month and sale day so monthly
-    # totals and expanded daily rows use the same period attribution.
-    monthly_app_reconcile = monthly_app_df.copy().reset_index(drop=True)
-    monthly_portal_reconcile = monthly_portal_df.copy().reset_index(drop=True)
-
-    def _attach_concise_month_day_keys(frame: pd.DataFrame) -> pd.DataFrame:
-        frame = frame.copy()
-        if "Period_Sort" in frame.columns:
-            frame["_MonthKey"] = [
-                _safe_period_month_key(value) for value in frame["Period_Sort"]
-            ]
-        else:
-            sale_dates = pd.to_datetime(
-                frame.get("Sale Date Clean", pd.Series(pd.NaT, index=frame.index)),
-                errors="coerce",
-            )
-            frame["_MonthKey"] = [
-                int(value.year) * 100 + int(value.month) if pd.notna(value) else -1
-                for value in sale_dates
-            ]
-        sale_dates = pd.to_datetime(
-            frame.get("Sale Date Clean", pd.Series(pd.NaT, index=frame.index)),
-            errors="coerce",
-        )
-        frame["_DayKey"] = sale_dates.dt.strftime("%Y%m%d").fillna("")
-        return frame
-
-    monthly_app_reconcile = _attach_concise_month_day_keys(monthly_app_reconcile)
-    monthly_portal_reconcile = _attach_concise_month_day_keys(monthly_portal_reconcile)
-    monthly_outcome_classified = reconcile_legacy_portal_outcomes_with_full_kpi(
-        monthly_outcome_classified,
-        monthly_app_reconcile,
-        monthly_portal_reconcile,
-        ["_MonthKey", "_DayKey"],
-    )
+    # Legacy monthly and daily values are supplied directly from the legacy-only
+    # Full KPI rows built above. CRM rows continue to use Sunburst classifications.
 
     # ----------------------------------------------------------
     # Totals row — kept exactly on the monthly view and always
@@ -4128,6 +4169,8 @@ else:
             daily_rows_by_period,
             monthly_outcome_classified,
             table_id="monthly-kpi-compact-table",
+            legacy_monthly_concise_counts=legacy_monthly_concise_counts,
+            legacy_daily_concise_counts=legacy_daily_concise_counts,
         )
         components.html(compact_monthly_html, height=compact_monthly_height, scrolling=False)
     else:
