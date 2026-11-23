@@ -2425,16 +2425,11 @@ def reconcile_legacy_portal_outcomes_with_full_kpi(
     portal_df: pd.DataFrame,
     group_columns: List[str],
 ) -> pd.DataFrame:
-    """Attach direct legacy Full KPI component counts to each reporting group.
+    """Attach legacy Full KPI stage-component diagnostics to each reporting group.
 
-    Legacy concise metrics intentionally are NOT mutually exclusive:
-        Live      = Full KPI Live
-        Cancelled = Full KPI Welcome Cancelled + Live Cancelled
-        Pending   = Full KPI Welcome Pending + Committed Rem.
-
-    Counts are stored once per group on a representative legacy row. No
-    allocation, row reassignment, capping, or redistribution is performed.
-    CRM rows retain their existing exclusive Sunburst classifications.
+    These stage components can overlap and are retained only as diagnostics.
+    They are deliberately not used for Concise outcome totals, which come from
+    the exclusive per-application classifier.
     """
     if classified is None or classified.empty:
         return classified.copy() if classified is not None else pd.DataFrame()
@@ -2529,8 +2524,8 @@ def reconcile_legacy_portal_outcomes_with_full_kpi(
         out.at[representative, "_Legacy_Concise_Live_Cancelled"] = int(live_cancelled)
 
     logger.info(
-        "Legacy concise metrics use direct Full KPI component totals (no exclusivity/capping): "
-        "Pending=Welcome Pending+Committed Rem.; Cancelled=Welcome Cancelled+Live Cancelled; Live=Live."
+        "Legacy Full KPI stage-component diagnostics attached. Concise outcome totals "
+        "remain exclusive per application and are not overridden by overlapping stage totals."
     )
     return out
 
@@ -2538,136 +2533,101 @@ def get_sunburst_outcome_counts(
     classified: pd.DataFrame,
     legacy_counts_override: dict | None = None,
 ) -> dict:
-    """Return CRM-exclusive outcomes plus direct, potentially overlapping legacy totals.
+    """Return mutually exclusive application outcomes for every source.
 
-    Monthly KPI tables pass exact legacy component counts from the same Full KPI
-    row builder. Other callers retain the existing source-group reconciliation.
+    Each input row is one application and classify_application_rows assigns
+    exactly one of Pending, Cancelled, or Live. Legacy Full KPI component
+    counts are stage metrics and may overlap, so they must not override these
+    exclusive application outcomes in the Concise table. The override argument
+    remains accepted for backward compatibility but is intentionally ignored.
     """
     if classified is None or classified.empty:
-        empty_result = {"Applications": 0, "Pending": 0, "Cancelled": 0, "Live": 0}
-        if legacy_counts_override is not None:
-            for outcome in ("Pending", "Cancelled", "Live"):
-                empty_result[outcome] = int(legacy_counts_override.get(outcome, 0) or 0)
-        return empty_result
+        return {"Applications": 0, "Pending": 0, "Cancelled": 0, "Live": 0}
 
-    source = classified.get("Source", pd.Series("", index=classified.index)).fillna("").astype(str).str.strip().str.lower()
-    legacy_mask = source.isin({"excel / legacy", "excel/legacy", "legacy", "excel"})
-    crm_mask = ~legacy_mask
+    valid_outcomes = ("Pending", "Cancelled", "Live")
+    raw_outcomes = classified.get(
+        "Outcome", pd.Series("Pending", index=classified.index)
+    ).fillna("Pending").astype(str).str.strip()
+    # Defensive fallback: no application is allowed to disappear from the
+    # three-way Concise split if an unexpected/blank outcome is encountered.
+    outcomes = raw_outcomes.where(raw_outcomes.isin(valid_outcomes), "Pending")
+
     result = {"Applications": int(len(classified))}
-    for outcome in ("Pending", "Cancelled", "Live"):
-        if legacy_counts_override is not None:
-            legacy_count = int(legacy_counts_override.get(outcome, 0) or 0)
-        else:
-            legacy_col = f"_Legacy_Concise_{outcome}"
-            legacy_count = int(pd.to_numeric(classified.loc[legacy_mask, legacy_col], errors="coerce").fillna(0).sum()) if legacy_col in classified.columns else 0
-        crm_count = int(classified.loc[crm_mask, "Outcome"].astype(str).eq(outcome).sum()) if "Outcome" in classified.columns else 0
-        result[outcome] = legacy_count + crm_count
+    for outcome in valid_outcomes:
+        result[outcome] = int(outcomes.eq(outcome).sum())
+
+    if result["Pending"] + result["Cancelled"] + result["Live"] != result["Applications"]:
+        raise AssertionError("Concise outcomes do not reconcile to Applications.")
     return result
 
-def build_sunburst_category_tooltips(classified: pd.DataFrame, legacy_counts_override: dict | None = None) -> dict:
-    """Build concise tooltips with CRM status detail and exact legacy KPI components."""
+
+def build_sunburst_category_tooltips(
+    classified: pd.DataFrame,
+    legacy_counts_override: dict | None = None,
+) -> dict:
+    """Show category, exact source stage/status, count, and source for each outcome."""
     outcomes_order = ["Live", "Pending", "Cancelled"]
-    result = {"Applications": "No applications", "Pending": "No Pending applications", "Cancelled": "No Cancelled applications", "Live": "No Live applications"}
-    if classified is None:
-        classified = pd.DataFrame()
+    result = {
+        "Applications": "No applications",
+        "Pending": "No Pending applications",
+        "Cancelled": "No Cancelled applications",
+        "Live": "No Live applications",
+    }
+    if classified is None or classified.empty:
+        return result
 
-    source = classified.get("Source", pd.Series("", index=classified.index)).fillna("").astype(str).str.strip().str.lower()
-    legacy_mask = source.isin({"excel / legacy", "excel/legacy", "legacy", "excel"})
-    crm = classified.loc[~legacy_mask].copy()
-    grouped = pd.DataFrame()
-    if not crm.empty and all(c in crm.columns for c in ("Outcome", "Bucket", "Source", "Stage", "Status")):
-        grouped = crm.groupby(["Outcome", "Bucket", "Source", "Stage", "Status"], dropna=False).size().rename("Applications").reset_index()
-        bucket_order = {name: i for i, name in enumerate(["Inbound", "Quality", "Welcome", "Provisioning", "Confirmation", "Onboarding"])}
-        grouped["_OutcomeOrder"] = grouped["Outcome"].map({name: i for i, name in enumerate(outcomes_order)}).fillna(99)
-        grouped["_BucketOrder"] = grouped["Bucket"].map(bucket_order).fillna(99)
-        grouped = grouped.sort_values(["_OutcomeOrder", "_BucketOrder", "Applications", "Status"], ascending=[True, True, False, True])
+    required = ("Outcome", "Bucket", "Source", "Stage", "Status")
+    if not all(column in classified.columns for column in required):
+        # Keep the tooltip useful even if a caller supplies a minimal frame.
+        counts = get_sunburst_outcome_counts(classified)
+        for outcome in outcomes_order:
+            result[outcome] = f"{outcome}: {counts[outcome]:,}"
+        result["Applications"] = "\n".join(result[name] for name in outcomes_order)
+        return result
 
-    counts = get_sunburst_outcome_counts(classified, legacy_counts_override)
+    grouped = (
+        classified.groupby(list(required), dropna=False)
+        .size().rename("Applications").reset_index()
+    )
+    bucket_order = {
+        name: index for index, name in enumerate(
+            ["Inbound", "Quality", "Welcome", "Provisioning", "Confirmation", "Onboarding"]
+        )
+    }
+    grouped["_OutcomeOrder"] = grouped["Outcome"].map(
+        {name: index for index, name in enumerate(outcomes_order)}
+    ).fillna(99)
+    grouped["_BucketOrder"] = grouped["Bucket"].map(bucket_order).fillna(99)
+    grouped["_SourceOrder"] = grouped["Source"].astype(str).str.lower().map(
+        {"crm": 0, "excel / legacy": 1, "excel/legacy": 1, "legacy": 1, "excel": 1}
+    ).fillna(2)
+    grouped = grouped.sort_values(
+        ["_OutcomeOrder", "_BucketOrder", "_SourceOrder", "Applications", "Status"],
+        ascending=[True, True, True, False, True],
+    )
+
+    counts = get_sunburst_outcome_counts(classified)
     detail_lines = {name: [f"{name}: {counts[name]:,}"] for name in outcomes_order}
-
     for item in grouped.itertuples(index=False):
-        detail_lines.setdefault(item.Outcome, [f"{item.Outcome}: 0"])
-        category = f"{str(item.Bucket).strip()} {str(item.Outcome).strip()}".strip()
-        stage_label = str(item.Stage).strip()
-        status_label = str(item.Status).strip() or "(blank status)"
-        detail_lines[item.Outcome].append(
-            f"  {category} · {stage_label}: {status_label} — {int(item.Applications):,}"
+        outcome = str(item.Outcome).strip()
+        if outcome not in detail_lines:
+            outcome = "Pending"
+        category = f"{str(item.Bucket).strip()} {outcome}".strip()
+        stage = str(item.Stage).strip() or "(unknown stage)"
+        status = str(item.Status).strip() or "(blank status)"
+        source = str(item.Source).strip() or "Unknown source"
+        detail_lines[outcome].append(
+            f"  {category} · {stage}: {status} — {int(item.Applications):,} [{source}]"
         )
 
-    # Component-level legacy values are preserved separately from the concise
-    # totals. This restores the original explanatory hover text while keeping
-    # the direct Full KPI reconciliation unchanged.
-    legacy_component_keys = {
-        "Pending": ("Welcome Pending", "Committed Rem."),
-        "Cancelled": ("Welcome Cancelled", "Live Cancelled"),
-        "Live": ("Live",),
-    }
-    component_column_map = {
-        "Welcome Pending": "_Legacy_Concise_Welcome_Pending",
-        "Committed Rem.": "_Legacy_Concise_Committed_Rem",
-        "Welcome Cancelled": "_Legacy_Concise_Welcome_Cancelled",
-        "Live Cancelled": "_Legacy_Concise_Live_Cancelled",
-        "Live": "_Legacy_Concise_Live",
-    }
-
-    component_counts = {}
-    component_details_available = False
-    if legacy_counts_override is not None and any(key in legacy_counts_override for key in component_column_map):
-        component_details_available = True
-        component_counts = {
-            label: int(legacy_counts_override.get(label, 0) or 0)
-            for label in component_column_map
-        }
-    else:
-        for label, column in component_column_map.items():
-            if column in classified.columns:
-                component_details_available = True
-                component_counts[label] = int(
-                    pd.to_numeric(classified[column], errors="coerce").fillna(0).sum()
-                )
-            else:
-                component_counts[label] = 0
-
     for outcome in outcomes_order:
-        component_labels = legacy_component_keys[outcome]
-        component_values = [component_counts.get(label, 0) for label in component_labels]
-        # Display all source components (including zero values) whenever this
-        # outcome has a legacy count, so the tooltip mirrors the Full KPI row.
-        if component_details_available and any(component_values):
-            # Prefer the exact underlying legacy raw status values over broad
-            # Full KPI component headings (e.g. "Welcome Cancelled"). The
-            # raw breakdowns are prepared alongside the legacy Full KPI row.
-            raw_keys = {
-                "Welcome Pending": "Welcome Pending Statuses",
-                "Committed Rem.": "Committed Rem. Statuses",
-                "Welcome Cancelled": "Welcome Cancelled Statuses",
-                "Live Cancelled": "Live Cancelled Statuses",
-                "Live": "Live Statuses",
-            }
-            raw_lines_added = 0
-            if legacy_counts_override is not None:
-                for label, value in zip(component_labels, component_values):
-                    raw_items = legacy_counts_override.get(raw_keys.get(label, ""), [])
-                    if isinstance(raw_items, str):
-                        raw_items = [raw_items] if raw_items else []
-                    for raw_status, raw_count in raw_items:
-                        detail_lines[outcome].append(
-                            f"  {label} · {raw_status}: {int(raw_count):,}"
-                        )
-                        raw_lines_added += 1
-            if not raw_lines_added:
-                for label, value in zip(component_labels, component_values):
-                    detail_lines[outcome].append(f"  {label}: {value:,}")
-            detail_lines[outcome].append(f"  Legacy subtotal: {sum(component_values):,}")
-
-    for name in outcomes_order:
-        if len(detail_lines[name]) > 1:
-            result[name] = "\n".join(detail_lines[name])
+        if len(detail_lines[outcome]) > 1:
+            result[outcome] = "\n".join(detail_lines[outcome])
 
     all_lines = []
-    for name in outcomes_order:
-        if len(detail_lines[name]) > 1:
-            all_lines.extend(detail_lines[name])
+    for outcome in outcomes_order:
+        if len(detail_lines[outcome]) > 1:
+            all_lines.extend(detail_lines[outcome])
     result["Applications"] = "\n".join(all_lines) if all_lines else "No applications"
     return result
 
@@ -2791,7 +2751,7 @@ def render_compact_monthly_table_html(
     legacy_monthly_concise_counts: dict | None = None,
     legacy_daily_concise_counts: dict | None = None,
 ) -> tuple[str, int]:
-    """Build concise outcomes from CRM Sunburst plus exact legacy Full KPI row counts."""
+    """Build mutually exclusive concise outcomes from each application classification."""
     legacy_monthly_concise_counts = legacy_monthly_concise_counts or {}
     legacy_daily_concise_counts = legacy_daily_concise_counts or {}
     def group_for_month(period_key: int) -> pd.DataFrame:
@@ -3730,8 +3690,8 @@ else:
         monthly_outcome_classified["_MonthKey"] = pd.Series(dtype=int)
         monthly_outcome_classified["_DayKey"] = pd.Series(dtype=object)
 
-    # Legacy monthly and daily values are supplied directly from the legacy-only
-    # Full KPI rows built above. CRM rows continue to use Sunburst classifications.
+    # Full KPI stage components are retained for the detailed KPI view, but the
+    # Concise view uses one exclusive outcome per application across all sources.
 
     # ----------------------------------------------------------
     # Totals row — kept exactly on the monthly view and always
