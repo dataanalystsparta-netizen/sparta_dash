@@ -2587,7 +2587,12 @@ def build_sunburst_category_tooltips(classified: pd.DataFrame, legacy_counts_ove
 
     for item in grouped.itertuples(index=False):
         detail_lines.setdefault(item.Outcome, [f"{item.Outcome}: 0"])
-        detail_lines[item.Outcome].append(f"  {item.Bucket} · {item.Source} · {item.Stage}: {item.Status} — {int(item.Applications):,}")
+        category = f"{str(item.Bucket).strip()} {str(item.Outcome).strip()}".strip()
+        stage_label = str(item.Stage).strip()
+        status_label = str(item.Status).strip() or "(blank status)"
+        detail_lines[item.Outcome].append(
+            f"  {category} · {stage_label}: {status_label} — {int(item.Applications):,}"
+        )
 
     # Component-level legacy values are preserved separately from the concise
     # totals. This restores the original explanatory hover text while keeping
@@ -2646,7 +2651,9 @@ def build_sunburst_category_tooltips(classified: pd.DataFrame, legacy_counts_ove
                     if isinstance(raw_items, str):
                         raw_items = [raw_items] if raw_items else []
                     for raw_status, raw_count in raw_items:
-                        detail_lines[outcome].append(f"  {raw_status}: {int(raw_count):,}")
+                        detail_lines[outcome].append(
+                            f"  {label} · {raw_status}: {int(raw_count):,}"
+                        )
                         raw_lines_added += 1
             if not raw_lines_added:
                 for label, value in zip(component_labels, component_values):
@@ -2737,8 +2744,9 @@ def render_compact_performance_table_html(
             tip = tooltips[outcome_name]
             value = int(values[outcome_name])
             share = value / application_count * 100 if application_count else 0.0
+            display_value = f"{value:,} ({share:.1f}%)" if value else "-"
             cells.append(
-                f'<td class="compact-number" data-sort="{value}" title="{_compact_tooltip_attribute(tip)}">{value:,} ({share:.1f}%)</td>'
+                f'<td class="compact-number" data-sort="{value}" title="{_compact_tooltip_attribute(tip)}">{display_value}</td>'
             )
         return "".join(cells)
 
@@ -2807,14 +2815,16 @@ def render_compact_monthly_table_html(
             value = int(values[outcome_name])
             tip = tooltips[outcome_name]
             share = value / application_count * 100 if application_count else 0.0
+            display_value = f"{value:,} ({share:.1f}%)" if value else "-"
             result.append(
-                f'<td class="compact-number" data-sort="{value}" title="{_compact_tooltip_attribute(tip)}">{value:,} ({share:.1f}%)</td>'
+                f'<td class="compact-number" data-sort="{value}" title="{_compact_tooltip_attribute(tip)}">{display_value}</td>'
             )
         return "".join(result)
 
     html = f"""
     <style>
-      .compact-monthly-wrap {{ width:100%; border:1px solid #dbe5f0; border-radius:14px; overflow:auto; box-shadow:0 8px 24px rgba(15,23,42,.05); background:#fff; }}
+      html, body {{ margin:0; padding:0; height:100%; overflow:hidden; }}
+      .compact-monthly-wrap {{ width:100%; height:100%; max-height:100%; box-sizing:border-box; border:1px solid #dbe5f0; border-radius:14px; overflow-x:auto; overflow-y:auto; overscroll-behavior:contain; scrollbar-color:#cbd5e1 #f8fafc; scrollbar-width:thin; box-shadow:0 8px 24px rgba(15,23,42,.05); background:#fff; }}
       table.compact-monthly-table {{ width:100%; border-collapse:collapse; font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; font-size:.9rem; color:#1e293b; font-variant-numeric:tabular-nums; }}
       table.compact-monthly-table th {{ padding:13px 16px; text-align:center; font-size:.75rem; font-weight:850; letter-spacing:.045em; text-transform:uppercase; border-bottom:1px solid #dce5f0; white-space:nowrap; position:sticky;top:0;z-index:2; }}
       table.compact-monthly-table th:first-child, table.compact-monthly-table td:first-child {{ text-align:left; }}
@@ -2901,7 +2911,9 @@ def render_compact_monthly_table_html(
     </script>
     """
     visible_months = int((monthly_summary_df.get("MONTH", pd.Series(dtype=object)).astype(str).str.lower() != "total").sum())
-    height = min(720, max(205, 92 + visible_months * 48))
+    # The iframe is sized for the collapsed month view; the inner wrapper
+    # becomes the scroll viewport when one or more daily groups are expanded.
+    height = min(720, max(230, 108 + visible_months * 48))
     return html, height
 
 
