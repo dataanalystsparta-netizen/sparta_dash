@@ -2629,8 +2629,28 @@ def build_sunburst_category_tooltips(classified: pd.DataFrame, legacy_counts_ove
         # Display all source components (including zero values) whenever this
         # outcome has a legacy count, so the tooltip mirrors the Full KPI row.
         if component_details_available and any(component_values):
-            for label, value in zip(component_labels, component_values):
-                detail_lines[outcome].append(f"  {label}: {value:,}")
+            # Prefer the exact underlying legacy raw status values over broad
+            # Full KPI component headings (e.g. "Welcome Cancelled"). The
+            # raw breakdowns are prepared alongside the legacy Full KPI row.
+            raw_keys = {
+                "Welcome Pending": "Welcome Pending Statuses",
+                "Committed Rem.": "Committed Rem. Statuses",
+                "Welcome Cancelled": "Welcome Cancelled Statuses",
+                "Live Cancelled": "Live Cancelled Statuses",
+                "Live": "Live Statuses",
+            }
+            raw_lines_added = 0
+            if legacy_counts_override is not None:
+                for label, value in zip(component_labels, component_values):
+                    raw_items = legacy_counts_override.get(raw_keys.get(label, ""), [])
+                    if isinstance(raw_items, str):
+                        raw_items = [raw_items] if raw_items else []
+                    for raw_status, raw_count in raw_items:
+                        detail_lines[outcome].append(f"  {raw_status}: {int(raw_count):,}")
+                        raw_lines_added += 1
+            if not raw_lines_added:
+                for label, value in zip(component_labels, component_values):
+                    detail_lines[outcome].append(f"  {label}: {value:,}")
             detail_lines[outcome].append(f"  Legacy subtotal: {sum(component_values):,}")
 
     for name in outcomes_order:
@@ -2829,6 +2849,15 @@ def render_compact_monthly_table_html(
             "Welcome Cancelled", "Live Cancelled",
         )
     }
+    for raw_key in (
+        "Welcome Pending Statuses", "Committed Rem. Statuses",
+        "Welcome Cancelled Statuses", "Live Cancelled Statuses", "Live Statuses",
+    ):
+        combined = {}
+        for month_counts in legacy_monthly_concise_counts.values():
+            for status, count in month_counts.get(raw_key, []):
+                combined[status] = combined.get(status, 0) + int(count)
+        total_legacy_counts[raw_key] = list(combined.items())
     for _, row in monthly_summary_df.iterrows():
         label = str(row.get("MONTH", ""))
         if label.strip().lower() == "total":
@@ -3551,21 +3580,35 @@ else:
         source_values = frame["Source"].fillna("").astype(str).str.strip().str.lower()
         return frame.loc[source_values.isin({"excel / legacy", "excel/legacy", "legacy", "excel"})].copy()
 
-    def _concise_components_from_full_kpi_row(kpi_row: dict) -> dict:
+    def _concise_components_from_full_kpi_row(kpi_row: dict, app_rows: pd.DataFrame | None = None, portal_rows: pd.DataFrame | None = None) -> dict:
         welcome_pending = int(kpi_row.get("WELCOME PENDING", 0) or 0)
         committed_rem = int(kpi_row.get("COMMITTED REM.", 0) or 0)
         welcome_cancelled = int(kpi_row.get("WELCOME CANCELLED", 0) or 0)
         live_cancelled = int(kpi_row.get("LIVE CANCELLED", 0) or 0)
         live = int(kpi_row.get("LIVE", 0) or 0)
+
+        def raw_items(frame: pd.DataFrame | None, raw_col: str, clean_col: str, target: str):
+            if frame is None or frame.empty:
+                return []
+            return get_raw_breakdown(frame, raw_col, clean_col, target)
+
+        app_rows = app_rows if app_rows is not None else pd.DataFrame()
+        portal_rows = portal_rows if portal_rows is not None else pd.DataFrame()
         return {
             "Pending": welcome_pending + committed_rem,
             "Cancelled": welcome_cancelled + live_cancelled,
             "Live": live,
-            # Also retain the exact component values for concise-table tooltips.
+            # Exact Full KPI component values are retained for totals.
             "Welcome Pending": welcome_pending,
             "Committed Rem.": committed_rem,
             "Welcome Cancelled": welcome_cancelled,
             "Live Cancelled": live_cancelled,
+            # Tooltip details use the actual source status strings and counts.
+            "Welcome Pending Statuses": raw_items(app_rows, "Welcome Status", "Welcome Status Clean", "Pending"),
+            "Committed Rem. Statuses": raw_items(portal_rows, "Portal Status", "Portal Status Clean", "Committed"),
+            "Welcome Cancelled Statuses": raw_items(app_rows, "Welcome Status", "Welcome Status Clean", "Cancelled"),
+            "Live Cancelled Statuses": raw_items(portal_rows, "Portal Status", "Portal Status Clean", "Cancelled"),
+            "Live Statuses": raw_items(portal_rows, "Portal Status", "Portal Status Clean", "Live"),
         }
 
     monthly_rows = []
@@ -3598,7 +3641,9 @@ else:
             period_key,
         )
         legacy_monthly_concise_counts[period_key] = _concise_components_from_full_kpi_row(
-            legacy_month_kpi_row
+            legacy_month_kpi_row,
+            _legacy_source_rows(month_app),
+            _legacy_source_rows(month_portal),
         )
 
         # Use the actual sale date as the day key. Include every calendar day in the month,
@@ -3635,7 +3680,9 @@ else:
                 is_daily=True,
             )
             legacy_daily_concise_counts[day_key] = _concise_components_from_full_kpi_row(
-                legacy_day_kpi_row
+                legacy_day_kpi_row,
+                _legacy_source_rows(day_app),
+                _legacy_source_rows(day_portal),
             )
             day += pd.Timedelta(days=1)
 
