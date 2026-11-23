@@ -2478,7 +2478,16 @@ def reconcile_legacy_portal_outcomes_with_full_kpi(
         vals = frame[column].fillna("").astype(str).str.strip().str.lower()
         return int(vals.eq(target.lower()).sum())
 
-    for col in ("_Legacy_Concise_Pending", "_Legacy_Concise_Cancelled", "_Legacy_Concise_Live"):
+    legacy_component_columns = (
+        "_Legacy_Concise_Pending",
+        "_Legacy_Concise_Cancelled",
+        "_Legacy_Concise_Live",
+        "_Legacy_Concise_Welcome_Pending",
+        "_Legacy_Concise_Committed_Rem",
+        "_Legacy_Concise_Welcome_Cancelled",
+        "_Legacy_Concise_Live_Cancelled",
+    )
+    for col in legacy_component_columns:
         out[col] = 0
 
     app_legacy = _is_legacy(app)
@@ -2496,15 +2505,14 @@ def reconcile_legacy_portal_outcomes_with_full_kpi(
         portal_mask = portal_legacy & portal_keys.map(lambda value: value == group_key)
         app_group = app.loc[app_mask]
         portal_group = portal.loc[portal_mask]
-        target_pending = (
-            _count(app_group, "Welcome Status Clean", "Pending")
-            + _count(portal_group, "Portal Status Clean", "Committed")
-        )
-        target_cancelled = (
-            _count(app_group, "Welcome Status Clean", "Cancelled")
-            + _count(portal_group, "Portal Status Clean", "Cancelled")
-        )
+        welcome_pending = _count(app_group, "Welcome Status Clean", "Pending")
+        committed_rem = _count(portal_group, "Portal Status Clean", "Committed")
+        welcome_cancelled = _count(app_group, "Welcome Status Clean", "Cancelled")
+        live_cancelled = _count(portal_group, "Portal Status Clean", "Cancelled")
         target_live = _count(portal_group, "Portal Status Clean", "Live")
+
+        target_pending = welcome_pending + committed_rem
+        target_cancelled = welcome_cancelled + live_cancelled
 
         representative_indices = out.index[out_legacy & app_keys.map(lambda value: value == group_key)]
         if len(representative_indices) == 0:
@@ -2513,6 +2521,12 @@ def reconcile_legacy_portal_outcomes_with_full_kpi(
         out.at[representative, "_Legacy_Concise_Pending"] = int(target_pending)
         out.at[representative, "_Legacy_Concise_Cancelled"] = int(target_cancelled)
         out.at[representative, "_Legacy_Concise_Live"] = int(target_live)
+        # Keep the actual Full KPI source components so hover text can show
+        # the underlying values rather than only the combined concise total.
+        out.at[representative, "_Legacy_Concise_Welcome_Pending"] = int(welcome_pending)
+        out.at[representative, "_Legacy_Concise_Committed_Rem"] = int(committed_rem)
+        out.at[representative, "_Legacy_Concise_Welcome_Cancelled"] = int(welcome_cancelled)
+        out.at[representative, "_Legacy_Concise_Live_Cancelled"] = int(live_cancelled)
 
     logger.info(
         "Legacy concise metrics use direct Full KPI component totals (no exclusivity/capping): "
@@ -2551,20 +2565,11 @@ def get_sunburst_outcome_counts(
     return result
 
 def build_sunburst_category_tooltips(classified: pd.DataFrame, legacy_counts_override: dict | None = None) -> dict:
-    """Build concise tooltips while keeping CRM detail and legacy component totals explicit."""
+    """Build concise tooltips with CRM status detail and exact legacy KPI components."""
     outcomes_order = ["Live", "Pending", "Cancelled"]
     result = {"Applications": "No applications", "Pending": "No Pending applications", "Cancelled": "No Cancelled applications", "Live": "No Live applications"}
-    if classified is None or classified.empty:
-        if legacy_counts_override is not None:
-            empty_details = []
-            for outcome in outcomes_order:
-                count = int(legacy_counts_override.get(outcome, 0) or 0)
-                if count:
-                    result[outcome] = f"{outcome}: {count:,}\n  Legacy Full KPI components: {count:,} (direct component total; may overlap)"
-                    empty_details.append(result[outcome])
-            if empty_details:
-                result["Applications"] = "\n".join(empty_details)
-        return result
+    if classified is None:
+        classified = pd.DataFrame()
 
     source = classified.get("Source", pd.Series("", index=classified.index)).fillna("").astype(str).str.strip().str.lower()
     legacy_mask = source.isin({"excel / legacy", "excel/legacy", "legacy", "excel"})
@@ -2577,32 +2582,61 @@ def build_sunburst_category_tooltips(classified: pd.DataFrame, legacy_counts_ove
         grouped["_BucketOrder"] = grouped["Bucket"].map(bucket_order).fillna(99)
         grouped = grouped.sort_values(["_OutcomeOrder", "_BucketOrder", "Applications", "Status"], ascending=[True, True, False, True])
 
-    detail_lines = {}
     counts = get_sunburst_outcome_counts(classified, legacy_counts_override)
-    for name in outcomes_order:
-        detail_lines[name] = [f"{name}: {counts[name]:,}"]
+    detail_lines = {name: [f"{name}: {counts[name]:,}"] for name in outcomes_order}
 
     for item in grouped.itertuples(index=False):
         detail_lines.setdefault(item.Outcome, [f"{item.Outcome}: 0"])
         detail_lines[item.Outcome].append(f"  {item.Bucket} · {item.Source} · {item.Stage}: {item.Status} — {int(item.Applications):,}")
 
-    if legacy_counts_override is not None:
-        legacy_totals = {
-            outcome: int(legacy_counts_override.get(outcome, 0) or 0)
-            for outcome in ("Live", "Pending", "Cancelled")
+    # Component-level legacy values are preserved separately from the concise
+    # totals. This restores the original explanatory hover text while keeping
+    # the direct Full KPI reconciliation unchanged.
+    legacy_component_keys = {
+        "Pending": ("Welcome Pending", "Committed Rem."),
+        "Cancelled": ("Welcome Cancelled", "Live Cancelled"),
+        "Live": ("Live",),
+    }
+    component_column_map = {
+        "Welcome Pending": "_Legacy_Concise_Welcome_Pending",
+        "Committed Rem.": "_Legacy_Concise_Committed_Rem",
+        "Welcome Cancelled": "_Legacy_Concise_Welcome_Cancelled",
+        "Live Cancelled": "_Legacy_Concise_Live_Cancelled",
+        "Live": "_Legacy_Concise_Live",
+    }
+
+    component_counts = {}
+    component_details_available = False
+    if legacy_counts_override is not None and any(key in legacy_counts_override for key in component_column_map):
+        component_details_available = True
+        component_counts = {
+            label: int(legacy_counts_override.get(label, 0) or 0)
+            for label in component_column_map
         }
     else:
-        legacy_totals = {
-            "Live": int(pd.to_numeric(classified.get("_Legacy_Concise_Live", 0), errors="coerce").fillna(0).sum()) if "_Legacy_Concise_Live" in classified.columns else 0,
-            "Pending": int(pd.to_numeric(classified.get("_Legacy_Concise_Pending", 0), errors="coerce").fillna(0).sum()) if "_Legacy_Concise_Pending" in classified.columns else 0,
-            "Cancelled": int(pd.to_numeric(classified.get("_Legacy_Concise_Cancelled", 0), errors="coerce").fillna(0).sum()) if "_Legacy_Concise_Cancelled" in classified.columns else 0,
-        }
+        for label, column in component_column_map.items():
+            if column in classified.columns:
+                component_details_available = True
+                component_counts[label] = int(
+                    pd.to_numeric(classified[column], errors="coerce").fillna(0).sum()
+                )
+            else:
+                component_counts[label] = 0
+
+    for outcome in outcomes_order:
+        component_labels = legacy_component_keys[outcome]
+        component_values = [component_counts.get(label, 0) for label in component_labels]
+        # Display all source components (including zero values) whenever this
+        # outcome has a legacy count, so the tooltip mirrors the Full KPI row.
+        if component_details_available and any(component_values):
+            for label, value in zip(component_labels, component_values):
+                detail_lines[outcome].append(f"  {label}: {value:,}")
+            detail_lines[outcome].append(f"  Legacy subtotal: {sum(component_values):,}")
 
     for name in outcomes_order:
-        if legacy_totals[name]:
-            detail_lines[name].append(f"  Legacy Full KPI components: {legacy_totals[name]:,} (direct component total; may overlap)")
         if len(detail_lines[name]) > 1:
             result[name] = "\n".join(detail_lines[name])
+
     all_lines = []
     for name in outcomes_order:
         if len(detail_lines[name]) > 1:
@@ -2788,8 +2822,12 @@ def render_compact_monthly_table_html(
     """
 
     total_legacy_counts = {
-        outcome: sum(int(month_counts.get(outcome, 0) or 0) for month_counts in legacy_monthly_concise_counts.values())
-        for outcome in ("Pending", "Cancelled", "Live")
+        key: sum(int(month_counts.get(key, 0) or 0) for month_counts in legacy_monthly_concise_counts.values())
+        for key in (
+            "Pending", "Cancelled", "Live",
+            "Welcome Pending", "Committed Rem.",
+            "Welcome Cancelled", "Live Cancelled",
+        )
     }
     for _, row in monthly_summary_df.iterrows():
         label = str(row.get("MONTH", ""))
@@ -3514,10 +3552,20 @@ else:
         return frame.loc[source_values.isin({"excel / legacy", "excel/legacy", "legacy", "excel"})].copy()
 
     def _concise_components_from_full_kpi_row(kpi_row: dict) -> dict:
+        welcome_pending = int(kpi_row.get("WELCOME PENDING", 0) or 0)
+        committed_rem = int(kpi_row.get("COMMITTED REM.", 0) or 0)
+        welcome_cancelled = int(kpi_row.get("WELCOME CANCELLED", 0) or 0)
+        live_cancelled = int(kpi_row.get("LIVE CANCELLED", 0) or 0)
+        live = int(kpi_row.get("LIVE", 0) or 0)
         return {
-            "Pending": int(kpi_row.get("WELCOME PENDING", 0) or 0) + int(kpi_row.get("COMMITTED REM.", 0) or 0),
-            "Cancelled": int(kpi_row.get("WELCOME CANCELLED", 0) or 0) + int(kpi_row.get("LIVE CANCELLED", 0) or 0),
-            "Live": int(kpi_row.get("LIVE", 0) or 0),
+            "Pending": welcome_pending + committed_rem,
+            "Cancelled": welcome_cancelled + live_cancelled,
+            "Live": live,
+            # Also retain the exact component values for concise-table tooltips.
+            "Welcome Pending": welcome_pending,
+            "Committed Rem.": committed_rem,
+            "Welcome Cancelled": welcome_cancelled,
+            "Live Cancelled": live_cancelled,
         }
 
     monthly_rows = []
