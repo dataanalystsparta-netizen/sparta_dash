@@ -11,9 +11,9 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
 - CRM Connectivity: Committed counts in both Provisioning Completed and Committed Rem.; legacy rows remain unclassified for Provisioning.
 - Executive KPI cards use a compact two-row, multi-column layout.
 - Static four-level sunburst sits beside the KPI cards; all hierarchy levels are visible by default.
-- Monthly KPI and Performance Breakdown each default to a concise Applications / Pending / Cancelled / Live view, with a radio switch to the original detailed table.
+- Monthly KPI and Performance Breakdown each default to a concise Applications / Pending / Cancelled / Live / Awaiting downstream view, with a radio switch to the original detailed table.
 - Hybrid record keys are filled per row, so legacy Sparta / Sparta2 records still reconcile when CRM rows already contain _RecordKey.
-- Concise outcome tables use the sunburst classifier for CRM and the Full KPI Sparta2 Portal Status Clean categories (Live / Committed / Cancelled) for Excel / Legacy.
+- Concise outcome tables use mutually exclusive application-level outcomes for both sources; Welcome Done with no later-stage status is shown separately as Awaiting downstream.
 """
 
 import logging
@@ -2150,7 +2150,7 @@ def _original_status_value(raw_value, fallback="") -> str:
 
 
 def classify_application_outcome(row: pd.Series):
-    """Assign each application once to Live, Pending, or Cancelled.
+    """Assign each application once to Live, Pending, Cancelled, or Awaiting downstream.
 
     The chart leaf is the original source status value, not a dashboard-created
     description. The source field/stage is retained separately so identical
@@ -2229,8 +2229,17 @@ def classify_application_outcome(row: pd.Series):
         )
 
     if portal_clean.lower() == "committed":
-        return "Pending", "Portal Status", _original_status_value(
-            portal_source_raw, portal_clean
+        # Legacy status normalisation historically treats a blank Portal Status
+        # as "Committed". That default must not turn a completed Welcome call
+        # into a Pending application when no downstream status was actually
+        # recorded. Keep genuine/explicit committed statuses as Pending.
+        portal_status_is_explicit = bool(_outcome_text(portal_source_raw))
+        if is_crm or portal_status_is_explicit or welcome_clean.lower() != "done":
+            return "Pending", "Portal Status", _original_status_value(
+                portal_source_raw, portal_clean
+            )
+        return "Awaiting downstream", "Welcome Status", _original_status_value(
+            welcome_source_raw, welcome_clean
         )
 
     # Legacy / Excel does not have CRM's Provisioning / Dispatch / Confirmation
@@ -2250,6 +2259,14 @@ def classify_application_outcome(row: pd.Series):
         if portal_clean.lower() == "cancelled":
             return "Cancelled", "Portal Status", _original_status_value(
                 portal_source_raw, portal_clean
+            )
+
+        # Welcome Done is a completed stage, not a Pending status. If there is
+        # no explicit downstream Portal result, expose it separately rather
+        # than misclassifying it as Pending or inventing a cancellation/live.
+        if welcome_clean.lower() == "done":
+            return "Awaiting downstream", "Welcome Status", _original_status_value(
+                welcome_source_raw, welcome_clean
             )
 
         # There may be no matching Sparta2 row for an application yet. Keep
@@ -2298,8 +2315,23 @@ def classify_application_outcome(row: pd.Series):
     if re.fullmatch(r"live|active", onboarding_norm):
         return "Live", onboarding_stage, _original_status_value(onboarding_source_raw)
 
-    # Everything not explicitly Live or Cancelled is Pending. Use the furthest
-    # populated stage and display that source's original status text verbatim.
+    # A completed Welcome call with no recorded later-stage status is not a
+    # Pending status. Keep it as a separate, transparent outcome. Once any
+    # downstream stage has a status, that more advanced status determines the
+    # outcome below (or via the committed/live checks above).
+    downstream_status_values = [
+        onboarding_raw, confirmation_raw, dispatch_raw, provisioning_raw
+    ]
+    if welcome_clean.lower() == "done" and not any(
+        _outcome_text(value) for value in downstream_status_values
+    ):
+        return "Awaiting downstream", welcome_stage, _original_status_value(
+            welcome_source_raw, welcome_clean
+        )
+
+    # Everything else not explicitly Live, Cancelled, or Awaiting downstream
+    # is Pending. Use the furthest populated stage and display its original
+    # source status text verbatim.
     pending_candidates = [
         (onboarding_stage, onboarding_raw, onboarding_source_raw),
         (confirmation_stage, confirmation_raw, confirmation_source_raw),
@@ -2353,7 +2385,7 @@ def build_application_outcome_hierarchy(df: pd.DataFrame):
     if df is None or df.empty:
         empty = pd.DataFrame(columns=columns)
         table = pd.DataFrame(columns=columns + ["Applications", "% of Total"])
-        return empty, table, {"Live": 0, "Pending": 0, "Cancelled": 0}
+        return empty, table, {"Live": 0, "Pending": 0, "Cancelled": 0, "Awaiting downstream": 0}
 
     outcomes = df.apply(classify_application_outcome, axis=1, result_type="expand")
     outcomes.columns = ["Outcome", "Stage", "Status"]
@@ -2363,7 +2395,7 @@ def build_application_outcome_hierarchy(df: pd.DataFrame):
         .fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
     )
     total = len(outcomes)
-    outcome_order = ["Live", "Pending", "Cancelled"]
+    outcome_order = ["Live", "Pending", "Cancelled", "Awaiting downstream"]
     summary = (
         outcomes["Outcome"].value_counts()
         .reindex(outcome_order, fill_value=0).astype(int).to_dict()
@@ -2536,27 +2568,27 @@ def get_sunburst_outcome_counts(
     """Return mutually exclusive application outcomes for every source.
 
     Each input row is one application and classify_application_rows assigns
-    exactly one of Pending, Cancelled, or Live. Legacy Full KPI component
+    exactly one of Pending, Cancelled, Live, or Awaiting downstream. Legacy Full KPI component
     counts are stage metrics and may overlap, so they must not override these
     exclusive application outcomes in the Concise table. The override argument
     remains accepted for backward compatibility but is intentionally ignored.
     """
     if classified is None or classified.empty:
-        return {"Applications": 0, "Pending": 0, "Cancelled": 0, "Live": 0}
+        return {"Applications": 0, "Pending": 0, "Cancelled": 0, "Live": 0, "Awaiting downstream": 0}
 
-    valid_outcomes = ("Pending", "Cancelled", "Live")
+    valid_outcomes = ("Pending", "Cancelled", "Live", "Awaiting downstream")
     raw_outcomes = classified.get(
         "Outcome", pd.Series("Pending", index=classified.index)
     ).fillna("Pending").astype(str).str.strip()
     # Defensive fallback: no application is allowed to disappear from the
-    # three-way Concise split if an unexpected/blank outcome is encountered.
+    # four-way Concise split if an unexpected/blank outcome is encountered.
     outcomes = raw_outcomes.where(raw_outcomes.isin(valid_outcomes), "Pending")
 
     result = {"Applications": int(len(classified))}
     for outcome in valid_outcomes:
         result[outcome] = int(outcomes.eq(outcome).sum())
 
-    if result["Pending"] + result["Cancelled"] + result["Live"] != result["Applications"]:
+    if sum(result[name] for name in valid_outcomes) != result["Applications"]:
         raise AssertionError("Concise outcomes do not reconcile to Applications.")
     return result
 
@@ -2566,12 +2598,13 @@ def build_sunburst_category_tooltips(
     legacy_counts_override: dict | None = None,
 ) -> dict:
     """Show category, exact source stage/status, count, and source for each outcome."""
-    outcomes_order = ["Live", "Pending", "Cancelled"]
+    outcomes_order = ["Live", "Pending", "Cancelled", "Awaiting downstream"]
     result = {
         "Applications": "No applications",
         "Pending": "No Pending applications",
         "Cancelled": "No Cancelled applications",
         "Live": "No Live applications",
+        "Awaiting downstream": "No applications with Welcome Done and no later-stage status",
     }
     if classified is None or classified.empty:
         return result
@@ -2700,7 +2733,7 @@ def render_compact_performance_table_html(
             f'<td class="compact-number" data-sort="{values["Applications"]}" title="{_compact_tooltip_attribute(tooltips["Applications"])}">{values["Applications"]:,}</td>'
         ]
         application_count = int(values["Applications"])
-        for outcome_name in ["Pending", "Cancelled", "Live"]:
+        for outcome_name in ["Pending", "Cancelled", "Live", "Awaiting downstream"]:
             tip = tooltips[outcome_name]
             value = int(values[outcome_name])
             share = value / application_count * 100 if application_count else 0.0
@@ -2721,6 +2754,7 @@ def render_compact_performance_table_html(
       table.compact-outcome-table th:nth-child(3) {{ background:#fff7d6; color:#8a6500; }}
       table.compact-outcome-table th:nth-child(4) {{ background:#fee2e2; color:#b91c1c; }}
       table.compact-outcome-table th:nth-child(5) {{ background:#dcfce7; color:#166534; }}
+      table.compact-outcome-table th:nth-child(6) {{ background:#e2e8f0; color:#334155; }}
       table.compact-outcome-table td {{ padding:12px 16px; text-align:center; border-bottom:1px solid #edf1f7; }}
       table.compact-outcome-table td:first-child {{ font-weight:700; color:#172942; }}
       table.compact-outcome-table td[title] {{ cursor:help; text-decoration:underline dotted #94a3b8; text-underline-offset:3px; }}
@@ -2730,7 +2764,7 @@ def render_compact_performance_table_html(
     </style>
     <div class="compact-outcome-wrap">
       <table id="{escape(table_id)}" class="compact-outcome-table">
-        <thead><tr><th>{escape(entity_column)}</th><th>Applications</th><th>Pending</th><th>Cancelled</th><th>Live</th></tr></thead>
+        <thead><tr><th>{escape(entity_column)}</th><th>Applications</th><th>Pending</th><th>Cancelled</th><th>Live</th><th>Awaiting downstream</th></tr></thead>
         <tbody>
     """
     for label in labels:
@@ -2771,7 +2805,7 @@ def render_compact_monthly_table_html(
             f'<td class="compact-number" data-sort="{values["Applications"]}" title="{_compact_tooltip_attribute(tooltips["Applications"])}">{values["Applications"]:,}</td>'
         ]
         application_count = int(values["Applications"])
-        for outcome_name in ["Pending", "Cancelled", "Live"]:
+        for outcome_name in ["Pending", "Cancelled", "Live", "Awaiting downstream"]:
             value = int(values[outcome_name])
             tip = tooltips[outcome_name]
             share = value / application_count * 100 if application_count else 0.0
@@ -2793,6 +2827,7 @@ def render_compact_monthly_table_html(
       table.compact-monthly-table th:nth-child(3) {{ background:#fff7d6;color:#8a6500; }}
       table.compact-monthly-table th:nth-child(4) {{ background:#fee2e2;color:#b91c1c; }}
       table.compact-monthly-table th:nth-child(5) {{ background:#dcfce7;color:#166534; }}
+      table.compact-monthly-table th:nth-child(6) {{ background:#e2e8f0;color:#334155; }}
       table.compact-monthly-table td {{ padding:11px 16px;text-align:center;border-bottom:1px solid #edf1f7; }}
       table.compact-monthly-table td:first-child {{ font-weight:700;color:#172942;white-space:nowrap; }}
       table.compact-monthly-table td[title] {{ cursor:help;text-decoration:underline dotted #94a3b8;text-underline-offset:3px; }}
@@ -2807,7 +2842,7 @@ def render_compact_monthly_table_html(
     </style>
     <div class="compact-monthly-wrap">
       <table id="{escape(table_id)}" class="compact-monthly-table">
-        <thead><tr><th>Month / Day</th><th>Applications</th><th>Pending</th><th>Cancelled</th><th>Live</th></tr></thead>
+        <thead><tr><th>Month / Day</th><th>Applications</th><th>Pending</th><th>Cancelled</th><th>Live</th><th>Awaiting downstream</th></tr></thead>
         <tbody>
     """
 
@@ -2965,14 +3000,14 @@ with outcome_chart_col:
     st.markdown(
         """<div style="padding:.2rem .15rem .35rem;">
         <div style="color:#0f9f91;font-size:.62rem;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">APPLICATION OUTCOMES</div>
-        <div style="color:#14233b;font-size:1.05rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled</div>
-        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">All levels are shown together: All Applications → Live / Pending / Cancelled → stage buckets → exact original CRM status values. Labels sit directly on the sectors; hover over any segment for its exact value, count and source field. Dispatch / Letter fields appear under Confirmation, with their original field names retained.</div>
+        <div style="color:#14233b;font-size:1.05rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled · Awaiting downstream</div>
+        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">All levels are shown together: All Applications → application outcomes → stage buckets → exact original CRM status values. Labels sit directly on the sectors; hover over any segment for its exact value, count and source field. Dispatch / Letter fields appear under Confirmation, with their original field names retained.</div>
         </div>""",
         unsafe_allow_html=True,
     )
 
     compact_outcome_html = []
-    for name, color in [("Live", "#D9F2E3"), ("Pending", "#FFF2C2"), ("Cancelled", "#F8D7DA")]:
+    for name, color in [("Live", "#D9F2E3"), ("Pending", "#FFF2C2"), ("Cancelled", "#F8D7DA"), ("Awaiting downstream", "#E2E8F0")]:
         value = int(outcome_summary.get(name, 0))
         share = value / outcome_total * 100 if outcome_total else 0.0
         compact_outcome_html.append(
@@ -2996,6 +3031,7 @@ with outcome_chart_col:
             "Live": "#D9F2E3",       # Light green
             "Pending": "#FFF2C2",    # Light yellow
             "Cancelled": "#F8D7DA",  # Light red
+            "Awaiting downstream": "#E2E8F0",  # Neutral: Welcome Done, no later outcome
         }
         bucket_colors = {
             "Inbound": "#c2410c",
@@ -3013,7 +3049,7 @@ with outcome_chart_col:
             "Confirmation": "#c7d2fe",
             "Onboarding": "#99f6e4",
         }
-        ordered_outcomes = ["Live", "Pending", "Cancelled"]
+        ordered_outcomes = ["Live", "Pending", "Cancelled", "Awaiting downstream"]
         ordered_buckets = ["Inbound", "Quality", "Welcome", "Provisioning", "Confirmation", "Onboarding"]
 
         # Merge identical original status text within the same Outcome + Bucket
