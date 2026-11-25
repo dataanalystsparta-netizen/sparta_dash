@@ -10,7 +10,7 @@ Preserves editable projection weights, agent/month filters, KPI logic, hybrid so
 - CRM Provisioning Status is reported separately as Completed, Pending, and Cancelled; provisioning cancellations do not enter Committed/Live.
 - CRM Connectivity: Committed counts in both Provisioning Completed and Committed Rem.; legacy rows remain unclassified for Provisioning.
 - Executive KPI cards use a compact two-row, multi-column layout.
-- Static four-level sunburst sits beside the KPI cards; all hierarchy levels are visible by default.
+- Monthly KPI Breakdown sits beside the KPI cards, with Concise, Full KPI and Sunburst views selectable in one panel.
 - Monthly KPI and Performance Breakdown each default to a concise Applications / Pending / Cancelled / Live / Awaiting downstream view, with a radio switch to the original detailed table.
 - Hybrid record keys are filled per row, so legacy Sparta / Sparta2 records still reconcile when CRM rows already contain _RecordKey.
 - Concise outcome tables use mutually exclusive application-level outcomes for both sources; Welcome Done with no later-stage status is shown separately as Awaiting downstream.
@@ -2933,8 +2933,8 @@ if concise_live_count != full_kpi_live_authority:
         "non-matching application keys."
     )
 
-# Keep the KPI rail compact and give the static sunburst most of the available
-# dashboard width. The sunburst itself uses the full chart domain (no callout lanes).
+# Keep the KPI rail compact and give the selectable Monthly KPI / Sunburst panel
+# most of the available dashboard width.
 kpi_dashboard_col, outcome_chart_col = st.columns([0.84, 2.76], gap="medium")
 
 with kpi_dashboard_col:
@@ -2997,344 +2997,373 @@ with kpi_dashboard_col:
     )
 
 with outcome_chart_col:
-    st.markdown(
-        """<div style="padding:.2rem .15rem .35rem;">
-        <div style="color:#0f9f91;font-size:.62rem;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">APPLICATION OUTCOMES</div>
-        <div style="color:#14233b;font-size:1.05rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled · Awaiting downstream</div>
-        <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">All levels are shown together: All Applications → application outcomes → stage buckets → exact original CRM status values. Labels sit directly on the sectors; hover over any segment for its exact value, count and source field. Dispatch / Letter fields appear under Confirmation, with their original field names retained.</div>
-        </div>""",
-        unsafe_allow_html=True,
+    render_section_heading(
+        "TRENDS & DRILL-DOWN",
+        "Monthly KPI Breakdown",
+        "Expand any month to inspect daily performance. Use the year and agent filters to focus the view."
     )
 
-    compact_outcome_html = []
-    for name, color in [("Live", "#D9F2E3"), ("Pending", "#FFF2C2"), ("Cancelled", "#F8D7DA"), ("Awaiting downstream", "#E2E8F0")]:
-        value = int(outcome_summary.get(name, 0))
-        share = value / outcome_total * 100 if outcome_total else 0.0
-        compact_outcome_html.append(
-            f'<span style="display:inline-flex;align-items:center;gap:.22rem;margin:0 .55rem .25rem 0;'
-            f'font-size:.72rem;color:#40516a;"><span style="width:8px;height:8px;border-radius:50%;background:{color};display:inline-block;"></span>'
-            f'<b style="color:#172942;">{name} {value:,}</b> <span style="color:#8491a3;">({share:.1f}%)</span></span>'
-        )
-    st.markdown("<div style='margin:.1rem 0 .2rem;'>" + "".join(compact_outcome_html) + "</div>", unsafe_allow_html=True)
+    current_year = datetime.now().year
+    years = list(range(2022, current_year + 1))
+    monthly_table_view = st.radio(
+        "Monthly breakdown view",
+        options=["Concise outcome view", "Full KPI breakdown", "Sunburst view"],
+        index=0,
+        horizontal=True,
+        key="monthly_kpi_table_view",
+    )
 
-    if outcome_total == 0:
-        st.info("No applications are available for the selected reporting period.")
-    elif go is None:
-        st.warning("Plotly is not installed. Use the exact values table below to inspect every source status.")
+    if monthly_table_view != "Sunburst view":
+        monthly_filter_year_col, monthly_filter_agent_col = st.columns([0.82, 1.45], gap="small")
+        with monthly_filter_year_col:
+            selected_year = st.selectbox(
+                "Select year",
+                options=years,
+                index=len(years) - 1,
+                key="monthly_kpi_selected_year",
+            )
+
+        # --- Agent dropdown for monthly table (default = All Agents)
+        agent_list = []
+        if "Advisor" in master_raw_df.columns:
+            agent_list = sorted(master_raw_df["Advisor"].dropna().astype(str).unique(), key=lambda s: s.lower())
+        agent_options = ["All Agents"] + agent_list
+        with monthly_filter_agent_col:
+            selected_agent = st.selectbox(
+                "Select Agent",
+                options=agent_options,
+                index=0,
+                key="monthly_kpi_selected_agent",
+            )
     else:
-        # Four fixed hierarchy levels: All Applications -> Outcome -> Stage Bucket ->
-        # exact original status. Every level is rendered together in this static view.
-        # A single soft colour is used for each outcome across all three
-        # sunburst rings (outcome, stage bucket and exact CRM status).
-        # The neutral centre remains separate so the hierarchy is easy to read.
-        outcome_colors = {
-            "Live": "#D9F2E3",       # Light green
-            "Pending": "#FFF2C2",    # Light yellow
-            "Cancelled": "#F8D7DA",  # Light red
-            "Awaiting downstream": "#E2E8F0",  # Neutral: Welcome Done, no later outcome
-        }
-        bucket_colors = {
-            "Inbound": "#c2410c",
-            "Quality": "#2563eb",
-            "Welcome": "#7c3aed",
-            "Provisioning": "#0891b2",
-            "Confirmation": "#4f46e5",
-            "Onboarding": "#0f766e",
-        }
-        bucket_light_colors = {
-            "Inbound": "#fed7aa",
-            "Quality": "#bfdbfe",
-            "Welcome": "#ddd6fe",
-            "Provisioning": "#a5f3fc",
-            "Confirmation": "#c7d2fe",
-            "Onboarding": "#99f6e4",
-        }
-        ordered_outcomes = ["Live", "Pending", "Cancelled", "Awaiting downstream"]
-        ordered_buckets = ["Inbound", "Quality", "Welcome", "Provisioning", "Confirmation", "Onboarding"]
+        # Sunburst uses the main dashboard's active date/agent filters, not the
+        # monthly-table-only filters. Keep safe defaults for the hidden table build.
+        selected_year = int(st.session_state.get("monthly_kpi_selected_year", current_year))
+        selected_agent = str(st.session_state.get("monthly_kpi_selected_agent", "All Agents") or "All Agents")
 
-        # Merge identical original status text within the same Outcome + Bucket
-        # for a clear chart leaf. The detailed table below keeps the individual
-        # Source and Source field values separately reconcilable.
-        chart_status_table = (
-            outcome_bucket_table.groupby(["Outcome", "Bucket", "Status"], dropna=False)
-            .agg(
-                Applications=("Applications", "sum"),
-                Source_Details=(
-                    "Source",
-                    lambda values: "; ".join(sorted(set(str(v) for v in values if str(v).strip()))),
-                ),
-                Source_Fields=(
-                    "Stage",
-                    lambda values: "; ".join(sorted(set(str(v) for v in values if str(v).strip()))),
-                ),
-            )
-            .reset_index()
+    # This placeholder keeps the Monthly KPI table in this top dashboard slot,
+    # even though its data preparation follows the shared monthly KPI logic below.
+    monthly_kpi_table_placeholder = st.empty()
+
+    if monthly_table_view == "Sunburst view":
+        st.markdown(
+            """<div style="padding:.2rem .15rem .35rem;">
+            <div style="color:#0f9f91;font-size:.62rem;font-weight:850;letter-spacing:.14em;text-transform:uppercase;">APPLICATION OUTCOMES</div>
+            <div style="color:#14233b;font-size:1.05rem;font-weight:850;line-height:1.2;margin-top:.12rem;">Live · Pending · Cancelled · Awaiting downstream</div>
+            <div style="color:#718096;font-size:.70rem;line-height:1.35;margin-top:.2rem;">All levels are shown together: All Applications → application outcomes → stage buckets → exact original CRM status values. Labels sit directly on the sectors; hover over any segment for its exact value, count and source field. Dispatch / Letter fields appear under Confirmation, with their original field names retained.</div>
+            </div>""",
+            unsafe_allow_html=True,
         )
 
-        # Font sizes are assigned per sector so short labels can be prominent,
-        # while long CRM status names use a slightly smaller size. Counts are
-        # rendered on a second line inside every sector.
-        def _sunburst_font_size(label, value, kind):
-            if kind == "root":
-                return 20
-            if kind == "outcome":
-                return 19
-            if kind == "bucket":
-                return 16
+        compact_outcome_html = []
+        for name, color in [("Live", "#D9F2E3"), ("Pending", "#FFF2C2"), ("Cancelled", "#F8D7DA"), ("Awaiting downstream", "#E2E8F0")]:
+            value = int(outcome_summary.get(name, 0))
+            share = value / outcome_total * 100 if outcome_total else 0.0
+            compact_outcome_html.append(
+                f'<span style="display:inline-flex;align-items:center;gap:.22rem;margin:0 .55rem .25rem 0;'
+                f'font-size:.72rem;color:#40516a;"><span style="width:8px;height:8px;border-radius:50%;background:{color};display:inline-block;"></span>'
+                f'<b style="color:#172942;">{name} {value:,}</b> <span style="color:#8491a3;">({share:.1f}%)</span></span>'
+            )
+        st.markdown("<div style='margin:.1rem 0 .2rem;'>" + "".join(compact_outcome_html) + "</div>", unsafe_allow_html=True)
 
-            label_length = len(str(label))
-            if int(value) >= 30:
-                base_size = 18
-            elif int(value) >= 15:
-                base_size = 17
-            elif int(value) >= 8:
-                base_size = 16
-            elif int(value) >= 4:
-                base_size = 15
-            else:
-                base_size = 14
-
-            if label_length > 38:
-                length_penalty = 4
-            elif label_length > 30:
-                length_penalty = 3
-            elif label_length > 22:
-                length_penalty = 2
-            elif label_length > 14:
-                length_penalty = 1
-            else:
-                length_penalty = 0
-            return max(11, base_size - length_penalty)
-
-        node_ids = ["all-applications"]
-        node_labels = ["All Applications"]
-        node_parents = [""]
-        node_values = [int(outcome_total)]
-        node_colors = ["#eaf0f6"]
-        node_font_sizes = [_sunburst_font_size("All Applications", outcome_total, "root")]
-        node_customdata = [["All Applications", "100.0%", "100.0%", "100.0%", "All Applications", "All Applications", ""]]
-        node_lookup = {
-            "all-applications": {
-                "id": "all-applications", "label": "All Applications", "parent": "",
-                "value": int(outcome_total), "kind": "root", "outcome": "All Applications",
-                "bucket": "All Applications",
+        if outcome_total == 0:
+            st.info("No applications are available for the selected reporting period.")
+        elif go is None:
+            st.warning("Plotly is not installed. Use the exact values table below to inspect every source status.")
+        else:
+            # Four fixed hierarchy levels: All Applications -> Outcome -> Stage Bucket ->
+            # exact original status. Every level is rendered together in this static view.
+            # A single soft colour is used for each outcome across all three
+            # sunburst rings (outcome, stage bucket and exact CRM status).
+            # The neutral centre remains separate so the hierarchy is easy to read.
+            outcome_colors = {
+                "Live": "#D9F2E3",       # Light green
+                "Pending": "#FFF2C2",    # Light yellow
+                "Cancelled": "#F8D7DA",  # Light red
+                "Awaiting downstream": "#E2E8F0",  # Neutral: Welcome Done, no later outcome
             }
-        }
-        node_children = {"all-applications": []}
-        outcome_counts = {name: int(outcome_summary.get(name, 0)) for name in ordered_outcomes}
-        bucket_counts = (
-            outcome_bucket_table.groupby(["Outcome", "Bucket"])["Applications"].sum().to_dict()
-            if not outcome_bucket_table.empty else {}
-        )
-
-        def _add_hierarchy_node(node_id, label, parent_id, value, color, custom, kind, outcome, bucket, source_details=""):
-            node_ids.append(node_id)
-            node_labels.append(str(label))
-            node_parents.append(parent_id)
-            node_values.append(int(value))
-            node_colors.append(color)
-            node_font_sizes.append(_sunburst_font_size(label, value, kind))
-            node_customdata.append(custom)
-            node_lookup[node_id] = {
-                "id": node_id, "label": str(label), "parent": parent_id,
-                "value": int(value), "kind": kind, "outcome": outcome,
-                "bucket": bucket, "source_details": source_details,
+            bucket_colors = {
+                "Inbound": "#c2410c",
+                "Quality": "#2563eb",
+                "Welcome": "#7c3aed",
+                "Provisioning": "#0891b2",
+                "Confirmation": "#4f46e5",
+                "Onboarding": "#0f766e",
             }
-            node_children.setdefault(parent_id, []).append(node_id)
-            node_children.setdefault(node_id, [])
+            bucket_light_colors = {
+                "Inbound": "#fed7aa",
+                "Quality": "#bfdbfe",
+                "Welcome": "#ddd6fe",
+                "Provisioning": "#a5f3fc",
+                "Confirmation": "#c7d2fe",
+                "Onboarding": "#99f6e4",
+            }
+            ordered_outcomes = ["Live", "Pending", "Cancelled", "Awaiting downstream"]
+            ordered_buckets = ["Inbound", "Quality", "Welcome", "Provisioning", "Confirmation", "Onboarding"]
 
-        for outcome_name in ordered_outcomes:
-            outcome_id = f"outcome::{outcome_name}"
-            outcome_count = outcome_counts[outcome_name]
-            outcome_share = outcome_count / outcome_total * 100 if outcome_total else 0.0
-            _add_hierarchy_node(
-                outcome_id, outcome_name, "all-applications", outcome_count,
-                outcome_colors[outcome_name],
-                [outcome_name, f"{outcome_share:.1f}%", "100.0%", "100.0%", outcome_name, "All Applications", ""],
-                "outcome", outcome_name, "All Applications",
+            # Merge identical original status text within the same Outcome + Bucket
+            # for a clear chart leaf. The detailed table below keeps the individual
+            # Source and Source field values separately reconcilable.
+            chart_status_table = (
+                outcome_bucket_table.groupby(["Outcome", "Bucket", "Status"], dropna=False)
+                .agg(
+                    Applications=("Applications", "sum"),
+                    Source_Details=(
+                        "Source",
+                        lambda values: "; ".join(sorted(set(str(v) for v in values if str(v).strip()))),
+                    ),
+                    Source_Fields=(
+                        "Stage",
+                        lambda values: "; ".join(sorted(set(str(v) for v in values if str(v).strip()))),
+                    ),
+                )
+                .reset_index()
             )
 
-            for bucket_name in ordered_buckets:
-                bucket_count = int(bucket_counts.get((outcome_name, bucket_name), 0))
-                if bucket_count <= 0:
-                    continue
-                bucket_id = f"bucket::{outcome_name}::{bucket_name}"
-                bucket_share_all = bucket_count / outcome_total * 100 if outcome_total else 0.0
-                bucket_share_outcome = bucket_count / outcome_count * 100 if outcome_count else 0.0
+            # Font sizes are assigned per sector so short labels can be prominent,
+            # while long CRM status names use a slightly smaller size. Counts are
+            # rendered on a second line inside every sector.
+            def _sunburst_font_size(label, value, kind):
+                if kind == "root":
+                    return 20
+                if kind == "outcome":
+                    return 19
+                if kind == "bucket":
+                    return 16
+
+                label_length = len(str(label))
+                if int(value) >= 30:
+                    base_size = 18
+                elif int(value) >= 15:
+                    base_size = 17
+                elif int(value) >= 8:
+                    base_size = 16
+                elif int(value) >= 4:
+                    base_size = 15
+                else:
+                    base_size = 14
+
+                if label_length > 38:
+                    length_penalty = 4
+                elif label_length > 30:
+                    length_penalty = 3
+                elif label_length > 22:
+                    length_penalty = 2
+                elif label_length > 14:
+                    length_penalty = 1
+                else:
+                    length_penalty = 0
+                return max(11, base_size - length_penalty)
+
+            node_ids = ["all-applications"]
+            node_labels = ["All Applications"]
+            node_parents = [""]
+            node_values = [int(outcome_total)]
+            node_colors = ["#eaf0f6"]
+            node_font_sizes = [_sunburst_font_size("All Applications", outcome_total, "root")]
+            node_customdata = [["All Applications", "100.0%", "100.0%", "100.0%", "All Applications", "All Applications", ""]]
+            node_lookup = {
+                "all-applications": {
+                    "id": "all-applications", "label": "All Applications", "parent": "",
+                    "value": int(outcome_total), "kind": "root", "outcome": "All Applications",
+                    "bucket": "All Applications",
+                }
+            }
+            node_children = {"all-applications": []}
+            outcome_counts = {name: int(outcome_summary.get(name, 0)) for name in ordered_outcomes}
+            bucket_counts = (
+                outcome_bucket_table.groupby(["Outcome", "Bucket"])["Applications"].sum().to_dict()
+                if not outcome_bucket_table.empty else {}
+            )
+
+            def _add_hierarchy_node(node_id, label, parent_id, value, color, custom, kind, outcome, bucket, source_details=""):
+                node_ids.append(node_id)
+                node_labels.append(str(label))
+                node_parents.append(parent_id)
+                node_values.append(int(value))
+                node_colors.append(color)
+                node_font_sizes.append(_sunburst_font_size(label, value, kind))
+                node_customdata.append(custom)
+                node_lookup[node_id] = {
+                    "id": node_id, "label": str(label), "parent": parent_id,
+                    "value": int(value), "kind": kind, "outcome": outcome,
+                    "bucket": bucket, "source_details": source_details,
+                }
+                node_children.setdefault(parent_id, []).append(node_id)
+                node_children.setdefault(node_id, [])
+
+            for outcome_name in ordered_outcomes:
+                outcome_id = f"outcome::{outcome_name}"
+                outcome_count = outcome_counts[outcome_name]
+                outcome_share = outcome_count / outcome_total * 100 if outcome_total else 0.0
                 _add_hierarchy_node(
-                    bucket_id, bucket_name, outcome_id, bucket_count,
+                    outcome_id, outcome_name, "all-applications", outcome_count,
                     outcome_colors[outcome_name],
-                    [bucket_name, f"{bucket_share_all:.1f}%", f"{bucket_share_outcome:.1f}%", "100.0%", outcome_name, bucket_name, ""],
-                    "bucket", outcome_name, bucket_name,
+                    [outcome_name, f"{outcome_share:.1f}%", "100.0%", "100.0%", outcome_name, "All Applications", ""],
+                    "outcome", outcome_name, "All Applications",
                 )
 
-                leaves = chart_status_table[
-                    (chart_status_table["Outcome"] == outcome_name)
-                    & (chart_status_table["Bucket"] == bucket_name)
-                ].sort_values(["Applications", "Status"], ascending=[False, True])
-                for leaf_index, leaf in leaves.reset_index(drop=True).iterrows():
-                    status = str(leaf["Status"])
-                    count = int(leaf["Applications"])
-                    leaf_id = f"leaf::{outcome_name}::{bucket_name}::{leaf_index}"
-                    share_all = count / outcome_total * 100 if outcome_total else 0.0
-                    share_outcome = count / outcome_count * 100 if outcome_count else 0.0
-                    share_bucket = count / bucket_count * 100 if bucket_count else 0.0
-                    source_details = "; ".join(
-                        part for part in [str(leaf["Source_Details"]), str(leaf["Source_Fields"])] if part
-                    )
+                for bucket_name in ordered_buckets:
+                    bucket_count = int(bucket_counts.get((outcome_name, bucket_name), 0))
+                    if bucket_count <= 0:
+                        continue
+                    bucket_id = f"bucket::{outcome_name}::{bucket_name}"
+                    bucket_share_all = bucket_count / outcome_total * 100 if outcome_total else 0.0
+                    bucket_share_outcome = bucket_count / outcome_count * 100 if outcome_count else 0.0
                     _add_hierarchy_node(
-                        leaf_id, status, bucket_id, count, outcome_colors[outcome_name],
-                        [status, f"{share_all:.1f}%", f"{share_outcome:.1f}%", f"{share_bucket:.1f}%", outcome_name, bucket_name, source_details],
-                        "status", outcome_name, bucket_name, source_details,
+                        bucket_id, bucket_name, outcome_id, bucket_count,
+                        outcome_colors[outcome_name],
+                        [bucket_name, f"{bucket_share_all:.1f}%", f"{bucket_share_outcome:.1f}%", "100.0%", outcome_name, bucket_name, ""],
+                        "bucket", outcome_name, bucket_name,
                     )
 
-        if sum(node_values[i] for i, parent_id in enumerate(node_parents) if parent_id == "all-applications") != outcome_total:
-            raise ValueError("Sunburst outcome ring does not reconcile to total applications.")
-        for outcome_name in ordered_outcomes:
-            outcome_id = f"outcome::{outcome_name}"
-            children_total = sum(node_lookup[nid]["value"] for nid in node_children.get(outcome_id, []))
-            if children_total != outcome_counts[outcome_name]:
-                raise ValueError(f"Sunburst {outcome_name} bucket ring does not reconcile.")
-        for node_id, meta in list(node_lookup.items()):
-            if meta["kind"] == "bucket":
-                leaves_total = sum(node_lookup[nid]["value"] for nid in node_children.get(node_id, []))
-                if leaves_total != meta["value"]:
-                    raise ValueError(f"Sunburst {meta['bucket']} status ring does not reconcile.")
+                    leaves = chart_status_table[
+                        (chart_status_table["Outcome"] == outcome_name)
+                        & (chart_status_table["Bucket"] == bucket_name)
+                    ].sort_values(["Applications", "Status"], ascending=[False, True])
+                    for leaf_index, leaf in leaves.reset_index(drop=True).iterrows():
+                        status = str(leaf["Status"])
+                        count = int(leaf["Applications"])
+                        leaf_id = f"leaf::{outcome_name}::{bucket_name}::{leaf_index}"
+                        share_all = count / outcome_total * 100 if outcome_total else 0.0
+                        share_outcome = count / outcome_count * 100 if outcome_count else 0.0
+                        share_bucket = count / bucket_count * 100 if bucket_count else 0.0
+                        source_details = "; ".join(
+                            part for part in [str(leaf["Source_Details"]), str(leaf["Source_Fields"])] if part
+                        )
+                        _add_hierarchy_node(
+                            leaf_id, status, bucket_id, count, outcome_colors[outcome_name],
+                            [status, f"{share_all:.1f}%", f"{share_outcome:.1f}%", f"{share_bucket:.1f}%", outcome_name, bucket_name, source_details],
+                            "status", outcome_name, bucket_name, source_details,
+                        )
 
-        # Rebuild the final colour array directly from the outcome lookup.
-        # This is deliberately done after the hierarchy is complete so every
-        # outcome, bucket and status sector receives the exact same solid fill.
-        # Only the centre/root uses a neutral colour.
-        root_colour = "#eaf0f6"
-        node_colors = [
-            root_colour if node_id == "all-applications"
-            else outcome_colors[node_lookup[node_id]["outcome"]]
-            for node_id in node_ids
-        ]
-        for node_id, colour in zip(node_ids, node_colors):
-            if node_id != "all-applications":
-                expected_colour = outcome_colors[node_lookup[node_id]["outcome"]]
-                if colour != expected_colour:
-                    raise ValueError(f"Sunburst colour mismatch for {node_id}: {colour} != {expected_colour}")
+            if sum(node_values[i] for i, parent_id in enumerate(node_parents) if parent_id == "all-applications") != outcome_total:
+                raise ValueError("Sunburst outcome ring does not reconcile to total applications.")
+            for outcome_name in ordered_outcomes:
+                outcome_id = f"outcome::{outcome_name}"
+                children_total = sum(node_lookup[nid]["value"] for nid in node_children.get(outcome_id, []))
+                if children_total != outcome_counts[outcome_name]:
+                    raise ValueError(f"Sunburst {outcome_name} bucket ring does not reconcile.")
+            for node_id, meta in list(node_lookup.items()):
+                if meta["kind"] == "bucket":
+                    leaves_total = sum(node_lookup[nid]["value"] for nid in node_children.get(node_id, []))
+                    if leaves_total != meta["value"]:
+                        raise ValueError(f"Sunburst {meta['bucket']} status ring does not reconcile.")
 
-        # Render every hierarchy level at once. No chart selection events,
-        # session-state navigation, external callouts, or chart-triggered reruns.
-        # The full sunburst domain is used so the rings can occupy the maximum
-        # available chart area. Small labels are reduced rather than moved outside.
-        display_labels = list(node_labels)
-        chart_width = 1200
-        chart_height = 980
+            # Rebuild the final colour array directly from the outcome lookup.
+            # This is deliberately done after the hierarchy is complete so every
+            # outcome, bucket and status sector receives the exact same solid fill.
+            # Only the centre/root uses a neutral colour.
+            root_colour = "#eaf0f6"
+            node_colors = [
+                root_colour if node_id == "all-applications"
+                else outcome_colors[node_lookup[node_id]["outcome"]]
+                for node_id in node_ids
+            ]
+            for node_id, colour in zip(node_ids, node_colors):
+                if node_id != "all-applications":
+                    expected_colour = outcome_colors[node_lookup[node_id]["outcome"]]
+                    if colour != expected_colour:
+                        raise ValueError(f"Sunburst colour mismatch for {node_id}: {colour} != {expected_colour}")
 
-        fig = go.Figure(
-            go.Sunburst(
-                ids=node_ids,
-                labels=display_labels,
-                parents=node_parents,
-                values=node_values,
-                branchvalues="total",
-                sort=False,
-                rotation=0,
-                level="",
-                maxdepth=4,
-                # Use virtually the whole plot area for the circular hierarchy.
-                domain=dict(x=[0.01, 0.99], y=[0.01, 0.99]),
-                # Solid opaque fills prevent any apparent depth-based tinting.
-                # A thicker white divider creates crisp, consistent boundaries between
-                # every sector and ring while preserving the pastel fills.
-                marker=dict(
-                    colors=node_colors,
-                    line=dict(color="#ffffff", width=2.5),
-                ),
-                customdata=node_customdata,
-                textinfo="label",
-                texttemplate="<b>%{label}</b><br>%{value:,.0f}",
-                insidetextorientation="auto",
-                textfont=dict(size=node_font_sizes, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
-                insidetextfont=dict(size=node_font_sizes, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
-                hovertemplate=(
-                    "<b>%{customdata[0]}</b><br>"
-                    "Applications: %{value:,.0f}<br>"
-                    "% of all applications: %{customdata[1]}<br>"
-                    "% within %{customdata[4]}: %{customdata[2]}<br>"
-                    "% within %{customdata[5]}: %{customdata[3]}<br>"
-                    "Source / original field: %{customdata[6]}<extra></extra>"
-                ),
-                hoverlabel=dict(
-                    bgcolor="#ffffff", bordercolor="#d7e1ec",
-                    font=dict(size=15, color="#172942", family="Inter, Segoe UI, Arial, sans-serif"),
-                    namelength=-1,
-                ),
+            # Render every hierarchy level at once. No chart selection events,
+            # session-state navigation, external callouts, or chart-triggered reruns.
+            # The full sunburst domain is used so the rings can occupy the maximum
+            # available chart area. Small labels are reduced rather than moved outside.
+            display_labels = list(node_labels)
+            chart_width = 1200
+            chart_height = 980
+
+            fig = go.Figure(
+                go.Sunburst(
+                    ids=node_ids,
+                    labels=display_labels,
+                    parents=node_parents,
+                    values=node_values,
+                    branchvalues="total",
+                    sort=False,
+                    rotation=0,
+                    level="",
+                    maxdepth=4,
+                    # Use virtually the whole plot area for the circular hierarchy.
+                    domain=dict(x=[0.01, 0.99], y=[0.01, 0.99]),
+                    # Solid opaque fills prevent any apparent depth-based tinting.
+                    # A thicker white divider creates crisp, consistent boundaries between
+                    # every sector and ring while preserving the pastel fills.
+                    marker=dict(
+                        colors=node_colors,
+                        line=dict(color="#ffffff", width=2.5),
+                    ),
+                    customdata=node_customdata,
+                    textinfo="label",
+                    texttemplate="<b>%{label}</b><br>%{value:,.0f}",
+                    insidetextorientation="auto",
+                    textfont=dict(size=node_font_sizes, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
+                    insidetextfont=dict(size=node_font_sizes, color="#14233b", family="Inter, Segoe UI, Arial, sans-serif"),
+                    hovertemplate=(
+                        "<b>%{customdata[0]}</b><br>"
+                        "Applications: %{value:,.0f}<br>"
+                        "% of all applications: %{customdata[1]}<br>"
+                        "% within %{customdata[4]}: %{customdata[2]}<br>"
+                        "% within %{customdata[5]}: %{customdata[3]}<br>"
+                        "Source / original field: %{customdata[6]}<extra></extra>"
+                    ),
+                    hoverlabel=dict(
+                        bgcolor="#ffffff", bordercolor="#d7e1ec",
+                        font=dict(size=15, color="#172942", family="Inter, Segoe UI, Arial, sans-serif"),
+                        namelength=-1,
+                    ),
+                )
             )
-        )
-        fig.update_layout(
-            width=chart_width,
-            height=chart_height,
-            margin=dict(t=4, l=4, r=4, b=4),
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=14, color="#172942"),
-            uniformtext=dict(minsize=11, mode="show"),
-        )
-        with st.container(border=True):
-            st.plotly_chart(
-                fig,
+            fig.update_layout(
+                width=chart_width,
+                height=chart_height,
+                margin=dict(t=4, l=4, r=4, b=4),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(family="Inter, Segoe UI, Arial, sans-serif", size=14, color="#172942"),
+                uniformtext=dict(minsize=11, mode="show"),
+            )
+            with st.container(border=True):
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                    config={"displayModeBar": False, "scrollZoom": False, "responsive": True},
+                )
+                st.caption(
+                    "All four levels are visible by default. Each sector displays its category name and "
+                    "application count directly inside the ring, with larger fonts for shorter labels and "
+                    "smaller fonts for longer CRM status names. Outcome colours remain consistent through "
+                    "every outer ring. Hover over any sector for exact percentages and source details; the "
+                    "complete value list remains below."
+                )
+
+
+        # Complete source-value reconciliation stays available without occupying the
+        # main dashboard: every distinct original status retains its Source and Stage.
+        with st.expander("View all original source values and counts", expanded=False):
+            display_outcome_table = outcome_bucket_table.rename(
+                columns={"Bucket": "Stage bucket", "Stage": "Original source field", "Status": "Original status value"}
+            )
+            st.dataframe(
+                display_outcome_table,
+                hide_index=True,
                 use_container_width=True,
-                config={"displayModeBar": False, "scrollZoom": False, "responsive": True},
+                column_config={
+                    "Outcome": st.column_config.TextColumn("Outcome", width="small"),
+                    "Source": st.column_config.TextColumn("Source", width="small"),
+                    "Stage bucket": st.column_config.TextColumn("Stage bucket", width="small"),
+                    "Original source field": st.column_config.TextColumn("Original source field", width="medium"),
+                    "Original status value": st.column_config.TextColumn("Original status value", width="large"),
+                    "Applications": st.column_config.NumberColumn("Applications", format="%d"),
+                    "% of Total": st.column_config.TextColumn("% of Total", width="small"),
+                },
             )
-            st.caption(
-                "All four levels are visible by default. Each sector displays its category name and "
-                "application count directly inside the ring, with larger fonts for shorter labels and "
-                "smaller fonts for longer CRM status names. Outcome colours remain consistent through "
-                "every outer ring. Hover over any sector for exact percentages and source details; the "
-                "complete value list remains below."
-            )
-
-
-# Complete source-value reconciliation stays available without occupying the
-# main dashboard: every distinct original status retains its Source and Stage.
-with st.expander("View all original source values and counts", expanded=False):
-    display_outcome_table = outcome_bucket_table.rename(
-        columns={"Bucket": "Stage bucket", "Stage": "Original source field", "Status": "Original status value"}
-    )
-    st.dataframe(
-        display_outcome_table,
-        hide_index=True,
-        use_container_width=True,
-        column_config={
-            "Outcome": st.column_config.TextColumn("Outcome", width="small"),
-            "Source": st.column_config.TextColumn("Source", width="small"),
-            "Stage bucket": st.column_config.TextColumn("Stage bucket", width="small"),
-            "Original source field": st.column_config.TextColumn("Original source field", width="medium"),
-            "Original status value": st.column_config.TextColumn("Original status value", width="large"),
-            "Applications": st.column_config.NumberColumn("Applications", format="%d"),
-            "% of Total": st.column_config.TextColumn("% of Total", width="small"),
-        },
-    )
 
 # ==========================================================
-# MONTHLY KPI BREAKDOWN (SELECTABLE YEAR)
-# with per-month + / - expandable daily breakdown
+# MONTHLY KPI DATA BUILD
+# Results render into the top dashboard slot beside the KPI rail.
 # ==========================================================
-render_section_heading("TRENDS & DRILL-DOWN", "Monthly KPI Breakdown", "Expand any month to inspect daily performance; use the year and agent filters to focus the view.")
-
-current_year = datetime.now().year
-years = list(range(2022, current_year + 1))
-selected_year = st.selectbox("Select year for monthly breakdown", options=years, index=len(years) - 1)
-
-# --- Agent dropdown for monthly table (default = All Agents)
-agent_list = []
-if "Advisor" in master_raw_df.columns:
-    agent_list = sorted(master_raw_df["Advisor"].dropna().astype(str).unique(), key=lambda s: s.lower())
-agent_options = ["All Agents"] + agent_list
-selected_agent = st.selectbox("Select Agent (Monthly table)", options=agent_options, index=0)
-monthly_table_view = st.radio(
-    "Monthly table format",
-    options=["Concise outcome view", "Full KPI breakdown"],
-    index=0,
-    horizontal=True,
-    key="monthly_kpi_table_view",
-)
-
 # Build monthly application and portal frames for the selected year
 monthly_app_df = master_raw_df.dropna(subset=["Period_Sort"]).copy()
 monthly_app_df = monthly_app_df[monthly_app_df["Period_Sort"].dt.year == int(selected_year)]
@@ -3371,7 +3400,9 @@ all_periods = sorted(
 )
 
 if not all_periods:
-    st.info(f"No {selected_year} monthly data available for the KPI summary table.")
+    if monthly_table_view != "Sunburst view":
+        with monthly_kpi_table_placeholder.container():
+            st.info(f"No {selected_year} monthly data available for the KPI summary table.")
 else:
     def build_kpi_row(display_label, m_app, m_portal, period_key, is_daily=False):
         """Build one monthly/daily KPI row using the same KPI definitions as the original table."""
@@ -4275,9 +4306,11 @@ else:
             legacy_monthly_concise_counts=legacy_monthly_concise_counts,
             legacy_daily_concise_counts=legacy_daily_concise_counts,
         )
-        components.html(compact_monthly_html, height=compact_monthly_height, scrolling=False)
-    else:
-        components.html(m_html, height=table_height, scrolling=False)
+        with monthly_kpi_table_placeholder.container():
+            components.html(compact_monthly_html, height=compact_monthly_height, scrolling=False)
+    elif monthly_table_view == "Full KPI breakdown":
+        with monthly_kpi_table_placeholder.container():
+            components.html(m_html, height=table_height, scrolling=False)
 
 # ==========================================================
 # PERFORMANCE TABLE SELECTOR
