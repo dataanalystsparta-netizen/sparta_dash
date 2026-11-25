@@ -2846,15 +2846,25 @@ def render_compact_monthly_table_html(
     table_id: str,
     legacy_monthly_concise_counts: dict | None = None,
     legacy_daily_concise_counts: dict | None = None,
+    colour_mode: str = "Based on value",
 ) -> tuple[str, int]:
     """Build the concise table with nested daily and category/status drill-downs.
 
     Month +/- buttons reveal daily rows. Each month/day row also has a Details
     control that renders the same category + exact status breakdown previously
-    shown in the cell hover tooltips. The KPI counts themselves are unchanged.
+    shown in the cell hover tooltips. Outcome cells use a column-specific heatmap
+    whose intensity is based on either absolute counts or percentage of applications.
     """
     legacy_monthly_concise_counts = legacy_monthly_concise_counts or {}
     legacy_daily_concise_counts = legacy_daily_concise_counts or {}
+    colour_mode = "Based on %" if str(colour_mode).strip().lower() in {"based on %", "based on percentage", "percentage", "%"} else "Based on value"
+    outcome_names = ["Pending", "Cancelled", "Live", "Awaiting downstream"]
+    colour_targets = {
+        "Pending": (245, 158, 11),          # amber
+        "Cancelled": (239, 68, 68),         # red
+        "Live": (34, 197, 94),              # green
+        "Awaiting downstream": (100, 116, 139),  # slate
+    }
 
     def group_for_month(period_key: int) -> pd.DataFrame:
         if classified.empty:
@@ -2866,18 +2876,59 @@ def render_compact_monthly_table_html(
             return classified
         return classified[classified["_DayKey"] == str(int(day_key))]
 
-    def render_cells(group: pd.DataFrame, legacy_counts_override: dict | None = None) -> str:
+    def _outcome_metrics(group: pd.DataFrame, legacy_counts_override: dict | None = None) -> dict:
         values = get_sunburst_outcome_counts(group, legacy_counts_override)
+        application_count = int(values.get("Applications", 0) or 0)
+        metrics = {"Applications": application_count}
+        for outcome_name in outcome_names:
+            count = int(values.get(outcome_name, 0) or 0)
+            metrics[outcome_name] = count
+            metrics[f"{outcome_name} %"] = (count / application_count * 100) if application_count else 0.0
+        return metrics
+
+    def _build_gradient_scales(metric_rows: list[dict]) -> dict:
+        """Keep each outcome column on its own scale for easy comparison."""
+        scales = {}
+        for outcome_name in outcome_names:
+            metric_key = outcome_name if colour_mode == "Based on value" else f"{outcome_name} %"
+            scales[outcome_name] = max(
+                (float(row.get(metric_key, 0) or 0) for row in metric_rows),
+                default=0.0,
+            )
+        return scales
+
+    def _gradient_colour(outcome_name: str, metric_value: float, maximum: float) -> str:
+        if metric_value <= 0 or maximum <= 0:
+            return ""
+        ratio = max(0.0, min(1.0, float(metric_value) / float(maximum)))
+        # Preserve pale colours at low values and make the highest value clearly darker.
+        blend = 0.12 + (0.72 * ratio)
+        target = colour_targets[outcome_name]
+        rgb = tuple(round(255 * (1 - blend) + channel * blend) for channel in target)
+        return "#" + "".join(f"{channel:02x}" for channel in rgb)
+
+    def render_cells(
+        group: pd.DataFrame,
+        legacy_counts_override: dict | None = None,
+        gradient_scales: dict | None = None,
+        apply_gradient: bool = True,
+    ) -> str:
+        metrics = _outcome_metrics(group, legacy_counts_override)
         result = [
-            f'<td class="compact-number" data-sort="{values["Applications"]}">{values["Applications"]:,}</td>'
+            f'<td class="compact-number applications-number" data-sort="{metrics["Applications"]}">{metrics["Applications"]:,}</td>'
         ]
-        application_count = int(values["Applications"])
-        for outcome_name in ["Pending", "Cancelled", "Live", "Awaiting downstream"]:
-            value = int(values[outcome_name])
-            share = value / application_count * 100 if application_count else 0.0
+        for outcome_name in outcome_names:
+            value = int(metrics[outcome_name])
+            share = float(metrics[f"{outcome_name} %"])
             display_value = f"{value:,} ({share:.1f}%)" if value else "-"
+            style = ""
+            if apply_gradient and gradient_scales is not None:
+                measure = float(value) if colour_mode == "Based on value" else share
+                colour = _gradient_colour(outcome_name, measure, float(gradient_scales.get(outcome_name, 0) or 0))
+                if colour:
+                    style = f' style="background-color:{colour};color:#172033;"'
             result.append(
-                f'<td class="compact-number" data-sort="{value}">{display_value}</td>'
+                f'<td class="compact-number outcome-heat-cell" data-sort="{value}" data-value="{value}" data-percent="{share:.4f}"{style}>{display_value}</td>'
             )
         return "".join(result)
 
@@ -2941,7 +2992,9 @@ def render_compact_monthly_table_html(
       table.compact-monthly-table th:nth-child(6) {{ background:#e2e8f0;color:#334155; }}
       table.compact-monthly-table td {{ padding:11px 16px;text-align:center;border-bottom:1px solid #edf1f7; }}
       table.compact-monthly-table td:first-child {{ font-weight:700;color:#172942;white-space:nowrap; }}
-      table.compact-monthly-table tbody tr.month-row:hover td, table.compact-monthly-table tbody tr.daily-row:hover td {{ background:#f8fafc; }}
+      table.compact-monthly-table tbody tr.month-row:hover td:not(.outcome-heat-cell), table.compact-monthly-table tbody tr.daily-row:hover td:not(.outcome-heat-cell) {{ background:#f8fafc; }}
+      table.compact-monthly-table td.outcome-heat-cell {{ transition:filter .12s ease, box-shadow .12s ease; font-weight:650; }}
+      table.compact-monthly-table tbody tr.month-row:hover td.outcome-heat-cell, table.compact-monthly-table tbody tr.daily-row:hover td.outcome-heat-cell {{ filter:saturate(1.08) brightness(.98); }}
       table.compact-monthly-table tr.daily-row {{ display:none;background:#f8fafc; }}
       table.compact-monthly-table tr.daily-row.shown {{ display:table-row; }}
       table.compact-monthly-table tr.daily-row td:first-child {{ padding-left:18px;font-size:.84rem;font-weight:600;color:#526176; }}
@@ -2993,6 +3046,33 @@ def render_compact_monthly_table_html(
                 combined[status] = combined.get(status, 0) + int(count)
         total_legacy_counts[raw_key] = list(combined.items())
 
+    # Heatmap scales are calculated separately for month rows and daily rows.
+    # This prevents the much larger monthly totals from washing out daily shading.
+    monthly_metric_rows = []
+    for _, metric_row in monthly_summary_df.iterrows():
+        if str(metric_row.get("MONTH", "")).strip().lower() == "total":
+            continue
+        metric_period_key = int(metric_row.get("PERIOD_KEY", 0) or 0)
+        monthly_metric_rows.append(
+            _outcome_metrics(
+                group_for_month(metric_period_key),
+                legacy_monthly_concise_counts.get(metric_period_key, {}),
+            )
+        )
+    monthly_gradient_scales = _build_gradient_scales(monthly_metric_rows)
+
+    daily_metric_rows = []
+    for metric_period_key, metric_daily_rows in daily_rows_by_period.items():
+        for metric_daily_row in metric_daily_rows:
+            metric_day_key = int(metric_daily_row.get("PERIOD_KEY", 0) or 0)
+            daily_metric_rows.append(
+                _outcome_metrics(
+                    group_for_day(metric_day_key),
+                    legacy_daily_concise_counts.get(metric_day_key, {}),
+                )
+            )
+    daily_gradient_scales = _build_gradient_scales(daily_metric_rows)
+
     for _, row in monthly_summary_df.iterrows():
         label = str(row.get("MONTH", ""))
         if label.strip().lower() == "total":
@@ -3002,7 +3082,7 @@ def render_compact_monthly_table_html(
                 f'<button type="button" class="compact-detail-toggle" aria-expanded="false" '
                 f'onclick="toggleCompactBreakdown(\'{total_breakdown_id}\', this)" '
                 f'title="Show category and status breakdown">Details</button>Total</td>'
-                f'{render_cells(classified, total_legacy_counts)}</tr>'
+                f'{render_cells(classified, total_legacy_counts, apply_gradient=False)}</tr>'
             )
             html += (
                 f'<tr id="{total_breakdown_id}" class="breakdown-row">'
@@ -3022,7 +3102,7 @@ def render_compact_monthly_table_html(
             f'<button type="button" class="compact-detail-toggle" aria-expanded="false" '
             f'onclick="toggleCompactBreakdown(\'{month_breakdown_id}\', this)" '
             f'title="Show category and status breakdown">Details</button>{escape(label)}</td>'
-            f'{render_cells(month_group, month_legacy_counts)}</tr>'
+            f'{render_cells(month_group, month_legacy_counts, monthly_gradient_scales)}</tr>'
         )
         html += (
             f'<tr id="{month_breakdown_id}" class="breakdown-row">'
@@ -3041,7 +3121,7 @@ def render_compact_monthly_table_html(
                 f'<button type="button" class="compact-detail-toggle" aria-expanded="false" '
                 f'onclick="toggleCompactBreakdown(\'{day_breakdown_id}\', this)" '
                 f'title="Show category and status breakdown">Details</button>{day_label}</td>'
-                f'{render_cells(day_group, day_legacy_counts)}</tr>'
+                f'{render_cells(day_group, day_legacy_counts, daily_gradient_scales)}</tr>'
             )
             html += (
                 f'<tr id="{day_breakdown_id}" class="breakdown-row daily-breakdown-row" '
@@ -3197,6 +3277,17 @@ with outcome_chart_col:
         horizontal=True,
         key="monthly_kpi_table_view",
     )
+    concise_colour_mode = "Based on value"
+    if monthly_table_view == "Concise outcome view":
+        concise_colour_mode = st.radio(
+            "Shade outcome cells",
+            options=["Based on value", "Based on %"],
+            index=0,
+            horizontal=True,
+            key="monthly_concise_colour_mode",
+            help="Within each outcome column, darker shades indicate higher counts or higher percentages. Monthly rows and daily rows use separate scales.",
+        )
+        st.caption("Lighter = lower · darker = higher. Each outcome column has its own gradient.")
 
     if monthly_table_view != "Sunburst view":
         monthly_filter_year_col, monthly_filter_agent_col = st.columns([0.82, 1.45], gap="small")
@@ -4492,6 +4583,7 @@ else:
             table_id="monthly-kpi-compact-table",
             legacy_monthly_concise_counts=legacy_monthly_concise_counts,
             legacy_daily_concise_counts=legacy_daily_concise_counts,
+            colour_mode=concise_colour_mode,
         )
         with monthly_kpi_table_placeholder.container():
             components.html(compact_monthly_html, height=compact_monthly_height, scrolling=False)
