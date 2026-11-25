@@ -2851,9 +2851,9 @@ def render_compact_monthly_table_html(
     """Build the concise table with nested daily and category/status drill-downs.
 
     Month +/- buttons reveal daily rows. Each month/day row also has a Details
-    control that renders the same category + exact status breakdown previously
-    shown in the cell hover tooltips. Outcome cells use a column-specific heatmap
-    whose intensity is based on either absolute counts or percentage of applications.
+    control that renders a category/status hierarchy. Category percentages are
+    shares of the outcome; exact-status percentages are shares of their category.
+    Outcome cells use a column-specific heatmap based on counts or application share.
     """
     legacy_monthly_concise_counts = legacy_monthly_concise_counts or {}
     legacy_daily_concise_counts = legacy_daily_concise_counts or {}
@@ -2936,46 +2936,198 @@ def render_compact_monthly_table_html(
         group: pd.DataFrame,
         legacy_counts_override: dict | None = None,
     ) -> str:
-        """Render tooltip lines as readable category/status sections."""
+        """Render a compact hierarchy with transparent percentage denominators.
+
+        Category percentages are shares of their outcome. Exact-status
+        percentages are shares of their category. This avoids repeating the
+        outcome/category text on every status line and makes the proportions
+        interpretable at a glance.
+        """
         values = get_sunburst_outcome_counts(group, legacy_counts_override)
-        tooltips = build_sunburst_category_tooltips(group, legacy_counts_override)
-        sections = []
+        outcomes_ordered = ["Pending", "Cancelled", "Live", "Awaiting downstream"]
         outcome_classes = {
             "Pending": "pending",
             "Cancelled": "cancelled",
             "Live": "live",
             "Awaiting downstream": "awaiting",
         }
-        for outcome_name in ["Pending", "Cancelled", "Live", "Awaiting downstream"]:
-            count = int(values.get(outcome_name, 0) or 0)
-            if count <= 0:
-                continue
-            lines = str(tooltips.get(outcome_name, "")).splitlines()
-            detail_lines = lines[1:] if len(lines) > 1 else []
-            rendered_details = []
-            for raw_line in detail_lines:
-                clean_line = raw_line.strip()
-                if not clean_line:
+        bucket_order = {
+            "Inbound": 0,
+            "Quality": 1,
+            "Welcome": 2,
+            "Provisioning": 3,
+            "Confirmation": 4,
+            "Onboarding": 5,
+        }
+        source_labels = {
+            "crm": "CRM",
+            "excel / legacy": "Legacy Excel",
+            "excel/legacy": "Legacy Excel",
+            "legacy": "Legacy Excel",
+            "excel": "Legacy Excel",
+        }
+
+        # The legacy component counts are sourced from the same Full KPI row
+        # builder. Do not also include the legacy application-level labels for
+        # Pending / Cancelled / Live, or those values would be duplicated.
+        detail_classified = group.copy() if group is not None else pd.DataFrame()
+        if legacy_counts_override is not None and not detail_classified.empty:
+            source_values = (
+                detail_classified.get("Source", pd.Series("Unknown", index=detail_classified.index))
+                .fillna("Unknown").astype(str).str.strip().str.lower()
+            )
+            legacy_mask = source_values.isin({"excel / legacy", "excel/legacy", "legacy", "excel"})
+            outcome_values = detail_classified.get(
+                "Outcome", pd.Series("Pending", index=detail_classified.index)
+            ).fillna("Pending").astype(str).str.strip()
+            detail_classified = detail_classified.loc[
+                ~legacy_mask | outcome_values.eq("Awaiting downstream")
+            ].copy()
+
+        crm_groups = {}
+        required = {"Outcome", "Bucket", "Source", "Stage", "Status"}
+        if not detail_classified.empty and required.issubset(detail_classified.columns):
+            grouped = (
+                detail_classified.groupby(
+                    ["Outcome", "Bucket", "Source", "Stage", "Status"],
+                    dropna=False,
+                )
+                .size().rename("Count").reset_index()
+            )
+            for item in grouped.itertuples(index=False):
+                outcome = str(item.Outcome).strip()
+                if outcome not in outcomes_ordered:
+                    outcome = "Pending"
+                bucket = str(item.Bucket).strip() or "Other"
+                source_raw = str(item.Source).strip() or "Unknown"
+                source_key = source_raw.lower()
+                source_label = source_labels.get(source_key, source_raw)
+                stage = str(item.Stage).strip()
+                status = str(item.Status).strip() or "(blank)"
+                # Stage names are already implied by the first four bucket
+                # labels. Keep the field detail only where several source
+                # columns share a single visual bucket.
+                category_label = bucket
+                category_hint = stage if bucket in {"Confirmation", "Onboarding"} else ""
+                key = (outcome, bucket, source_label, category_hint)
+                category = crm_groups.setdefault(
+                    key, {"count": 0, "statuses": {}}
+                )
+                count = int(item.Count)
+                category["count"] += count
+                category["statuses"][status] = category["statuses"].get(status, 0) + count
+
+        legacy_components = [
+            ("Pending", "Welcome Pending", "Welcome Pending Statuses"),
+            ("Pending", "Committed Rem.", "Committed Rem. Statuses"),
+            ("Cancelled", "Welcome Cancelled", "Welcome Cancelled Statuses"),
+            ("Cancelled", "Live Cancelled", "Live Cancelled Statuses"),
+            ("Live", "Live", "Live Statuses"),
+        ]
+        legacy_categories = {name: [] for name in outcomes_ordered}
+        if legacy_counts_override is not None:
+            for outcome, category_label, raw_key in legacy_components:
+                category_count = int(legacy_counts_override.get(category_label, 0) or 0)
+                if category_count <= 0:
                     continue
-                indent = len(raw_line) - len(raw_line.lstrip(" "))
-                line_class = "breakdown-status" if indent >= 4 else "breakdown-category"
-                rendered_details.append(
-                    f'<div class="{line_class}">{escape(clean_line)}</div>'
+                statuses = {}
+                for raw_status, raw_count in legacy_counts_override.get(raw_key, []) or []:
+                    status_label = str(raw_status).strip() or "(blank)"
+                    statuses[status_label] = statuses.get(status_label, 0) + int(raw_count)
+                legacy_categories[outcome].append({
+                    "label": category_label,
+                    "hint": "",
+                    "source": "Legacy Excel",
+                    "count": category_count,
+                    "statuses": statuses,
+                    "order": len(legacy_categories[outcome]),
+                })
+
+        sections = []
+        for outcome_name in outcomes_ordered:
+            outcome_count = int(values.get(outcome_name, 0) or 0)
+            if outcome_count <= 0:
+                continue
+
+            categories = list(legacy_categories[outcome_name])
+            for (category_outcome, bucket, source_label, category_hint), data in crm_groups.items():
+                if category_outcome != outcome_name or int(data["count"]) <= 0:
+                    continue
+                categories.append({
+                    "label": bucket,
+                    "hint": category_hint,
+                    "source": source_label,
+                    "count": int(data["count"]),
+                    "statuses": data["statuses"],
+                    "order": bucket_order.get(bucket, 99),
+                })
+            categories.sort(key=lambda item: (item["order"], -item["count"], item["label"], item["source"]))
+
+            category_html = []
+            for category in categories:
+                category_count = int(category["count"])
+                category_share = (category_count / outcome_count * 100.0) if outcome_count else 0.0
+                source_class = "legacy" if category["source"] == "Legacy Excel" else "crm"
+                hint_html = (
+                    f'<span class="breakdown-category-hint">{escape(category["hint"])}</span>'
+                    if category["hint"] else ""
                 )
-            if not rendered_details:
-                rendered_details.append(
-                    '<div class="breakdown-empty">No additional status detail available.</div>'
+                status_rows = []
+                statuses = sorted(
+                    category["statuses"].items(),
+                    key=lambda pair: (-int(pair[1]), str(pair[0]).casefold()),
                 )
+                for status_label, status_count_raw in statuses:
+                    status_count = int(status_count_raw)
+                    status_share = (status_count / category_count * 100.0) if category_count else 0.0
+                    status_rows.append(
+                        '<div class="breakdown-status-row">'
+                        f'<span class="breakdown-status-name">{escape(str(status_label))}</span>'
+                        f'<span class="breakdown-status-metric"><strong>{status_count:,}</strong>'
+                        f'<small>{status_share:.1f}%</small></span>'
+                        '</div>'
+                    )
+                if not status_rows:
+                    status_rows.append(
+                        '<div class="breakdown-status-empty">Status detail unavailable</div>'
+                    )
+
+                category_html.append(
+                    '<div class="breakdown-category-card">'
+                    '<div class="breakdown-category-top">'
+                    '<div class="breakdown-category-label">'
+                    f'<span>{escape(category["label"])}</span>{hint_html}'
+                    '</div>'
+                    f'<div class="breakdown-category-total"><strong>{category_count:,}</strong>'
+                    f'<small>{category_share:.1f}%</small></div>'
+                    '</div>'
+                    f'<div class="breakdown-category-meta"><span class="breakdown-source-chip {source_class}">{escape(category["source"])}</span>'
+                    '<span class="breakdown-percent-label">status share of category</span></div>'
+                    f'<div class="breakdown-status-list">{"".join(status_rows)}</div>'
+                    '</div>'
+                )
+
             sections.append(
                 f'<section class="breakdown-outcome {outcome_classes[outcome_name]}">'
-                f'<div class="breakdown-outcome-heading"><span>{escape(outcome_name)}</span>'
-                f'<strong>{count:,}</strong></div>'
-                f'<div class="breakdown-lines">{"".join(rendered_details)}</div>'
-                f'</section>'
+                '<div class="breakdown-outcome-heading">'
+                f'<span>{escape(outcome_name)}</span><strong>{outcome_count:,}</strong>'
+                '</div>'
+                '<div class="breakdown-outcome-subtitle">Category percentages are of this outcome</div>'
+                f'<div class="breakdown-category-list">{"".join(category_html)}</div>'
+                '</section>'
             )
+
         if not sections:
             return '<div class="breakdown-empty-panel">No category or status details available.</div>'
-        return f'<div class="breakdown-grid">{"".join(sections)}</div>'
+        return (
+            '<div class="breakdown-panel">'
+            '<div class="breakdown-panel-legend">'
+            '<span><strong>Category %</strong> = share of outcome</span>'
+            '<span><strong>Status %</strong> = share of category</span>'
+            '</div>'
+            f'<div class="breakdown-grid">{"".join(sections)}</div>'
+            '</div>'
+        )
 
     html = f"""
     <style>
@@ -3007,19 +3159,40 @@ def render_compact_monthly_table_html(
       .compact-detail-toggle {{ margin:0 9px 0 0;padding:4px 9px;border:1px solid #d5deea;border-radius:7px;background:#fff;color:#475569;font-size:11px;font-weight:750;cursor:pointer;vertical-align:middle; }}
       .compact-detail-toggle:hover {{ background:#eef6ff;border-color:#93c5fd;color:#1d4ed8; }}
       .compact-day-indent {{ display:inline-block;width:7px;height:14px;margin:0 8px 0 6px;border-left:2px solid #cbd5e1;vertical-align:-2px; }}
-      .breakdown-grid {{ display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:10px;align-items:start; }}
-      .breakdown-outcome {{ min-width:0;overflow:hidden;border:1px solid #e2e8f0;border-radius:10px;background:#fff; }}
-      .breakdown-outcome-heading {{ display:flex;align-items:center;justify-content:space-between;padding:8px 11px;font-size:12px;font-weight:850;letter-spacing:.02em;border-bottom:1px solid #e8edf3; }}
-      .breakdown-outcome-heading strong {{ font-size:13px;font-variant-numeric:tabular-nums; }}
+      .breakdown-panel {{ display:flex;flex-direction:column;gap:9px;min-width:0; }}
+      .breakdown-panel-legend {{ display:flex;flex-wrap:wrap;gap:6px 16px;padding:0 2px;color:#64748b;font-size:10px;line-height:1.4; }}
+      .breakdown-panel-legend strong {{ color:#334155;font-weight:800; }}
+      .breakdown-grid {{ display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:11px;align-items:start; }}
+      .breakdown-outcome {{ min-width:0;overflow:hidden;border:1px solid #e2e8f0;border-radius:11px;background:#fff;box-shadow:0 2px 7px rgba(15,23,42,.035); }}
+      .breakdown-outcome-heading {{ display:flex;align-items:center;justify-content:space-between;padding:9px 12px;font-size:12px;font-weight:850;letter-spacing:.015em;border-bottom:1px solid #e8edf3; }}
+      .breakdown-outcome-heading strong {{ font-size:14px;font-variant-numeric:tabular-nums; }}
       .breakdown-outcome.pending .breakdown-outcome-heading {{ background:#fff7d6;color:#8a6500; }}
       .breakdown-outcome.cancelled .breakdown-outcome-heading {{ background:#fee2e2;color:#b91c1c; }}
       .breakdown-outcome.live .breakdown-outcome-heading {{ background:#dcfce7;color:#166534; }}
       .breakdown-outcome.awaiting .breakdown-outcome-heading {{ background:#e2e8f0;color:#334155; }}
-      .breakdown-lines {{ padding:7px 10px 9px; }}
-      .breakdown-category {{ padding:5px 6px;margin:2px 0;border-radius:6px;background:#f1f5f9;color:#334155;font-size:11px;font-weight:750;line-height:1.45;overflow-wrap:anywhere; }}
-      .breakdown-status {{ padding:4px 6px 4px 17px;color:#475569;font-size:11px;line-height:1.45;overflow-wrap:anywhere;position:relative; }}
-      .breakdown-status:before {{ content:'•';position:absolute;left:7px;color:#94a3b8; }}
-      .breakdown-empty,.breakdown-empty-panel {{ padding:8px;color:#64748b;font-size:11px;font-style:italic; }}
+      .breakdown-outcome-subtitle {{ padding:5px 11px 0;color:#94a3b8;font-size:9px; }}
+      .breakdown-category-list {{ display:flex;flex-direction:column;gap:7px;padding:8px; }}
+      .breakdown-category-card {{ min-width:0;border:1px solid #edf1f5;border-radius:8px;background:#fbfcfe;overflow:hidden; }}
+      .breakdown-category-top {{ display:flex;justify-content:space-between;align-items:center;gap:9px;padding:7px 9px 4px; }}
+      .breakdown-category-label {{ display:flex;flex-direction:column;min-width:0;color:#26364b;font-size:11px;font-weight:800;line-height:1.35;overflow-wrap:anywhere; }}
+      .breakdown-category-hint {{ margin-top:1px;color:#94a3b8;font-size:9px;font-weight:550; }}
+      .breakdown-category-total {{ display:flex;align-items:baseline;gap:6px;white-space:nowrap;color:#334155;font-size:11px;font-variant-numeric:tabular-nums; }}
+      .breakdown-category-total strong {{ font-size:12px;font-weight:850; }}
+      .breakdown-category-total small {{ color:#64748b;font-size:10px;font-weight:700; }}
+      .breakdown-category-meta {{ display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 9px 5px; }}
+      .breakdown-source-chip {{ display:inline-flex;align-items:center;padding:2px 6px;border-radius:999px;font-size:9px;font-weight:800;letter-spacing:.015em; }}
+      .breakdown-source-chip.crm {{ background:#e8f1ff;color:#2454a6; }}
+      .breakdown-source-chip.legacy {{ background:#f1f5f9;color:#475569; }}
+      .breakdown-percent-label {{ color:#a0aab8;font-size:9px; }}
+      .breakdown-status-list {{ border-top:1px solid #edf1f5;background:#fff; }}
+      .breakdown-status-row {{ display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:5px 9px;border-top:1px solid #f1f4f7;color:#475569;font-size:10px;line-height:1.35; }}
+      .breakdown-status-row:first-child {{ border-top:0; }}
+      .breakdown-status-name {{ min-width:0;overflow-wrap:anywhere; }}
+      .breakdown-status-metric {{ display:flex;gap:7px;align-items:baseline;white-space:nowrap;font-variant-numeric:tabular-nums; }}
+      .breakdown-status-metric strong {{ color:#26364b;font-size:10px;font-weight:850; }}
+      .breakdown-status-metric small {{ min-width:42px;text-align:right;color:#64748b;font-size:9px;font-weight:700; }}
+      .breakdown-status-empty {{ padding:6px 9px;color:#94a3b8;font-size:10px;font-style:italic; }}
+      .breakdown-empty-panel {{ padding:8px;color:#64748b;font-size:11px;font-style:italic; }}
       @media (max-width:700px) {{ .compact-detail-toggle {{ padding:4px 6px;margin-right:5px; }} table.compact-monthly-table td {{ padding:9px 10px; }} table.compact-monthly-table tr.breakdown-row > td {{ padding-left:14px; }} }}
     </style>
     <div class="compact-monthly-wrap">
