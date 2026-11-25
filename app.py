@@ -2847,9 +2847,15 @@ def render_compact_monthly_table_html(
     legacy_monthly_concise_counts: dict | None = None,
     legacy_daily_concise_counts: dict | None = None,
 ) -> tuple[str, int]:
-    """Build mutually exclusive concise outcomes from each application classification."""
+    """Build the concise table with nested daily and category/status drill-downs.
+
+    Month +/- buttons reveal daily rows. Each month/day row also has a Details
+    control that renders the same category + exact status breakdown previously
+    shown in the cell hover tooltips. The KPI counts themselves are unchanged.
+    """
     legacy_monthly_concise_counts = legacy_monthly_concise_counts or {}
     legacy_daily_concise_counts = legacy_daily_concise_counts or {}
+
     def group_for_month(period_key: int) -> pd.DataFrame:
         if classified.empty:
             return classified
@@ -2862,20 +2868,63 @@ def render_compact_monthly_table_html(
 
     def render_cells(group: pd.DataFrame, legacy_counts_override: dict | None = None) -> str:
         values = get_sunburst_outcome_counts(group, legacy_counts_override)
-        tooltips = build_sunburst_category_tooltips(group, legacy_counts_override)
         result = [
-            f'<td class="compact-number" data-sort="{values["Applications"]}" title="{_compact_tooltip_attribute(tooltips["Applications"])}">{values["Applications"]:,}</td>'
+            f'<td class="compact-number" data-sort="{values["Applications"]}">{values["Applications"]:,}</td>'
         ]
         application_count = int(values["Applications"])
         for outcome_name in ["Pending", "Cancelled", "Live", "Awaiting downstream"]:
             value = int(values[outcome_name])
-            tip = tooltips[outcome_name]
             share = value / application_count * 100 if application_count else 0.0
             display_value = f"{value:,} ({share:.1f}%)" if value else "-"
             result.append(
-                f'<td class="compact-number" data-sort="{value}" title="{_compact_tooltip_attribute(tip)}">{display_value}</td>'
+                f'<td class="compact-number" data-sort="{value}">{display_value}</td>'
             )
         return "".join(result)
+
+    def render_breakdown_panel(
+        group: pd.DataFrame,
+        legacy_counts_override: dict | None = None,
+    ) -> str:
+        """Render tooltip lines as readable category/status sections."""
+        values = get_sunburst_outcome_counts(group, legacy_counts_override)
+        tooltips = build_sunburst_category_tooltips(group, legacy_counts_override)
+        sections = []
+        outcome_classes = {
+            "Pending": "pending",
+            "Cancelled": "cancelled",
+            "Live": "live",
+            "Awaiting downstream": "awaiting",
+        }
+        for outcome_name in ["Pending", "Cancelled", "Live", "Awaiting downstream"]:
+            count = int(values.get(outcome_name, 0) or 0)
+            if count <= 0:
+                continue
+            lines = str(tooltips.get(outcome_name, "")).splitlines()
+            detail_lines = lines[1:] if len(lines) > 1 else []
+            rendered_details = []
+            for raw_line in detail_lines:
+                clean_line = raw_line.strip()
+                if not clean_line:
+                    continue
+                indent = len(raw_line) - len(raw_line.lstrip(" "))
+                line_class = "breakdown-status" if indent >= 4 else "breakdown-category"
+                rendered_details.append(
+                    f'<div class="{line_class}">{escape(clean_line)}</div>'
+                )
+            if not rendered_details:
+                rendered_details.append(
+                    '<div class="breakdown-empty">No additional status detail available.</div>'
+                )
+            sections.append(
+                f'<section class="breakdown-outcome {outcome_classes[outcome_name]}">'
+                f'<div class="breakdown-outcome-heading"><span>{escape(outcome_name)}</span>'
+                f'<strong>{count:,}</strong></div>'
+                f'<div class="breakdown-lines">{"".join(rendered_details)}</div>'
+                f'</section>'
+            )
+        if not sections:
+            return '<div class="breakdown-empty-panel">No category or status details available.</div>'
+        return f'<div class="breakdown-grid">{"".join(sections)}</div>'
 
     html = f"""
     <style>
@@ -2892,15 +2941,33 @@ def render_compact_monthly_table_html(
       table.compact-monthly-table th:nth-child(6) {{ background:#e2e8f0;color:#334155; }}
       table.compact-monthly-table td {{ padding:11px 16px;text-align:center;border-bottom:1px solid #edf1f7; }}
       table.compact-monthly-table td:first-child {{ font-weight:700;color:#172942;white-space:nowrap; }}
-      table.compact-monthly-table td[title] {{ cursor:help;text-decoration:underline dotted #94a3b8;text-underline-offset:3px; }}
       table.compact-monthly-table tbody tr.month-row:hover td, table.compact-monthly-table tbody tr.daily-row:hover td {{ background:#f8fafc; }}
       table.compact-monthly-table tr.daily-row {{ display:none;background:#f8fafc; }}
       table.compact-monthly-table tr.daily-row.shown {{ display:table-row; }}
-      table.compact-monthly-table tr.daily-row td:first-child {{ padding-left:42px;font-size:.84rem;font-weight:600;color:#526176; }}
+      table.compact-monthly-table tr.daily-row td:first-child {{ padding-left:18px;font-size:.84rem;font-weight:600;color:#526176; }}
+      table.compact-monthly-table tr.breakdown-row {{ display:none;background:#f8fafc; }}
+      table.compact-monthly-table tr.breakdown-row.shown {{ display:table-row; }}
+      table.compact-monthly-table tr.breakdown-row > td {{ padding:10px 16px 16px 48px;text-align:left;white-space:normal;background:#f8fafc;border-bottom:1px solid #dce5f0; }}
       table.compact-monthly-table tr.compact-total td {{ font-weight:850;background:#f1f5f9;border-top:2px solid #cbd5e1; }}
-      .compact-month-toggle {{ width:24px;height:24px;margin-right:9px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155;font-size:15px;font-weight:800;line-height:20px;cursor:pointer;vertical-align:middle; }}
+      .compact-month-toggle {{ width:24px;height:24px;margin-right:8px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155;font-size:15px;font-weight:800;line-height:20px;cursor:pointer;vertical-align:middle; }}
       .compact-month-toggle:hover {{ background:#eff6ff;border-color:#93c5fd; }}
-      .compact-day-indent {{ display:inline-block;width:7px;height:14px;margin-right:8px;border-left:2px solid #cbd5e1;vertical-align:-2px; }}
+      .compact-detail-toggle {{ margin:0 9px 0 0;padding:4px 9px;border:1px solid #d5deea;border-radius:7px;background:#fff;color:#475569;font-size:11px;font-weight:750;cursor:pointer;vertical-align:middle; }}
+      .compact-detail-toggle:hover {{ background:#eef6ff;border-color:#93c5fd;color:#1d4ed8; }}
+      .compact-day-indent {{ display:inline-block;width:7px;height:14px;margin:0 8px 0 6px;border-left:2px solid #cbd5e1;vertical-align:-2px; }}
+      .breakdown-grid {{ display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:10px;align-items:start; }}
+      .breakdown-outcome {{ min-width:0;overflow:hidden;border:1px solid #e2e8f0;border-radius:10px;background:#fff; }}
+      .breakdown-outcome-heading {{ display:flex;align-items:center;justify-content:space-between;padding:8px 11px;font-size:12px;font-weight:850;letter-spacing:.02em;border-bottom:1px solid #e8edf3; }}
+      .breakdown-outcome-heading strong {{ font-size:13px;font-variant-numeric:tabular-nums; }}
+      .breakdown-outcome.pending .breakdown-outcome-heading {{ background:#fff7d6;color:#8a6500; }}
+      .breakdown-outcome.cancelled .breakdown-outcome-heading {{ background:#fee2e2;color:#b91c1c; }}
+      .breakdown-outcome.live .breakdown-outcome-heading {{ background:#dcfce7;color:#166534; }}
+      .breakdown-outcome.awaiting .breakdown-outcome-heading {{ background:#e2e8f0;color:#334155; }}
+      .breakdown-lines {{ padding:7px 10px 9px; }}
+      .breakdown-category {{ padding:5px 6px;margin:2px 0;border-radius:6px;background:#f1f5f9;color:#334155;font-size:11px;font-weight:750;line-height:1.45;overflow-wrap:anywhere; }}
+      .breakdown-status {{ padding:4px 6px 4px 17px;color:#475569;font-size:11px;line-height:1.45;overflow-wrap:anywhere;position:relative; }}
+      .breakdown-status:before {{ content:'•';position:absolute;left:7px;color:#94a3b8; }}
+      .breakdown-empty,.breakdown-empty-panel {{ padding:8px;color:#64748b;font-size:11px;font-style:italic; }}
+      @media (max-width:700px) {{ .compact-detail-toggle {{ padding:4px 6px;margin-right:5px; }} table.compact-monthly-table td {{ padding:9px 10px; }} table.compact-monthly-table tr.breakdown-row > td {{ padding-left:14px; }} }}
     </style>
     <div class="compact-monthly-wrap">
       <table id="{escape(table_id)}" class="compact-monthly-table">
@@ -2925,51 +2992,107 @@ def render_compact_monthly_table_html(
             for status, count in month_counts.get(raw_key, []):
                 combined[status] = combined.get(status, 0) + int(count)
         total_legacy_counts[raw_key] = list(combined.items())
+
     for _, row in monthly_summary_df.iterrows():
         label = str(row.get("MONTH", ""))
         if label.strip().lower() == "total":
-            html += f'<tr class="compact-total"><td>Total</td>{render_cells(classified, total_legacy_counts)}</tr>'
+            total_breakdown_id = "compact-breakdown-total"
+            html += (
+                f'<tr class="compact-total"><td>'
+                f'<button type="button" class="compact-detail-toggle" aria-expanded="false" '
+                f'onclick="toggleCompactBreakdown(\'{total_breakdown_id}\', this)" '
+                f'title="Show category and status breakdown">Details</button>Total</td>'
+                f'{render_cells(classified, total_legacy_counts)}</tr>'
+            )
+            html += (
+                f'<tr id="{total_breakdown_id}" class="breakdown-row">'
+                f'<td colspan="6">{render_breakdown_panel(classified, total_legacy_counts)}</td></tr>'
+            )
             continue
+
         period_key = int(row.get("PERIOD_KEY", 0) or 0)
         group_id = f"compact-month-{period_key}"
         month_group = group_for_month(period_key)
         month_legacy_counts = legacy_monthly_concise_counts.get(period_key, {})
+        month_breakdown_id = f"compact-breakdown-month-{period_key}"
         html += (
             f'<tr class="month-row" data-group="{group_id}">'
             f'<td><button type="button" class="compact-month-toggle" aria-expanded="false" '
-            f'onclick="toggleCompactMonth(\'{group_id}\', this)" title="Show daily details">+</button>{escape(label)}</td>'
+            f'onclick="toggleCompactMonth(\'{group_id}\', this)" title="Show daily rows">+</button>'
+            f'<button type="button" class="compact-detail-toggle" aria-expanded="false" '
+            f'onclick="toggleCompactBreakdown(\'{month_breakdown_id}\', this)" '
+            f'title="Show category and status breakdown">Details</button>{escape(label)}</td>'
             f'{render_cells(month_group, month_legacy_counts)}</tr>'
         )
+        html += (
+            f'<tr id="{month_breakdown_id}" class="breakdown-row">'
+            f'<td colspan="6">{render_breakdown_panel(month_group, month_legacy_counts)}</td></tr>'
+        )
+
         for daily_row in daily_rows_by_period.get(period_key, []):
             day_key = int(daily_row.get("PERIOD_KEY", 0) or 0)
             day_group = group_for_day(day_key)
             day_label = escape(str(daily_row.get("MONTH", "")))
             day_legacy_counts = legacy_daily_concise_counts.get(day_key, {})
+            day_breakdown_id = f"compact-breakdown-day-{day_key}"
             html += (
                 f'<tr class="daily-row" data-parent="{group_id}">'
-                f'<td><span class="compact-day-indent"></span>{day_label}</td>'
+                f'<td><span class="compact-day-indent"></span>'
+                f'<button type="button" class="compact-detail-toggle" aria-expanded="false" '
+                f'onclick="toggleCompactBreakdown(\'{day_breakdown_id}\', this)" '
+                f'title="Show category and status breakdown">Details</button>{day_label}</td>'
                 f'{render_cells(day_group, day_legacy_counts)}</tr>'
             )
+            html += (
+                f'<tr id="{day_breakdown_id}" class="breakdown-row daily-breakdown-row" '
+                f'data-parent="{group_id}"><td colspan="6">'
+                f'{render_breakdown_panel(day_group, day_legacy_counts)}</td></tr>'
+            )
+
     html += "</tbody></table></div>"
     html += f"""
     <script>
     (function() {{
       const table = document.getElementById("{table_id}");
       if (!table) return;
+
       window.toggleCompactMonth = function(groupId, button) {{
         const rows = Array.from(table.querySelectorAll('tr.daily-row[data-parent="' + groupId + '"]'));
         const expand = button.getAttribute('aria-expanded') !== 'true';
         rows.forEach(row => row.classList.toggle('shown', expand));
         button.setAttribute('aria-expanded', expand ? 'true' : 'false');
         button.textContent = expand ? '−' : '+';
-        button.title = expand ? 'Hide daily details' : 'Show daily details';
+        button.title = expand ? 'Hide daily rows' : 'Show daily rows';
+        if (!expand) {{
+          const detailRows = Array.from(table.querySelectorAll('tr.daily-breakdown-row[data-parent="' + groupId + '"]'));
+          detailRows.forEach(row => row.classList.remove('shown'));
+          rows.forEach(row => {{
+            const detailButton = row.querySelector('.compact-detail-toggle');
+            if (detailButton) {{
+              detailButton.setAttribute('aria-expanded', 'false');
+              detailButton.textContent = 'Details';
+              detailButton.title = 'Show category and status breakdown';
+            }}
+          }});
+        }}
+      }};
+
+      window.toggleCompactBreakdown = function(detailId, button) {{
+        const row = document.getElementById(detailId);
+        if (!row || !table.contains(row)) return;
+        const expand = button.getAttribute('aria-expanded') !== 'true';
+        row.classList.toggle('shown', expand);
+        button.setAttribute('aria-expanded', expand ? 'true' : 'false');
+        button.textContent = expand ? 'Hide' : 'Details';
+        button.title = expand ? 'Hide category and status breakdown' : 'Show category and status breakdown';
       }};
     }})();
     </script>
     """
+
     visible_months = int((monthly_summary_df.get("MONTH", pd.Series(dtype=object)).astype(str).str.lower() != "total").sum())
-    # The iframe is sized for the collapsed month view; the inner wrapper
-    # becomes the scroll viewport when one or more daily groups are expanded.
+    # The iframe is sized for the collapsed month view; expanded daily/status
+    # sections are handled by the inner scroll viewport.
     height = min(720, max(230, 108 + visible_months * 48))
     return html, height
 
