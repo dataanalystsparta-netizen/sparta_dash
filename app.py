@@ -2565,39 +2565,62 @@ def get_sunburst_outcome_counts(
     classified: pd.DataFrame,
     legacy_counts_override: dict | None = None,
 ) -> dict:
-    """Return mutually exclusive application outcomes for every source.
+    """Return Concise counts, using Full KPI components for legacy when supplied.
 
-    Each input row is one application and classify_application_rows assigns
-    exactly one of Pending, Cancelled, Live, or Awaiting downstream. Legacy Full KPI component
-    counts are stage metrics and may overlap, so they must not override these
-    exclusive application outcomes in the Concise table. The override argument
-    remains accepted for backward compatibility but is intentionally ignored.
+    The monthly Concise table passes a legacy_counts_override built by the same
+    build_kpi_row() function as Full KPI. That makes the Legacy portion match
+    Full KPI exactly. CRM and other non-legacy records remain mutually exclusive
+    application-level outcomes from the shared classifier.
+
+    Important: Full KPI components are stage counts and can overlap or include
+    portal rows that do not have a one-to-one application row. When an override
+    is supplied, the displayed legacy component counts are authoritative and
+    the four displayed categories are therefore not guaranteed to sum to the
+    Applications count. The non-override path remains the exclusive outcome
+    split used by the Sunburst and performance views.
     """
-    if classified is None or classified.empty:
-        return {"Applications": 0, "Pending": 0, "Cancelled": 0, "Live": 0, "Awaiting downstream": 0}
+    if classified is None:
+        classified = pd.DataFrame(columns=["Outcome", "Source"])
+    else:
+        classified = classified.copy()
 
     valid_outcomes = ("Pending", "Cancelled", "Live", "Awaiting downstream")
     raw_outcomes = classified.get(
         "Outcome", pd.Series("Pending", index=classified.index)
     ).fillna("Pending").astype(str).str.strip()
-    # Defensive fallback: no application is allowed to disappear from the
-    # four-way Concise split if an unexpected/blank outcome is encountered.
     outcomes = raw_outcomes.where(raw_outcomes.isin(valid_outcomes), "Pending")
+    result = {"Applications": int(len(classified)), "Pending": 0, "Cancelled": 0, "Live": 0, "Awaiting downstream": 0}
 
-    result = {"Applications": int(len(classified))}
-    for outcome in valid_outcomes:
-        result[outcome] = int(outcomes.eq(outcome).sum())
+    if legacy_counts_override is None:
+        for outcome in valid_outcomes:
+            result[outcome] = int(outcomes.eq(outcome).sum())
+        if sum(result[name] for name in valid_outcomes) != result["Applications"]:
+            raise AssertionError("Concise outcomes do not reconcile to Applications.")
+        return result
 
-    if sum(result[name] for name in valid_outcomes) != result["Applications"]:
-        raise AssertionError("Concise outcomes do not reconcile to Applications.")
+    source_values = (
+        classified.get("Source", pd.Series("Unknown", index=classified.index))
+        .fillna("Unknown").astype(str).str.strip().str.lower()
+    )
+    legacy_mask = source_values.isin({"excel / legacy", "excel/legacy", "legacy", "excel"})
+    nonlegacy_outcomes = outcomes.loc[~legacy_mask]
+
+    # Exact legacy values copied from the source-separated Full KPI row.
+    for outcome in ("Pending", "Cancelled", "Live"):
+        legacy_value = int(legacy_counts_override.get(outcome, 0) or 0)
+        nonlegacy_value = int(nonlegacy_outcomes.eq(outcome).sum())
+        result[outcome] = legacy_value + nonlegacy_value
+
+    # Welcome Done with no downstream result remains visible as a separate
+    # diagnostic category; this includes legacy application rows as before.
+    result["Awaiting downstream"] = int(outcomes.eq("Awaiting downstream").sum())
     return result
-
 
 def build_sunburst_category_tooltips(
     classified: pd.DataFrame,
     legacy_counts_override: dict | None = None,
 ) -> dict:
-    """Show category, exact source stage/status, count, and source for each outcome."""
+    """Show category, exact source status, component count, and source."""
     outcomes_order = ["Live", "Pending", "Cancelled", "Awaiting downstream"]
     result = {
         "Applications": "No applications",
@@ -2606,41 +2629,78 @@ def build_sunburst_category_tooltips(
         "Live": "No Live applications",
         "Awaiting downstream": "No applications with Welcome Done and no later-stage status",
     }
-    if classified is None or classified.empty:
-        return result
+    if classified is None:
+        classified = pd.DataFrame(columns=["Outcome", "Bucket", "Source", "Stage", "Status"])
+    else:
+        classified = classified.copy()
 
     required = ("Outcome", "Bucket", "Source", "Stage", "Status")
     if not all(column in classified.columns for column in required):
-        # Keep the tooltip useful even if a caller supplies a minimal frame.
-        counts = get_sunburst_outcome_counts(classified)
+        counts = get_sunburst_outcome_counts(classified, legacy_counts_override)
         for outcome in outcomes_order:
             result[outcome] = f"{outcome}: {counts[outcome]:,}"
         result["Applications"] = "\n".join(result[name] for name in outcomes_order)
         return result
 
-    grouped = (
-        classified.groupby(list(required), dropna=False)
-        .size().rename("Applications").reset_index()
-    )
+    source_values = classified["Source"].fillna("Unknown").astype(str).str.strip().str.lower()
+    legacy_mask = source_values.isin({"excel / legacy", "excel/legacy", "legacy", "excel"})
+    # Legacy Pending / Cancelled / Live are stage components copied from Full
+    # KPI. Their original application-level outcome labels are not used for
+    # those three tooltip buckets, but remain available for Awaiting downstream.
+    if legacy_counts_override is not None:
+        detail_classified = classified.loc[~legacy_mask | classified["Outcome"].astype(str).eq("Awaiting downstream")].copy()
+    else:
+        detail_classified = classified
+
     bucket_order = {
         name: index for index, name in enumerate(
             ["Inbound", "Quality", "Welcome", "Provisioning", "Confirmation", "Onboarding"]
         )
     }
-    grouped["_OutcomeOrder"] = grouped["Outcome"].map(
-        {name: index for index, name in enumerate(outcomes_order)}
-    ).fillna(99)
-    grouped["_BucketOrder"] = grouped["Bucket"].map(bucket_order).fillna(99)
-    grouped["_SourceOrder"] = grouped["Source"].astype(str).str.lower().map(
-        {"crm": 0, "excel / legacy": 1, "excel/legacy": 1, "legacy": 1, "excel": 1}
-    ).fillna(2)
-    grouped = grouped.sort_values(
-        ["_OutcomeOrder", "_BucketOrder", "_SourceOrder", "Applications", "Status"],
-        ascending=[True, True, True, False, True],
-    )
+    if detail_classified.empty:
+        grouped = pd.DataFrame(columns=list(required) + ["Applications"])
+    else:
+        grouped = (
+            detail_classified.groupby(list(required), dropna=False)
+            .size().rename("Applications").reset_index()
+        )
+    if not grouped.empty:
+        grouped["_OutcomeOrder"] = grouped["Outcome"].map(
+            {name: index for index, name in enumerate(outcomes_order)}
+        ).fillna(99)
+        grouped["_BucketOrder"] = grouped["Bucket"].map(bucket_order).fillna(99)
+        grouped["_SourceOrder"] = grouped["Source"].astype(str).str.lower().map(
+            {"crm": 0, "excel / legacy": 1, "excel/legacy": 1, "legacy": 1, "excel": 1}
+        ).fillna(2)
+        grouped = grouped.sort_values(
+            ["_OutcomeOrder", "_BucketOrder", "_SourceOrder", "Applications", "Status"],
+            ascending=[True, True, True, False, True],
+        )
 
-    counts = get_sunburst_outcome_counts(classified)
+    counts = get_sunburst_outcome_counts(classified, legacy_counts_override)
     detail_lines = {name: [f"{name}: {counts[name]:,}"] for name in outcomes_order}
+
+    # Show exact raw status values beneath their Full KPI category names.
+    if legacy_counts_override is not None:
+        legacy_components = [
+            ("Pending", "Welcome Pending", "Welcome Pending Statuses"),
+            ("Pending", "Committed Rem.", "Committed Rem. Statuses"),
+            ("Cancelled", "Welcome Cancelled", "Welcome Cancelled Statuses"),
+            ("Cancelled", "Live Cancelled", "Live Cancelled Statuses"),
+            ("Live", "Live", "Live Statuses"),
+        ]
+        for outcome, category, raw_key in legacy_components:
+            component_count = int(legacy_counts_override.get(category, 0) or 0)
+            if component_count <= 0:
+                continue
+            detail_lines[outcome].append(
+                f"  {category} · Excel / Legacy: {component_count:,}"
+            )
+            for raw_status, raw_count in legacy_counts_override.get(raw_key, []) or []:
+                detail_lines[outcome].append(
+                    f"    {category} status: {raw_status} — {int(raw_count):,}"
+                )
+
     for item in grouped.itertuples(index=False):
         outcome = str(item.Outcome).strip()
         if outcome not in detail_lines:
@@ -2656,6 +2716,8 @@ def build_sunburst_category_tooltips(
     for outcome in outcomes_order:
         if len(detail_lines[outcome]) > 1:
             result[outcome] = "\n".join(detail_lines[outcome])
+        else:
+            result[outcome] = detail_lines[outcome][0]
 
     all_lines = []
     for outcome in outcomes_order:
@@ -3729,8 +3791,9 @@ else:
 
     monthly_summary_df = pd.DataFrame(monthly_rows)
 
-    # One classification pass for the concise monthly view. The resulting
-    # Pending / Cancelled / Live counts and tooltips use the exact sunburst rules.
+    # One classification pass for CRM outcome details and Awaiting downstream.
+    # Legacy Pending / Cancelled / Live values are supplied separately from the
+    # exact source-only Full KPI rows built below.
     monthly_outcome_classified = classify_application_rows(monthly_app_df)
     def _safe_period_month_key(value):
         try:
@@ -3757,8 +3820,9 @@ else:
         monthly_outcome_classified["_MonthKey"] = pd.Series(dtype=int)
         monthly_outcome_classified["_DayKey"] = pd.Series(dtype=object)
 
-    # Full KPI stage components are retained for the detailed KPI view, but the
-    # Concise view uses one exclusive outcome per application across all sources.
+    # The monthly Concise view uses exact legacy-only Full KPI component counts
+    # for Excel / Legacy, plus mutually exclusive application outcomes for CRM.
+    # Full KPI stage counts may overlap; this is intentional when matching them.
 
     # ----------------------------------------------------------
     # Totals row — kept exactly on the monthly view and always
