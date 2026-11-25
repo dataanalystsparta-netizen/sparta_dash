@@ -610,12 +610,32 @@ def categorize_quality_status_series(s: pd.Series) -> pd.Series:
     )
 
 def categorize_welcome_status_series(s: pd.Series) -> pd.Series:
-    s_norm = s.fillna("").astype(str).str.strip().str.lower()
-    pending_mask = s_norm.isin(["", "(blank)", "nan", "none"]) | s_norm.str.contains(r"pending|follow|paperwork|wrong|ring", na=False)
+    """Classify legacy Welcome statuses, including explicitly cancelled outcomes.
+
+    Received Paperwork, Ringing, Wrong no. and Duplicate are cancellation
+    outcomes even though some of their words were previously caught by the
+    broader pending patterns (paperwork / ring / wrong).
+    """
+    s_norm = (
+        s.fillna("").astype(str).str.strip().str.lower()
+        .str.replace(r"\s+", " ", regex=True)
+    )
+    blank_mask = s_norm.isin(["", "(blank)", "nan", "none"])
+    explicit_cancelled_mask = s_norm.str.contains(
+        r"received\s+paperwork|\bringing\b|\bwrong\s*(?:no\.?|number|#)\b|\bduplicate\b",
+        na=False,
+    )
+    pending_mask = blank_mask | s_norm.str.contains(r"pending|follow|paperwork|wrong|ring", na=False)
     done_mask = s_norm.str.contains("done", na=False)
-    cancelled_mask = s_norm.str.contains(r"cancel|reject|hold", na=False)
+    cancelled_mask = explicit_cancelled_mask | s_norm.str.contains(r"cancel|reject|hold", na=False)
+    # Explicit cancellation values must take precedence over broad pending
+    # keyword matches such as "paperwork", "wrong" and "ring".
     return pd.Series(
-        np.select([pending_mask, done_mask, cancelled_mask], ["Pending", "Done", "Cancelled"], default="Pending"),
+        np.select(
+            [cancelled_mask, done_mask, pending_mask],
+            ["Cancelled", "Done", "Pending"],
+            default="Pending",
+        ),
         index=s.index,
     )
 
@@ -675,26 +695,34 @@ def categorize_crm_quality_status_series(s: pd.Series) -> pd.Series:
 def categorize_crm_welcome_status_series(s: pd.Series) -> pd.Series:
     """Map CRM Welcome Call Status values to Done / Cancelled / Pending.
 
-    CRM blanks are intentionally left uncategorized: a blank Welcome status is
-    NOT counted as Welcome Pending.
+    CRM blanks are intentionally left uncategorized. Received Paperwork,
+    Ringing, Wrong no. and Duplicate are explicit cancellation outcomes and
+    take precedence over the broader pending keyword patterns.
     """
-    s_norm = s.fillna("").astype(str).str.strip().str.lower()
+    s_norm = (
+        s.fillna("").astype(str).str.strip().str.lower()
+        .str.replace(r"\s+", " ", regex=True)
+    )
 
     blank_mask = s_norm.isin(["", "(blank)", "nan", "none"])
+    explicit_cancelled_mask = s_norm.str.contains(
+        r"received\s+paperwork|\bringing\b|\bwrong\s*(?:no\.?|number|#)\b|\bduplicate\b",
+        na=False,
+    )
     pending_mask = (~blank_mask) & s_norm.str.contains(
         r"pending|follow[- ]?up|paperwork|wrong|ring|chasing|think",
         na=False,
     )
     done_mask = s_norm.str.contains(r"approved|done|complete", na=False)
-    cancelled_mask = s_norm.str.contains(
+    cancelled_mask = explicit_cancelled_mask | s_norm.str.contains(
         r"reject|cancel|declin|change of mind|hold",
         na=False,
     )
 
     return pd.Series(
         np.select(
-            [blank_mask, pending_mask, done_mask, cancelled_mask],
-            ["", "Pending", "Done", "Cancelled"],
+            [blank_mask, cancelled_mask, pending_mask, done_mask],
+            ["", "Cancelled", "Pending", "Done"],
             default="",
         ),
         index=s.index,
